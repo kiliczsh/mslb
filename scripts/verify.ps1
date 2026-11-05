@@ -48,7 +48,7 @@ try {
         )
     }
     Invoke-CheckedDocker -DockerArguments @('compose', 'up', '-d', '--wait')
-    foreach ($service in @('dependencies-check', 'migrate', 'python-checks', 'persistence-checks', 'frontend-checks')) {
+    foreach ($service in @('dependencies-check', 'migrate', 'python-checks', 'persistence-checks', 'frontend-checks', 'worker-check')) {
         Invoke-CheckedDocker -DockerArguments @(
             'compose', '--profile', 'tools', 'run', '--rm', $service
         )

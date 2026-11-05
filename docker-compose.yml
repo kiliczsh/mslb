@@ -84,7 +84,7 @@ services:
   persistence-checks:
     <<: *tool
     image: mslb-python-tools:local
-    command: [pytest, tests/integration/test_persistence.py]
+    command: [pytest, tests/integration]
     environment:
       TEST_DATABASE_URL: postgresql://mslb:local-demo-only@postgres/mslb
     depends_on:
@@ -92,6 +92,7 @@ services:
     networks: [internal]
   migrate:
     <<: *tool
+    profiles: []
     image: mslb-python-tools:local
     command: [python, -m, mslb_persistence.migrations]
     mem_limit: 128m
@@ -101,6 +102,47 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
     networks: [internal]
+  worker-check:
+    <<: *tool
+    image: mslb-python-tools:local
+    command: [python, scripts/check_worker.py]
+    environment:
+      DATABASE_URL: postgresql://mslb:local-demo-only@postgres/mslb
+    volumes: [inputs:/data/inputs, outputs:/data/outputs:ro]
+    depends_on:
+      worker: {condition: service_healthy}
+    networks: [internal]
+  worker:
+    <<: *tool
+    profiles: []
+    image: mslb-python-tools:local
+    build:
+      context: .
+      dockerfile: infra/tooling/python.Dockerfile
+    command: [python, -m, mslb_worker]
+    environment:
+      DATABASE_URL: postgresql://mslb:local-demo-only@postgres/mslb
+      INPUT_ROOT: /data/inputs
+      OUTPUT_ROOT: /data/outputs
+    depends_on:
+      postgres: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+    volumes: [inputs:/data/inputs:ro, outputs:/data/outputs]
+    networks: [internal]
+    restart: on-failure:3
+    stop_grace_period: 30s
+    healthcheck:
+      test: [CMD, python, -m, mslb_worker, health]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+        mode: non-blocking
+        max-buffer-size: 1m
 
 networks:
   internal:
@@ -109,3 +151,5 @@ networks:
 volumes:
   postgres-data:
   exports:
+  inputs:
+  outputs:

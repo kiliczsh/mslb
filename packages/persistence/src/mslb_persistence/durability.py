@@ -249,6 +249,43 @@ class Durability:
     def __init__(self, database: Database) -> None:
         self.database = database
 
+    async def removable(self, lease: Lease, key: str) -> bool:
+        """Authorize exact, unreferenced run files while current ownership is valid."""
+        prefix = f"runs/{lease.run_id}/attempt-"
+        suffix = key.removeprefix(prefix).split("/", 1)
+        if (
+            not key.startswith(prefix)
+            or len(suffix) != 2
+            or not suffix[0].isdigit()
+            or not 1 <= int(suffix[0]) <= lease.fence
+            or any(part in {"", ".", ".."} for part in key.split("/"))
+        ):
+            raise StoreError("INVALID_STATE", "Cleanup is outside the owned run namespace")
+
+        async def operation(session: AsyncSession) -> bool:
+            await _job(session, lease)
+            queries = (
+                select(SavedCheckpoint.run_id).where(
+                    SavedCheckpoint.reference["key"].as_string() == key
+                ),
+                select(OutputProgress.run_id).where(
+                    OutputProgress.reference["key"].as_string() == key
+                ),
+                select(OutputProgress.run_id).where(
+                    OutputProgress.metrics["key"].as_string() == key
+                ),
+                select(CommittedChunk.run_id).where(CommittedChunk.file["key"].as_string() == key),
+                select(PublishedArtifact.run_id).where(
+                    PublishedArtifact.manifest["key"].as_string() == key
+                ),
+            )
+            for query in queries:
+                if await session.scalar(select(query.exists())) is True:
+                    return False
+            return True
+
+        return await self.database.transaction(operation)
+
     async def recovery(self, lease: Lease) -> RecoveryState | None:
         async def operation(session: AsyncSession) -> RecoveryState | None:
             await _job(session, lease)

@@ -4,9 +4,6 @@ import asyncio
 import hashlib
 import io
 import json
-import os
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from datetime import timedelta
 from pathlib import Path
@@ -25,7 +22,7 @@ from mslb_application.submissions import Submissions
 from mslb_contracts.catalog import DatasetRegistration
 from mslb_contracts.checkpoints import ArtifactPrefix
 from mslb_contracts.durability import OutputChunk, PersistedEvent, ProgressCommit, StoredFile
-from mslb_contracts.inputs import InputError, RequestInput, ServerInput, read_requests, read_servers
+from mslb_contracts.inputs import InputError, RequestInput, ServerInput
 from mslb_contracts.runs import BundleManifest, RunSettings, RunSnapshot
 from mslb_engine.metrics import MetricAccumulator
 from mslb_engine.simulator import Simulation
@@ -52,24 +49,8 @@ from mslb_persistence.models import (
 from mslb_persistence.records import DatasetRecord, Lease, RunRecord
 from sqlalchemy import Connection, func, select, text, update
 from sqlalchemy.exc import DBAPIError, IntegrityError
-from sqlalchemy.schema import CreateSchema, DropSchema
 
-
-@asynccontextmanager
-async def scratch() -> AsyncGenerator[Database]:
-    url = os.environ["TEST_DATABASE_URL"]
-    schema = "mslb_test_" + uuid4().hex
-    admin, database = Database(url), Database(url, schema)
-    async with admin.engine.begin() as connection:
-        await connection.execute(CreateSchema(schema))
-    try:
-        await migrate(database)
-        yield database
-    finally:
-        await database.close()
-        async with admin.engine.begin() as connection:
-            await connection.execute(DropSchema(schema, cascade=True))
-        await admin.close()
+from tests.integration.helpers import fixture_inputs, scratch
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,14 +65,6 @@ class Prepared:
         return await self.catalog.enqueue(
             self.dataset.id, self.snapshot, self.versions, self.snapshot.snapshot_digest, key
         )
-
-
-def fixture_inputs() -> tuple[tuple[ServerInput, ...], tuple[RequestInput, ...], int]:
-    with Path("/fixtures/core/servers.json").open("rb") as stream:
-        servers = read_servers(stream)
-    with Path("/fixtures/core/requests.csv").open("rb") as stream:
-        requests = read_requests(stream)
-    return servers, requests, Path("/fixtures/core/requests.csv").stat().st_size
 
 
 async def prepare(database: Database) -> Prepared:

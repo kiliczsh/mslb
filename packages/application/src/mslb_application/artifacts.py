@@ -198,6 +198,77 @@ def _check_cancel(cancelled: Callable[[], bool] | None) -> None:
         raise OperationError("INTERRUPTED", "Run cancelled before artifact publication")
 
 
+def validate_artifact_files(
+    snapshot: RunSnapshot,
+    directory: Path,
+    terminal_tick: int,
+    event_count: int,
+    decision_count: int,
+) -> BundleManifest:
+    """Validate assembled files without executing the simulation a second time."""
+    verify_snapshot(snapshot)
+    if {path.name for path in directory.iterdir()} != ARTIFACT_NAMES:
+        raise OperationError("VALIDATION_FAILED", "Assembled artifact set is incomplete")
+    metadata: dict[str, ArtifactMetadata] = {}
+    for name in sorted(ARTIFACT_NAMES):
+        path = directory / name
+        if path.is_symlink() or not path.is_file():
+            raise OperationError("VALIDATION_FAILED", "Unsafe assembled artifact")
+        size, digest = _hash_file(path, 256 * 1024**2)
+        metadata[name] = ArtifactMetadata(size_bytes=size, sha256=digest)
+    with (directory / "snapshot.json").open("rb") as stream:
+        if read_snapshot(stream) != snapshot:
+            raise OperationError("VALIDATION_FAILED", "Assembled snapshot differs")
+    with (directory / "servers.json").open("rb") as stream:
+        if read_servers(stream) != snapshot.servers:
+            raise OperationError("VALIDATION_FAILED", "Assembled server inputs differ")
+    with (directory / "requests.csv").open("rb") as stream:
+        if read_requests(stream) != snapshot.requests:
+            raise OperationError("VALIDATION_FAILED", "Assembled request inputs differ")
+    servers, requests = domain_inputs(snapshot)
+    with (
+        (directory / "run.jsonl").open("rb") as trace,
+        (directory / "autoscaling_decisions.jsonl").open("rb") as sidecar,
+    ):
+        replay = validate_trace(
+            trace, servers, requests, domain_config(snapshot.configuration), sidecar
+        )
+        sidecar.seek(0)
+        decisions = sum(block.count(b"\n") for block in iter(lambda: sidecar.read(64 * 1024), b""))
+    if (
+        replay.terminal_tick != terminal_tick
+        or replay.events != event_count
+        or decisions != decision_count
+    ):
+        raise OperationError(
+            "VALIDATION_FAILED", "Assembled output differs from terminal accounting"
+        )
+    original = _original_validation(directory, snapshot)
+    manifest = BundleManifest(
+        engine_version=snapshot.engine_version,
+        snapshot_digest=snapshot.snapshot_digest,
+        bundle_digest="0" * 64,
+        terminal_tick=terminal_tick,
+        event_count=event_count,
+        decision_count=decision_count,
+        independent_replay="passed",
+        original_validator=original,
+        original_validator_digest=ORIGINAL_VALIDATOR_DIGEST,
+        artifacts=metadata,
+    )
+    digest = hashlib.sha256(
+        canonical_bytes(manifest.model_dump(mode="json", exclude={"bundle_digest"}))
+    ).hexdigest()
+    result = manifest.model_copy(update={"bundle_digest": digest})
+    if (
+        sum(item.size_bytes for item in metadata.values())
+        + len(canonical_bytes(result.model_dump(mode="json")))
+        > 512 * 1024**2
+    ):
+        raise OperationError("STORAGE_LIMIT_EXCEEDED", "Assembled bundle exceeds its byte budget")
+    return result
+
+
 def execute_bundle(
     snapshot: RunSnapshot,
     destination: Path,
@@ -260,28 +331,9 @@ def execute_bundle(
             outputs["metrics.json"].json(metrics.summary())
             for artifact in outputs.values():
                 artifact.sync()
-            with (
-                (directory / "run.jsonl").open("rb") as trace,
-                (directory / "autoscaling_decisions.jsonl").open("rb") as sidecar,
-            ):
-                replay = validate_trace(trace, servers, requests, config, sidecar)
-            original = _original_validation(directory, snapshot)
-            manifest = BundleManifest(
-                engine_version=snapshot.engine_version,
-                snapshot_digest=snapshot.snapshot_digest,
-                bundle_digest="0" * 64,
-                terminal_tick=replay.terminal_tick,
-                event_count=event_count,
-                decision_count=decision_count,
-                independent_replay="passed",
-                original_validator=original,
-                original_validator_digest=ORIGINAL_VALIDATOR_DIGEST,
-                artifacts={name: artifact.metadata() for name, artifact in outputs.items()},
+            manifest = validate_artifact_files(
+                snapshot, directory, simulation.tick, event_count, decision_count
             )
-            digest = hashlib.sha256(
-                canonical_bytes(manifest.model_dump(mode="json", exclude={"bundle_digest"}))
-            ).hexdigest()
-            manifest = manifest.model_copy(update={"bundle_digest": digest})
             final = _Artifact(directory / "manifest.json", budget, stack)
             final.json(manifest.model_dump(mode="json"))
             final.sync()

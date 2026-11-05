@@ -8,6 +8,6 @@ COPY . /app/
 RUN uv sync --locked --all-packages --group dev
 COPY docs/assignment/test-data/ /fixtures/
 ENV PATH="/app/.venv/bin:$PATH"
-RUN mkdir -p /data/exports && chown 1000:1000 /data/exports
+RUN mkdir -p /data/exports /data/outputs /data/inputs/.staging /data/inputs/uploads /data/inputs/datasets /data/inputs/snapshots && chown -R 1000:1000 /data
 USER 1000:1000
 CMD ["python", "scripts/check_python.py"]

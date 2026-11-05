@@ -9,7 +9,7 @@ import re
 import shutil
 import tempfile
 import time
-from collections.abc import Generator, Iterable
+from collections.abc import Callable, Generator, Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -81,18 +81,26 @@ def _read_chunks(stream: BinaryIO) -> Generator[bytes]:
 class ManagedFiles:
     """Linux-container storage with immutable publication and scoped admission locks."""
 
-    def __init__(self, root: Path, limits: StorageLimits | None = None) -> None:
+    def __init__(
+        self, root: Path, limits: StorageLimits | None = None, read_only: bool = False
+    ) -> None:
         if root.is_symlink():
             raise OperationError("VALIDATION_FAILED", "Managed storage root is unsafe")
-        root.mkdir(parents=True, exist_ok=True)
+        if not read_only:
+            root.mkdir(parents=True, exist_ok=True)
+        elif not root.is_dir():
+            raise OperationError("VALIDATION_FAILED", "Read-only storage root is missing")
         self.root = root.resolve()
         self.limits = limits or StorageLimits()
+        self.read_only = read_only
         for name in (".staging", "uploads", "datasets", "snapshots"):
             path = self.root / name
             if path.is_symlink():
                 raise OperationError("VALIDATION_FAILED", "Managed storage directory is unsafe")
-            path.mkdir(exist_ok=True)
-        self._sync_directory(self.root)
+            if not read_only:
+                path.mkdir(exist_ok=True)
+        if not read_only:
+            self._sync_directory(self.root)
 
     @staticmethod
     def _sync_directory(directory: Path) -> None:
@@ -119,6 +127,8 @@ class ManagedFiles:
 
     @contextmanager
     def _lock(self, name: str, wait: bool = True) -> Generator[None]:
+        if self.read_only:
+            raise OperationError("FORBIDDEN", "Storage is read-only")
         descriptor = os.open(self.root / name, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
         deadline = time.monotonic() + 5
         try:
@@ -140,7 +150,7 @@ class ManagedFiles:
         finally:
             os.close(descriptor)
 
-    def _usage(self) -> int:
+    def _usage(self, root: Path | None = None) -> int:
         entries = 0
 
         def measure(directory: Path, depth: int = 0) -> int:
@@ -174,18 +184,36 @@ class ManagedFiles:
                         continue
             return total
 
-        return measure(self.root)
+        return measure(root or self.root)
 
-    def _admit(self, additional: int) -> None:
+    def _admit(
+        self, additional: int, scope: str | None = None, scope_additional: int | None = None
+    ) -> None:
         if self._usage() + additional > self.limits.quota_bytes:
             raise OperationError("STORAGE_LIMIT_EXCEEDED", "Managed storage quota exceeded")
         if shutil.disk_usage(self.root).free - additional < self.limits.min_free_bytes:
             raise OperationError(
                 "STORAGE_LIMIT_EXCEEDED", "Managed storage free-space reserve reached"
             )
+        if scope is not None:
+            directory = self.path(scope)
+            pending = additional if scope_additional is None else scope_additional
+            if directory.is_dir() and self._usage(directory) + pending > 512 * 1024**2:
+                raise OperationError(
+                    "STORAGE_LIMIT_EXCEEDED", "Run physical storage ceiling reached"
+                )
+
+    @staticmethod
+    def run_scope(key: str) -> str | None:
+        parts = key.split("/")
+        return "/".join(parts[:2]) if len(parts) >= 3 and parts[0] == "runs" else None
 
     @contextmanager
-    def _stage(self, chunks: Iterable[bytes], maximum: int) -> Generator[_Staged]:
+    def _stage(
+        self, chunks: Iterable[bytes], maximum: int, scope: str | None = None
+    ) -> Generator[_Staged]:
+        if self.read_only:
+            raise OperationError("FORBIDDEN", "Storage is read-only")
         # Unbuffered writes make in-flight file bytes visible to other writers'
         # quota scans before the cross-process admission lock is released.
         with tempfile.NamedTemporaryFile(
@@ -201,7 +229,7 @@ class ManagedFiles:
                                 "PAYLOAD_TOO_LARGE", "Managed file exceeds its byte limit"
                             )
                         with self._lock(".write-lock"):
-                            self._admit(len(block))
+                            self._admit(len(block), scope, size + len(block))
                             if stream.write(block) != len(block):
                                 raise OSError("Short managed file write")
                         digest.update(block)
@@ -250,8 +278,31 @@ class ManagedFiles:
         self.path(key)
         if type(maximum) is not int or not 0 <= maximum <= 256 * 1024**2:
             raise OperationError("VALIDATION_ERROR", "Invalid file byte limit")
-        with self._stage(chunks, maximum) as staged:
+        with self._stage(chunks, maximum, self.run_scope(key)) as staged:
             return self._publish(staged, key)
+
+    @contextmanager
+    def work_file(self, key: str) -> Generator["WorkFile"]:
+        if self.read_only or self.run_scope(key) is None:
+            raise OperationError("FORBIDDEN", "Work files require a writable run namespace")
+        path = self.path(key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("x+b", buffering=0) as stream:
+            writer = WorkFile(self, key, stream)
+            try:
+                yield writer
+            finally:
+                stream.close()
+                path.unlink(missing_ok=True)
+
+    def remove(self, key: str) -> None:
+        """Remove an exact file only after the caller verifies DB non-reference/ownership."""
+        if self.read_only:
+            raise OperationError("FORBIDDEN", "Storage is read-only")
+        path = self.path(key)
+        if path.exists() and not path.is_file():
+            raise OperationError("VALIDATION_FAILED", "Cleanup target is not a regular file")
+        path.unlink(missing_ok=True)
 
     def ingest(self, source: BinaryIO, filename: str) -> DatasetRegistration:
         """Preserve source bytes and publish normalized data only after full validation."""
@@ -321,3 +372,46 @@ class ManagedFiles:
             raise OperationError("VALIDATION_FAILED", "Stored file identity mismatch")
         with path.open("rb") as stream:
             yield stream
+
+
+class WorkFile:
+    """Private attempt spool with a bounded buffer and accounted physical writes."""
+
+    def __init__(self, files: ManagedFiles, key: str, stream: BinaryIO) -> None:
+        self.files, self.key, self.stream = files, key, stream
+        self.size = 0
+        self.buffer = bytearray()
+        self.check: Callable[[], None] | None = None
+
+    @property
+    def position(self) -> int:
+        return self.size + len(self.buffer)
+
+    def write(self, data: bytes) -> None:
+        if self.check is not None:
+            self.check()
+        if self.position + len(data) > 256 * 1024**2:
+            raise OperationError(
+                "STORAGE_LIMIT_EXCEEDED", "Attempt stream exceeds its byte ceiling"
+            )
+        for offset in range(0, len(data), 64 * 1024):
+            self.buffer.extend(data[offset : offset + 64 * 1024])
+            if len(self.buffer) >= 256 * 1024:
+                self.flush()
+
+    def flush(self) -> None:
+        if self.buffer:
+            with self.files._lock(".write-lock"):
+                if self.check is not None:
+                    self.check()
+                self.files._admit(len(self.buffer), self.files.run_scope(self.key))
+                self.stream.seek(self.size)
+                if self.stream.write(self.buffer) != len(self.buffer):
+                    raise OSError("Short attempt spool write")
+                self.size += len(self.buffer)
+                self.buffer.clear()
+        self.stream.seek(self.size)
+
+    def sync(self) -> None:
+        self.flush()
+        os.fsync(self.stream.fileno())

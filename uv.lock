@@ -8,6 +8,7 @@ members = [
     "mslb-contracts",
     "mslb-engine",
     "mslb-persistence",
+    "mslb-worker",
     "mslb-workspace",
 ]
 
@@ -140,6 +141,21 @@ requires-dist = [
 ]
 
 [[package]]
+name = "mslb-worker"
+version = "0.1.0"
+source = { editable = "apps/worker" }
+dependencies = [
+    { name = "mslb-application" },
+    { name = "mslb-persistence" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "mslb-application", editable = "packages/application" },
+    { name = "mslb-persistence", editable = "packages/persistence" },
+]
+
+[[package]]
 name = "mslb-workspace"
 version = "0.1.0"
 source = { virtual = "." }
@@ -148,6 +164,7 @@ dependencies = [
     { name = "mslb-contracts" },
     { name = "mslb-engine" },
     { name = "mslb-persistence" },
+    { name = "mslb-worker" },
 ]
 
 [package.dev-dependencies]
@@ -165,6 +182,7 @@ requires-dist = [
     { name = "mslb-contracts", editable = "packages/contracts" },
     { name = "mslb-engine", editable = "packages/engine" },
     { name = "mslb-persistence", editable = "packages/persistence" },
+    { name = "mslb-worker", editable = "apps/worker" },
 ]
 
 [package.metadata.requires-dev]
