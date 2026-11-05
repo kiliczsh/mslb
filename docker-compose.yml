@@ -74,6 +74,13 @@ services:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
     networks: [internal]
+  bundle-runner:
+    <<: *tool
+    image: mslb-python-tools:local
+    entrypoint: [python, scripts/run_bundle.py]
+    command: [run, --servers, /fixtures/core/servers.json, --requests, /app/data/examples/scaling-requests.csv, --config, /app/data/examples/scaling-config.json, --output, /data/exports/scaled-example]
+    volumes: [exports:/data/exports]
+    network_mode: none
 
 networks:
   internal:
@@ -81,3 +88,4 @@ networks:
 
 volumes:
   postgres-data:
+  exports:

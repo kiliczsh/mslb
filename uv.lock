@@ -4,6 +4,7 @@ requires-python = "==3.13.*"
 
 [manifest]
 members = [
+    "mslb-application",
     "mslb-contracts",
     "mslb-engine",
     "mslb-workspace",
@@ -54,6 +55,21 @@ wheels = [
 ]
 
 [[package]]
+name = "mslb-application"
+version = "0.1.0"
+source = { editable = "packages/application" }
+dependencies = [
+    { name = "mslb-contracts" },
+    { name = "mslb-engine" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "mslb-contracts", editable = "packages/contracts" },
+    { name = "mslb-engine", editable = "packages/engine" },
+]
+
+[[package]]
 name = "mslb-contracts"
 version = "0.1.0"
 source = { editable = "packages/contracts" }
@@ -66,7 +82,7 @@ requires-dist = [{ name = "pydantic", specifier = ">=2,<3" }]
 
 [[package]]
 name = "mslb-engine"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/engine" }
 
 [[package]]
@@ -74,6 +90,7 @@ name = "mslb-workspace"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "mslb-application" },
     { name = "mslb-contracts" },
     { name = "mslb-engine" },
 ]
@@ -89,6 +106,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "mslb-application", editable = "packages/application" },
     { name = "mslb-contracts", editable = "packages/contracts" },
     { name = "mslb-engine", editable = "packages/engine" },
 ]

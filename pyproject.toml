@@ -2,17 +2,18 @@
 name = "mslb-workspace"
 version = "0.1.0"
 requires-python = ">=3.13,<3.14"
-dependencies = ["mslb-contracts", "mslb-engine"]
+dependencies = ["mslb-contracts", "mslb-engine", "mslb-application"]
 
 [tool.uv.sources]
 mslb-contracts = { workspace = true }
 mslb-engine = { workspace = true }
+mslb-application = { workspace = true }
 
 [tool.uv]
 package = false
 
 [tool.uv.workspace]
-members = ["packages/contracts", "packages/engine"]
+members = ["packages/contracts", "packages/engine", "packages/application"]
 
 [dependency-groups]
 dev = ["ruff", "ty", "pytest", "asyncpg", "redis"]
@@ -20,6 +21,7 @@ dev = ["ruff", "ty", "pytest", "asyncpg", "redis"]
 [tool.ruff]
 target-version = "py313"
 line-length = 100
+extend-exclude = ["scripts/validate_run.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC", "S", "ANN"]
@@ -34,6 +36,9 @@ line-ending = "lf"
 
 [tool.ty.rules]
 all = "error"
+
+[tool.ty.src]
+exclude = ["scripts/validate_run.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -53,6 +53,13 @@ try {
             'compose', '--profile', 'tools', 'run', '--rm', $service
         )
     }
+    Invoke-CheckedDocker -DockerArguments @(
+        'compose', '--profile', 'tools', 'run', '--rm', 'bundle-runner'
+    )
+    Invoke-CheckedDocker -DockerArguments @(
+        'compose', '--profile', 'tools', 'run', '--rm', 'bundle-runner',
+        'verify', '/data/exports/scaled-example'
+    )
     Write-Host 'Docker builds and all implemented checks passed without warnings.'
 }
 finally {

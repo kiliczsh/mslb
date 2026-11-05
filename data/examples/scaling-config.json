@@ -1,0 +1,12 @@
+{
+  "strategy": "round_robin",
+  "autoscaling": {
+    "enabled": true,
+    "max_servers": 3,
+    "server_template": {
+      "cpu_units_per_tick": 10,
+      "mem_mb": 1024,
+      "rate_limit_per_sec": 2
+    }
+  }
+}
