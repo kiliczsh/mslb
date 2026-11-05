@@ -1,11 +1,13 @@
 """Strict logical execution settings and immutable reproducibility snapshots."""
 
+import hashlib
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from mslb_contracts.canonical import canonical_bytes
 from mslb_contracts.fractions import FractionValue
-from mslb_contracts.inputs import PositiveValue, RequestInput, ServerInput
+from mslb_contracts.inputs import InputError, PositiveValue, RequestInput, ServerInput, input_digest
 
 type Digest = Annotated[str, Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")]
 
@@ -70,6 +72,24 @@ class ArtifactMetadata(BaseModel):
     model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
     size_bytes: Annotated[int, Field(ge=0, le=256 * 1024 * 1024)]
     sha256: Digest
+
+
+def verify_snapshot_identity(snapshot: RunSnapshot) -> None:
+    """Verify normalized structural identity without depending on engine execution."""
+    expected = hashlib.sha256(
+        canonical_bytes(snapshot.model_dump(mode="json", exclude={"snapshot_digest"}))
+    ).hexdigest()
+    if (
+        snapshot.snapshot_digest != expected
+        or snapshot.dataset_digest != input_digest(snapshot.requests)
+        or snapshot.server_snapshot_digest != input_digest(snapshot.servers)
+        or snapshot.servers != tuple(sorted(snapshot.servers, key=lambda server: server.id))
+        or snapshot.requests
+        != tuple(sorted(snapshot.requests, key=lambda request: (request.t, request.request_id)))
+        or len({server.id for server in snapshot.servers}) != len(snapshot.servers)
+        or len({request.request_id for request in snapshot.requests}) != len(snapshot.requests)
+    ):
+        raise InputError("snapshot", "identity_or_normalization_mismatch")
 
 
 class BundleManifest(BaseModel):

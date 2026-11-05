@@ -81,6 +81,26 @@ services:
     command: [run, --servers, /fixtures/core/servers.json, --requests, /app/data/examples/scaling-requests.csv, --config, /app/data/examples/scaling-config.json, --output, /data/exports/scaled-example]
     volumes: [exports:/data/exports]
     network_mode: none
+  persistence-checks:
+    <<: *tool
+    image: mslb-python-tools:local
+    command: [pytest, tests/integration/test_persistence.py]
+    environment:
+      TEST_DATABASE_URL: postgresql://mslb:local-demo-only@postgres/mslb
+    depends_on:
+      postgres: {condition: service_healthy}
+    networks: [internal]
+  migrate:
+    <<: *tool
+    image: mslb-python-tools:local
+    command: [python, -m, mslb_persistence.migrations]
+    mem_limit: 128m
+    memswap_limit: 128m
+    environment:
+      DATABASE_URL: postgresql://mslb:local-demo-only@postgres/mslb
+    depends_on:
+      postgres: {condition: service_healthy}
+    networks: [internal]
 
 networks:
   internal:

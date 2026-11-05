@@ -1,9 +1,9 @@
 """Resolve configuration once and bind normalized immutable inputs to identity."""
 
 import hashlib
-import json
 from typing import BinaryIO
 
+from mslb_contracts.canonical import canonical_bytes
 from mslb_contracts.fractions import FractionValue
 from mslb_contracts.inputs import InputError, RequestInput, ServerInput, input_digest
 from mslb_contracts.runs import RunSettings, RunSnapshot, ScalingSettings, TemplateSettings
@@ -93,15 +93,6 @@ def settings_from_domain(config: RunConfig) -> RunSettings:
             else None,
         ),
     )
-
-
-def canonical_bytes(value: object) -> bytes:
-    return (
-        json.dumps(
-            value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False
-        )
-        + "\n"
-    ).encode("utf-8")
 
 
 def make_snapshot(
