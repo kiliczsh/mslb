@@ -113,7 +113,7 @@ def _rows(artifact: _Artifact, rows: Iterable[Iterable[str | int]]) -> None:
         buffer.truncate()
 
 
-def _timeline(frame: TickFrame) -> dict[str, object]:
+def timeline_record(frame: TickFrame) -> dict[str, object]:
     return {
         "t": frame.t,
         "duration_ticks": frame.duration_ticks,
@@ -244,7 +244,7 @@ def execute_bundle(
             for frame in simulation.iter_ticks():
                 _check_cancel(cancelled)
                 metrics.observe(frame)
-                outputs["timeline.jsonl"].json(_timeline(frame))
+                outputs["timeline.jsonl"].json(timeline_record(frame))
                 for event in frame.events:
                     outputs["run.jsonl"].write(event.canonical_line().encode("utf-8"))
                     event_count += 1

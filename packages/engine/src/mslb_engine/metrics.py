@@ -66,7 +66,7 @@ def distribution(values: Sequence[int]) -> Distribution:
 
 
 @dataclass(slots=True)
-class _ServerTotals:
+class ServerTotals:
     cpu_units_per_tick: int = 0
     mem_mb: int = 0
     waits: list[int] = field(default_factory=list)
@@ -129,7 +129,7 @@ class MetricAccumulator:
         self.max_series = max_series
         self.current_servers = {server.id: server for server in servers}
         self.servers = {
-            server.id: _ServerTotals(
+            server.id: ServerTotals(
                 cpu_units_per_tick=server.cpu_units_per_tick, mem_mb=server.mem_mb
             )
             for server in sorted(servers, key=lambda server: server.id)
@@ -139,13 +139,13 @@ class MetricAccumulator:
         self.queue_peak = 0
         self.queue_integral = 0
 
-    def _server(self, sid: str) -> _ServerTotals:
+    def _server(self, sid: str) -> ServerTotals:
         if sid not in self.servers:
             if len(self.servers) >= self.max_series:
                 raise SimulationError(
                     "RESOURCE_LIMIT_EXCEEDED", "Metric server history bound exceeded"
                 )
-            self.servers[sid] = _ServerTotals()
+            self.servers[sid] = ServerTotals()
         return self.servers[sid]
 
     def observe(self, frame: TickFrame) -> None:
@@ -233,7 +233,7 @@ class MetricAccumulator:
         makespan = max([*self.finishes.values(), *self.drops.values()]) - min(
             request.t for request in self.requests.values()
         )
-        cluster = _ServerTotals()
+        cluster = ServerTotals()
         for total in self.servers.values():
             cluster.waits.extend(total.waits)
             cluster.responses.extend(total.responses)

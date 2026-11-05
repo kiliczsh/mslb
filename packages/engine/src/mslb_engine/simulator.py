@@ -62,6 +62,11 @@ class Simulation:
         self.anchor: str | None = None
         self.recorded_samples = 0
         self.terminal = False
+        self.checkpoint_ready = False
+        self.executed_intervals = 0
+        self.event_count = 0
+        self.decision_count = 0
+        self.last_start_counters = dict.fromkeys(self.active, 0)
 
     def _bounded(self, value: Fraction) -> Fraction:
         if (
@@ -164,6 +169,7 @@ class Simulation:
     def iter_ticks(self) -> Iterator[TickFrame]:
         """Advance execution, emitting canonical boundaries and interval samples."""
         while not self.terminal:
+            self.checkpoint_ready = False
             membership = self.autoscaler.activate(
                 self.tick,
                 self.servers,
@@ -190,6 +196,7 @@ class Simulation:
             active_count = sum(len(active) for active in self.active.values())
             if self.cursor == len(self.requests) and not self.pending and active_count == 0:
                 self.terminal = True
+                self.event_count += len(ordered)
                 yield TickFrame(
                     self.tick, 0, ordered, (), (), terminal=True, membership=self.servers
                 )
@@ -253,4 +260,9 @@ class Simulation:
                 sum(event.event == "REQUEST_ARRIVED" for event in events),
             )
             self.tick += duration
+            self.executed_intervals += 1
+            self.event_count += len(ordered)
+            self.decision_count += decision is not None
+            self.last_start_counters = starts
+            self.checkpoint_ready = True
             yield frame
