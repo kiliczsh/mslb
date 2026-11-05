@@ -1,0 +1,14 @@
+{
+  "basis": "documented_contract_and_manual_checkpoints_not_a_production_run",
+  "terminal_counts": {
+    "arrived": 1500,
+    "completed": 1500,
+    "dropped": 0
+  },
+  "exact_lifecycle": {},
+  "checks": [
+    "Inspect p95/p99 queue and completion times as well as averages.",
+    "Short requests must not be lost while long jobs run; every request must have a terminal event."
+  ],
+  "relation": null
+}

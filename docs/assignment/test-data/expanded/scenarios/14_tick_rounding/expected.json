@@ -1,0 +1,38 @@
+{
+  "basis": "documented_contract_and_manual_checkpoints_not_a_production_run",
+  "terminal_counts": {
+    "arrived": 6,
+    "completed": 6,
+    "dropped": 0
+  },
+  "exact_lifecycle": {
+    "round-0": {
+      "start": 0,
+      "finish": 1
+    },
+    "round-1": {
+      "start": 10,
+      "finish": 11
+    },
+    "round-2": {
+      "start": 20,
+      "finish": 22
+    },
+    "round-3": {
+      "start": 30,
+      "finish": 32
+    },
+    "round-4": {
+      "start": 40,
+      "finish": 42
+    },
+    "round-5": {
+      "start": 50,
+      "finish": 53
+    }
+  },
+  "checks": [
+    "Completion ticks must be 1, 11, 22, 32, 42, and 53."
+  ],
+  "relation": null
+}

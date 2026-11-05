@@ -1,0 +1,15 @@
+{
+  "basis": "documented_contract_and_manual_checkpoints_not_a_production_run",
+  "terminal_counts": {
+    "arrived": 1700,
+    "completed": 1700,
+    "dropped": 0
+  },
+  "exact_lifecycle": {},
+  "checks": [
+    "There must be 1,700 requests in total.",
+    "The queue must drain during the idle interval.",
+    "New traffic at t=158 must not inherit active or pending requests from the previous wave."
+  ],
+  "relation": null
+}

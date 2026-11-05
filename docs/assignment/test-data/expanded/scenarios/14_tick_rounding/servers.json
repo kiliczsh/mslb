@@ -1,0 +1,11 @@
+{
+  "tick_seconds": 1,
+  "servers": [
+    {
+      "id": "round-a",
+      "cpu_units_per_tick": 7,
+      "mem_mb": 256,
+      "rate_limit_per_sec": 4
+    }
+  ]
+}

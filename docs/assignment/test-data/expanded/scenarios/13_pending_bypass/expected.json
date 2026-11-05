@@ -1,0 +1,27 @@
+{
+  "basis": "documented_contract_and_manual_checkpoints_not_a_production_run",
+  "terminal_counts": {
+    "arrived": 4,
+    "completed": 4,
+    "dropped": 0
+  },
+  "exact_lifecycle": {
+    "c-small": {
+      "start": 1,
+      "finish": 2
+    },
+    "d-small": {
+      "start": 2,
+      "finish": 3
+    },
+    "b-large": {
+      "start": 5,
+      "finish": 6
+    }
+  },
+  "checks": [
+    "c-small and d-small must be able to start before b-large.",
+    "b-large must eventually complete without starvation."
+  ],
+  "relation": null
+}

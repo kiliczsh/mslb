@@ -1,0 +1,19 @@
+{
+  "name": "mslb-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "check": "biome ci --error-on-warnings . && tsc --noEmit",
+    "test": "tsc --outDir .test-output && node --test .test-output/tests/*.test.js"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.5",
+    "@types/node": "^24.19.2",
+    "typescript": "7.0.2"
+  },
+  "packageManager": "pnpm@12.16.1",
+  "dependencies": {
+    "zod": "4.6.7"
+  }
+}

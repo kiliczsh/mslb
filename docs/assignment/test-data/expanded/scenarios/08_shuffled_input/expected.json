@@ -1,0 +1,16 @@
+{
+  "basis": "documented_contract_and_manual_checkpoints_not_a_production_run",
+  "terminal_counts": {
+    "arrived": 12,
+    "completed": 12,
+    "dropped": 0
+  },
+  "exact_lifecycle": {},
+  "checks": [
+    "CSV rows do not have to be in chronological order.",
+    "Events and assignments must match scenario 07 exactly."
+  ],
+  "relation": {
+    "same_trace_as": "07_lexical_ties"
+  }
+}

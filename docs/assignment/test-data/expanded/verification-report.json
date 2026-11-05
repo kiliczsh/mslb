@@ -1,0 +1,320 @@
+{
+  "status": "passed",
+  "fixture_scenarios": 24,
+  "request_rows": 67209,
+  "rejected_by_suite_contract": 32,
+  "generated_files_hashed": 155,
+  "engine_runs": [
+    {
+      "case": "01_idle_gaps",
+      "config": "config.json",
+      "arrived": 8,
+      "completed": 8,
+      "dropped": 0,
+      "last_event_tick": 252,
+      "event_count": 24,
+      "checked_exact_lifecycles": 8,
+      "lifecycle_sha256": "984e89c0235334b04174f874dd7f01fcfaa13923e5cfa27d2172d2702db02b2e"
+    },
+    {
+      "case": "02_exact_memory_release",
+      "config": "config.json",
+      "arrived": 4,
+      "completed": 4,
+      "dropped": 0,
+      "last_event_tick": 4,
+      "event_count": 12,
+      "checked_exact_lifecycles": 4,
+      "lifecycle_sha256": "9ad7a0d2a7ace8d077f145dceed6757fa1ad319f5c9c7cb863ac203bbcdfa623"
+    },
+    {
+      "case": "03_fragmented_memory",
+      "config": "config.json",
+      "arrived": 4,
+      "completed": 4,
+      "dropped": 0,
+      "last_event_tick": 5,
+      "event_count": 12,
+      "checked_exact_lifecycles": 2,
+      "lifecycle_sha256": "3dcc4394ba0869236c47070235ff8b0b9d963ea59271a0e0a28a96c6ee4b0a29"
+    },
+    {
+      "case": "04_rate_window_reset",
+      "config": "config.json",
+      "arrived": 12,
+      "completed": 12,
+      "dropped": 0,
+      "last_event_tick": 4,
+      "event_count": 36,
+      "checked_exact_lifecycles": 12,
+      "lifecycle_sha256": "0a7025f0ab60abe8c8be1d23ee1eb3c4338366e3374a792c8f7545cfcb841851"
+    },
+    {
+      "case": "05_equal_cpu_sharing",
+      "config": "config.json",
+      "arrived": 3,
+      "completed": 3,
+      "dropped": 0,
+      "last_event_tick": 3,
+      "event_count": 9,
+      "checked_exact_lifecycles": 3,
+      "lifecycle_sha256": "b6b64db12ea63f5c87aca281e335a82d1fb1f54bc73dd6dd169137f4e65b0f83"
+    },
+    {
+      "case": "06_midflight_arrival",
+      "config": "config.json",
+      "arrived": 2,
+      "completed": 2,
+      "dropped": 0,
+      "last_event_tick": 3,
+      "event_count": 6,
+      "checked_exact_lifecycles": 2,
+      "lifecycle_sha256": "6d03a57cd96e6f3fea9296235316884d482c8b300c5e616b1662456362fdf404"
+    },
+    {
+      "case": "07_lexical_ties",
+      "config": "config.json",
+      "arrived": 12,
+      "completed": 12,
+      "dropped": 0,
+      "last_event_tick": 4,
+      "event_count": 36,
+      "checked_exact_lifecycles": 0,
+      "lifecycle_sha256": "af5383625a4efe88aab31c3214bc9b45516a0224d708d961a4c16285fd1490b9"
+    },
+    {
+      "case": "08_shuffled_input",
+      "config": "config.json",
+      "arrived": 12,
+      "completed": 12,
+      "dropped": 0,
+      "last_event_tick": 4,
+      "event_count": 36,
+      "checked_exact_lifecycles": 0,
+      "lifecycle_sha256": "af5383625a4efe88aab31c3214bc9b45516a0224d708d961a4c16285fd1490b9"
+    },
+    {
+      "case": "09_heterogeneous_eligibility",
+      "config": "config.json",
+      "arrived": 36,
+      "completed": 36,
+      "dropped": 0,
+      "last_event_tick": 111,
+      "event_count": 108,
+      "checked_exact_lifecycles": 0,
+      "lifecycle_sha256": "f8bf88179b53c6bd98df452b72c4c23124778fbdb9561df75b7d9fb7c0fd3f37"
+    },
+    {
+      "case": "10_memory_boundary",
+      "config": "config.json",
+      "arrived": 7,
+      "completed": 5,
+      "dropped": 2,
+      "last_event_tick": 19,
+      "event_count": 19,
+      "checked_exact_lifecycles": 2,
+      "lifecycle_sha256": "57dd8fe5184ae46f74b1043fa297d82dfff67fbc38f046adaf68c6af56e7a55a"
+    },
+    {
+      "case": "11_all_unschedulable",
+      "config": "config.json",
+      "arrived": 8,
+      "completed": 0,
+      "dropped": 8,
+      "last_event_tick": 3,
+      "event_count": 16,
+      "checked_exact_lifecycles": 0,
+      "lifecycle_sha256": "53e5ff3b2b5baea65dfda24902f49a0b9b29688f5f0aa206eef03b26739434a0"
+    },
+    {
+      "case": "12_timeout_boundary",
+      "config": "config.json",
+      "arrived": 5,
+      "completed": 3,
+      "dropped": 2,
+      "last_event_tick": 8,
+      "event_count": 13,
+      "checked_exact_lifecycles": 5,
+      "lifecycle_sha256": "42f2059eb9ca4f3235ea2b05f1ed4dcfa1b43f29b7bfc45c4bdae73c72d38570"
+    },
+    {
+      "case": "13_pending_bypass",
+      "config": "config.json",
+      "arrived": 4,
+      "completed": 4,
+      "dropped": 0,
+      "last_event_tick": 6,
+      "event_count": 12,
+      "checked_exact_lifecycles": 3,
+      "lifecycle_sha256": "fa3f50b16a4c3418229d221db5bd902b9fc2ade59bfb0ba20c8bfaaf2ae9ae4c"
+    },
+    {
+      "case": "14_tick_rounding",
+      "config": "config.json",
+      "arrived": 6,
+      "completed": 6,
+      "dropped": 0,
+      "last_event_tick": 53,
+      "event_count": 18,
+      "checked_exact_lifecycles": 6,
+      "lifecycle_sha256": "d8b907c02047e178303775fbe4e41ab13e802e1897f305439b5fd971566e6220"
+    },
+    {
+      "case": "15_finish_arrive_collision",
+      "config": "config.json",
+      "arrived": 6,
+      "completed": 6,
+      "dropped": 0,
+      "last_event_tick": 3,
+      "event_count": 18,
+      "checked_exact_lifecycles": 6,
+      "lifecycle_sha256": "721cd6e885880f24480f1e192610cb31bf7e9ab15e643831ac27cd599412f4ff"
+    },
+    {
+      "case": "16_execution_modes",
+      "config": "config.json",
+      "arrived": 4,
+      "completed": 4,
+      "dropped": 0,
+      "last_event_tick": 4,
+      "event_count": 12,
+      "checked_exact_lifecycles": 4,
+      "lifecycle_sha256": "3891bc2b80754e9057d71affda73358cd4838b625dee21471a8f233ed44480bb"
+    },
+    {
+      "case": "16_execution_modes",
+      "config": "config.sequential.json",
+      "arrived": 4,
+      "completed": 4,
+      "dropped": 0,
+      "last_event_tick": 4,
+      "event_count": 12,
+      "checked_exact_lifecycles": 4,
+      "lifecycle_sha256": "2f5d2f3932bd8230a0c760896136137394e284b932208855c0d0aed63e9bba60"
+    },
+    {
+      "case": "17_ramp_up_down",
+      "config": "config.json",
+      "arrived": 1200,
+      "completed": 1200,
+      "dropped": 0,
+      "last_event_tick": 150,
+      "event_count": 3600,
+      "checked_exact_lifecycles": 0,
+      "lifecycle_sha256": "fac942361d864c0232524d90c71e197a50ab8371cc3817089f445f36baf518a6"
+    },
+    {
+      "case": "18_periodic_spikes",
+      "config": "config.json",
+      "arrived": 660,
+      "completed": 660,
+      "dropped": 0,
+      "last_event_tick": 180,
+      "event_count": 1980,
+      "checked_exact_lifecycles": 0,
+      "lifecycle_sha256": "800e4fe8dd93bfe3efcc7e9a2b4b1428ba7529af569e97887051f08bd02a1663"
+    },
+    {
+      "case": "19_long_tail_mix",
+      "config": "config.json",
+      "arrived": 1500,
+      "completed": 1500,
+      "dropped": 0,
+      "last_event_tick": 281,
+      "event_count": 4500,
+      "checked_exact_lifecycles": 0,
+      "lifecycle_sha256": "5de9d03403a789a40177d56d209487e8d3d5bf4e1dd6c12bab25960bfbc987c2"
+    },
+    {
+      "case": "20_sustained_12k",
+      "config": "config.json",
+      "arrived": 12000,
+      "completed": 12000,
+      "dropped": 0,
+      "last_event_tick": 1201,
+      "event_count": 36000,
+      "checked_exact_lifecycles": 0,
+      "lifecycle_sha256": "5a562e35d07c8a7bc018c62d12cf902d8918898358a15d3d65ae2388af321fee"
+    },
+    {
+      "case": "21_stress_50k",
+      "config": "config.json",
+      "arrived": 50000,
+      "completed": 50000,
+      "dropped": 0,
+      "last_event_tick": 324,
+      "event_count": 150000,
+      "checked_exact_lifecycles": 0,
+      "lifecycle_sha256": "36dbef046e70617128d439af20fe180e48e113d11c1fac5344d42c3271b11abb"
+    },
+    {
+      "case": "22_overload_recovery",
+      "config": "config.json",
+      "arrived": 1700,
+      "completed": 1700,
+      "dropped": 0,
+      "last_event_tick": 178,
+      "event_count": 5100,
+      "checked_exact_lifecycles": 0,
+      "lifecycle_sha256": "78b54b82a6b0eb9c8aadc9a421ae38e82ab46d987ac6a83bb5bfa8a6503e0f83"
+    },
+    {
+      "case": "23_sparse_checkpoint_ticks",
+      "config": "config.json",
+      "arrived": 10,
+      "completed": 10,
+      "dropped": 0,
+      "last_event_tick": 10001,
+      "event_count": 30,
+      "checked_exact_lifecycles": 10,
+      "lifecycle_sha256": "bc663a92cb36a35f151ca16fa3c50bb8577b8556dae83ac5b48d30d374a9f07a"
+    },
+    {
+      "case": "24_quoted_unicode_ids",
+      "config": "config.json",
+      "arrived": 6,
+      "completed": 6,
+      "dropped": 0,
+      "last_event_tick": 11,
+      "event_count": 18,
+      "checked_exact_lifecycles": 6,
+      "lifecycle_sha256": "1d7e25766bab2913e6bbec0fb911580fe36057990f2640a540346428aadd9ef4"
+    }
+  ],
+  "limitations": [
+    "Negative cases checked by this suite's strict contract, not the live API.",
+    "No Docker, database, Redis, HTTP, checkpoint persistence or crash/resume verification.",
+    "Concurrent CPU timing is checked at manual checkpoints and a lower bound; not a complete independent CPU replay."
+  ],
+  "determinism_checks": [
+    "input_and_server_permutation",
+    "identical_repeat"
+  ],
+  "engine_scope": "Original constructor and _process_tick compiled from AST; local in-memory event sink. run() not called.",
+  "engine_source_sha256": {
+    "models.py": "1d3f2032553a7b0b0e4c0b7b55be36f1da7021b8af38ce9e553fdc75f1b37c21",
+    "strategies.py": "b9856bf4338a6ace7b7eecad7cff54c868e841bbdca486b6667ec1b45911da18",
+    "simulator.py": "91525d6109f14ccfb5b98aec16c1ea80890fdc2e40ba59c6ab9f79228b6e2c8c"
+  },
+  "reproducibility": {
+    "regenerated_files_with_matching_sha256": 155,
+    "manifest_identical": true,
+    "seed": 20261105
+  },
+  "readme_catalog_checked": true,
+  "new_request_csvs_distinct_from_original_files": true,
+  "english_update_validation": {
+    "all_package_files_reviewed": 161,
+    "documentation_and_descriptions": "English",
+    "non_ascii_characters_remaining": [
+      "en dash",
+      "snowman symbol",
+      "star symbol",
+      "Greek alpha symbol"
+    ],
+    "scenario_24_rerun": true,
+    "other_engine_results": "Preserved from the prior run; input, configuration, and engine hashes are unchanged.",
+    "fixture_validation": "passed",
+    "reproducibility": "passed"
+  }
+}

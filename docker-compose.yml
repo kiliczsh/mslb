@@ -1,0 +1,83 @@
+name: mslb
+
+x-tool: &tool
+  profiles: [tools]
+  read_only: true
+  tmpfs: [/tmp:size=128m]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 128
+  cpus: 1
+  mem_limit: 1024m
+  memswap_limit: 1024m
+
+services:
+  postgres:
+    image: postgres:17-alpine@sha256:562a6e0a66b5136bc28bef5944bbc2ddddf8ea0058d4016b96cee63f2edaf143
+    environment:
+      POSTGRES_USER: mslb
+      POSTGRES_PASSWORD: local-demo-only
+      POSTGRES_DB: mslb
+    command: [postgres, -c, shared_buffers=128MB, -c, work_mem=2MB, -c, max_connections=20, -c, max_parallel_workers_per_gather=0]
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    shm_size: 128m
+    mem_limit: 768m
+    memswap_limit: 768m
+    cpus: 1
+    pids_limit: 128
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U mslb -d mslb]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks: [internal]
+  redis:
+    image: redis:7.4.11-alpine@sha256:d9436322172a5b482c187bf1f363d3c4fea086fcca6b9c8a94de8f0f39ed3193
+    command: [redis-server, --maxmemory, 128mb, --maxmemory-policy, allkeys-lru, --save, "", --appendonly, "no"]
+    read_only: true
+    tmpfs: [/data:size=16m]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    user: redis
+    mem_limit: 192m
+    memswap_limit: 192m
+    cpus: 0.5
+    pids_limit: 64
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks: [internal]
+  python-checks:
+    <<: *tool
+    image: mslb-python-tools:local
+    build:
+      context: .
+      dockerfile: infra/tooling/python.Dockerfile
+    network_mode: none
+  frontend-checks:
+    <<: *tool
+    build:
+      context: .
+      dockerfile: infra/tooling/frontend.Dockerfile
+    network_mode: none
+    tmpfs: [/tmp:size=128m, /home/node/.cache:size=32m, "/app/.test-output:size=64m,uid=1000,gid=1000"]
+  dependencies-check:
+    <<: *tool
+    image: mslb-python-tools:local
+    command: [python, scripts/check_dependencies.py]
+    environment:
+      DATABASE_URL: postgresql://mslb:local-demo-only@postgres/mslb
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    networks: [internal]
+
+networks:
+  internal:
+    internal: true
+
+volumes:
+  postgres-data:

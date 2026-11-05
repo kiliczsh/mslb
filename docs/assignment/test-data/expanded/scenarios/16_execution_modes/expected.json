@@ -1,0 +1,31 @@
+{
+  "basis": "documented_contract_and_manual_checkpoints_not_a_production_run",
+  "terminal_counts": {
+    "arrived": 4,
+    "completed": 4,
+    "dropped": 0
+  },
+  "exact_lifecycle": {
+    "mode-0": {
+      "start": 0,
+      "finish": 4
+    },
+    "mode-1": {
+      "start": 0,
+      "finish": 4
+    },
+    "mode-2": {
+      "start": 0,
+      "finish": 4
+    },
+    "mode-3": {
+      "start": 0,
+      "finish": 4
+    }
+  },
+  "checks": [
+    "Concurrent: four starts at t=0 and four completions at t=4.",
+    "Sequential: starts at 0,1,2,3; completions at 1,2,3,4."
+  ],
+  "relation": null
+}

@@ -1,0 +1,17 @@
+{
+  "tick_seconds": 1,
+  "servers": [
+    {
+      "id": "small-a",
+      "cpu_units_per_tick": 8,
+      "mem_mb": 512,
+      "rate_limit_per_sec": 2
+    },
+    {
+      "id": "small-b",
+      "cpu_units_per_tick": 16,
+      "mem_mb": 1024,
+      "rate_limit_per_sec": 4
+    }
+  ]
+}

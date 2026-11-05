@@ -1,0 +1,11 @@
+{
+  "tick_seconds": 1,
+  "servers": [
+    {
+      "id": "bound-a",
+      "cpu_units_per_tick": 16,
+      "mem_mb": 1024,
+      "rate_limit_per_sec": 4
+    }
+  ]
+}

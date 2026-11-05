@@ -1,0 +1,63 @@
+{
+  "basis": "documented_contract_and_manual_checkpoints_not_a_production_run",
+  "terminal_counts": {
+    "arrived": 12,
+    "completed": 12,
+    "dropped": 0
+  },
+  "exact_lifecycle": {
+    "rate-00": {
+      "start": 0,
+      "finish": 1
+    },
+    "rate-01": {
+      "start": 0,
+      "finish": 1
+    },
+    "rate-02": {
+      "start": 0,
+      "finish": 1
+    },
+    "rate-03": {
+      "start": 1,
+      "finish": 2
+    },
+    "rate-04": {
+      "start": 1,
+      "finish": 2
+    },
+    "rate-05": {
+      "start": 1,
+      "finish": 2
+    },
+    "rate-06": {
+      "start": 2,
+      "finish": 3
+    },
+    "rate-07": {
+      "start": 2,
+      "finish": 3
+    },
+    "rate-08": {
+      "start": 2,
+      "finish": 3
+    },
+    "rate-09": {
+      "start": 3,
+      "finish": 4
+    },
+    "rate-10": {
+      "start": 3,
+      "finish": 4
+    },
+    "rate-11": {
+      "start": 3,
+      "finish": 4
+    }
+  },
+  "checks": [
+    "There must be exactly three REQUEST_STARTED events at each of t=0,1,2,3.",
+    "All requests must finish by t=4."
+  ],
+  "relation": null
+}

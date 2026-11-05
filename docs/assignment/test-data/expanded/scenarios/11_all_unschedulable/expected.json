@@ -1,0 +1,14 @@
+{
+  "basis": "documented_contract_and_manual_checkpoints_not_a_production_run",
+  "terminal_counts": {
+    "arrived": 8,
+    "completed": 0,
+    "dropped": 8
+  },
+  "exact_lifecycle": {},
+  "checks": [
+    "Expect eight arrivals, eight drops, zero starts, and zero completions.",
+    "The final terminal event must occur at t=3."
+  ],
+  "relation": null
+}

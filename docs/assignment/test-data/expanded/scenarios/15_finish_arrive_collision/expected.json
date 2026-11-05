@@ -1,0 +1,40 @@
+{
+  "basis": "documented_contract_and_manual_checkpoints_not_a_production_run",
+  "terminal_counts": {
+    "arrived": 6,
+    "completed": 6,
+    "dropped": 0
+  },
+  "exact_lifecycle": {
+    "a-first": {
+      "start": 0,
+      "finish": 2
+    },
+    "b-first": {
+      "start": 0,
+      "finish": 2
+    },
+    "c-first": {
+      "start": 0,
+      "finish": 2
+    },
+    "d-next": {
+      "start": 2,
+      "finish": 3
+    },
+    "e-next": {
+      "start": 2,
+      "finish": 3
+    },
+    "f-next": {
+      "start": 2,
+      "finish": 3
+    }
+  },
+  "checks": [
+    "The first three completions must occur at t=2.",
+    "The second wave must start at t=2 and finish at t=3.",
+    "At t=2, completion events must be written before arrival events."
+  ],
+  "relation": null
+}

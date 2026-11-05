@@ -1,0 +1,11 @@
+{
+  "tick_seconds": 2,
+  "servers": [
+    {
+      "id": "invalid-a",
+      "cpu_units_per_tick": 8,
+      "mem_mb": 512,
+      "rate_limit_per_sec": 4
+    }
+  ]
+}

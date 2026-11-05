@@ -1,0 +1,6 @@
+* text=auto eol=lf
+docs/assignment/test-data/** -text
+docs/assignment/** -text
+*.pdf binary
+*.png binary
+data/test-artifacts/** -text

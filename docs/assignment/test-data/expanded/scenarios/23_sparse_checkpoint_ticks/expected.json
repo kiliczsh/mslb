@@ -1,0 +1,55 @@
+{
+  "basis": "documented_contract_and_manual_checkpoints_not_a_production_run",
+  "terminal_counts": {
+    "arrived": 10,
+    "completed": 10,
+    "dropped": 0
+  },
+  "exact_lifecycle": {
+    "sparse-00": {
+      "start": 0,
+      "finish": 1
+    },
+    "sparse-01": {
+      "start": 1,
+      "finish": 2
+    },
+    "sparse-02": {
+      "start": 49,
+      "finish": 50
+    },
+    "sparse-03": {
+      "start": 50,
+      "finish": 51
+    },
+    "sparse-04": {
+      "start": 51,
+      "finish": 52
+    },
+    "sparse-05": {
+      "start": 99,
+      "finish": 100
+    },
+    "sparse-06": {
+      "start": 100,
+      "finish": 101
+    },
+    "sparse-07": {
+      "start": 101,
+      "finish": 102
+    },
+    "sparse-08": {
+      "start": 1000,
+      "finish": 1001
+    },
+    "sparse-09": {
+      "start": 10000,
+      "finish": 10001
+    }
+  },
+  "checks": [
+    "The final completion must occur at t=10001.",
+    "This dataset covers checkpoint boundaries; crash/resume behavior requires a separate integration test."
+  ],
+  "relation": null
+}

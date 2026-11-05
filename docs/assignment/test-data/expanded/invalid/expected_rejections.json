@@ -1,0 +1,229 @@
+{
+  "policy": "suite_strict_integer_contract_not_a_claim_about_current_api_behavior",
+  "cases": [
+    {
+      "id": "01_missing_memory_column",
+      "kind": "csv",
+      "expected_error": "columns",
+      "reason": "The required mem_mb column is missing.",
+      "path": "invalid/csv/01_missing_memory_column.csv"
+    },
+    {
+      "id": "02_wrong_delimiter",
+      "kind": "csv",
+      "expected_error": "columns",
+      "reason": "The delimiter must be a comma.",
+      "path": "invalid/csv/02_wrong_delimiter.csv"
+    },
+    {
+      "id": "03_header_only",
+      "kind": "csv",
+      "expected_error": "empty",
+      "reason": "There are no request rows after the header.",
+      "path": "invalid/csv/03_header_only.csv"
+    },
+    {
+      "id": "04_empty_file",
+      "kind": "csv",
+      "expected_error": "columns",
+      "reason": "Both the header and data rows are missing.",
+      "path": "invalid/csv/04_empty_file.csv"
+    },
+    {
+      "id": "05_non_numeric_tick",
+      "kind": "csv",
+      "expected_error": "integer",
+      "reason": "The arrival tick must be an integer.",
+      "path": "invalid/csv/05_non_numeric_tick.csv"
+    },
+    {
+      "id": "06_fractional_tick",
+      "kind": "csv",
+      "expected_error": "integer",
+      "reason": "Fractional ticks are not supported.",
+      "path": "invalid/csv/06_fractional_tick.csv"
+    },
+    {
+      "id": "07_negative_tick",
+      "kind": "csv",
+      "expected_error": "arrival",
+      "reason": "The arrival tick must not be negative.",
+      "path": "invalid/csv/07_negative_tick.csv"
+    },
+    {
+      "id": "08_negative_work",
+      "kind": "csv",
+      "expected_error": "work",
+      "reason": "Work units must be positive.",
+      "path": "invalid/csv/08_negative_work.csv"
+    },
+    {
+      "id": "09_zero_work",
+      "kind": "csv",
+      "expected_error": "work",
+      "reason": "This suite's contract rejects zero work units.",
+      "path": "invalid/csv/09_zero_work.csv"
+    },
+    {
+      "id": "10_negative_memory",
+      "kind": "csv",
+      "expected_error": "memory",
+      "reason": "Memory must not be negative.",
+      "path": "invalid/csv/10_negative_memory.csv"
+    },
+    {
+      "id": "11_zero_memory",
+      "kind": "csv",
+      "expected_error": "memory",
+      "reason": "This suite's contract requires positive memory.",
+      "path": "invalid/csv/11_zero_memory.csv"
+    },
+    {
+      "id": "12_nan_work",
+      "kind": "csv",
+      "expected_error": "integer",
+      "reason": "NaN is not a valid workload.",
+      "path": "invalid/csv/12_nan_work.csv"
+    },
+    {
+      "id": "13_infinite_work",
+      "kind": "csv",
+      "expected_error": "integer",
+      "reason": "An infinite workload cannot complete.",
+      "path": "invalid/csv/13_infinite_work.csv"
+    },
+    {
+      "id": "14_nan_memory",
+      "kind": "csv",
+      "expected_error": "integer",
+      "reason": "NaN is not a valid memory value.",
+      "path": "invalid/csv/14_nan_memory.csv"
+    },
+    {
+      "id": "15_infinite_memory",
+      "kind": "csv",
+      "expected_error": "integer",
+      "reason": "Infinite memory is not a valid value.",
+      "path": "invalid/csv/15_infinite_memory.csv"
+    },
+    {
+      "id": "16_duplicate_id",
+      "kind": "csv",
+      "expected_error": "duplicate_id",
+      "reason": "Request identifiers must be unique throughout the file.",
+      "path": "invalid/csv/16_duplicate_id.csv"
+    },
+    {
+      "id": "17_duplicate_after_trim",
+      "kind": "csv",
+      "expected_error": "duplicate_id",
+      "reason": "Identifiers collide after whitespace is stripped.",
+      "path": "invalid/csv/17_duplicate_after_trim.csv"
+    },
+    {
+      "id": "18_blank_id",
+      "kind": "csv",
+      "expected_error": "id",
+      "reason": "The request identifier must not be empty.",
+      "path": "invalid/csv/18_blank_id.csv"
+    },
+    {
+      "id": "19_whitespace_id",
+      "kind": "csv",
+      "expected_error": "id",
+      "reason": "An identifier containing only whitespace is invalid.",
+      "path": "invalid/csv/19_whitespace_id.csv"
+    },
+    {
+      "id": "20_missing_numeric_value",
+      "kind": "csv",
+      "expected_error": "integer",
+      "reason": "The work_units value is missing.",
+      "path": "invalid/csv/20_missing_numeric_value.csv"
+    },
+    {
+      "id": "21_short_row",
+      "kind": "csv",
+      "expected_error": "row_width",
+      "reason": "The fourth field is missing from the row.",
+      "path": "invalid/csv/21_short_row.csv"
+    },
+    {
+      "id": "22_extra_field",
+      "kind": "csv",
+      "expected_error": "row_width",
+      "reason": "The row contains more fields than the header.",
+      "path": "invalid/csv/22_extra_field.csv"
+    },
+    {
+      "id": "23_duplicate_header",
+      "kind": "csv",
+      "expected_error": "columns",
+      "reason": "A repeated column name makes the input ambiguous.",
+      "path": "invalid/csv/23_duplicate_header.csv"
+    },
+    {
+      "id": "24_fractional_work",
+      "kind": "csv",
+      "expected_error": "integer",
+      "reason": "This suite uses integer work units for compatibility with the original validator.",
+      "path": "invalid/csv/24_fractional_work.csv"
+    },
+    {
+      "id": "25_empty_cluster",
+      "kind": "servers",
+      "expected_error": "empty_servers",
+      "reason": "At least one server is required.",
+      "path": "invalid/servers/25_empty_cluster.json"
+    },
+    {
+      "id": "26_duplicate_server_id",
+      "kind": "servers",
+      "expected_error": "duplicate_server",
+      "reason": "Server identifiers must be unique.",
+      "path": "invalid/servers/26_duplicate_server_id.json"
+    },
+    {
+      "id": "27_zero_cpu",
+      "kind": "servers",
+      "expected_error": "server_value",
+      "reason": "CPU capacity must be positive.",
+      "path": "invalid/servers/27_zero_cpu.json"
+    },
+    {
+      "id": "28_negative_memory",
+      "kind": "servers",
+      "expected_error": "server_value",
+      "reason": "Memory capacity must be positive.",
+      "path": "invalid/servers/28_negative_memory.json"
+    },
+    {
+      "id": "29_zero_rate",
+      "kind": "servers",
+      "expected_error": "server_value",
+      "reason": "The admission limit must be positive.",
+      "path": "invalid/servers/29_zero_rate.json"
+    },
+    {
+      "id": "30_fractional_rate",
+      "kind": "servers",
+      "expected_error": "server_value",
+      "reason": "The admission limit must be an integer.",
+      "path": "invalid/servers/30_fractional_rate.json"
+    },
+    {
+      "id": "31_unsupported_tick",
+      "kind": "servers",
+      "expected_error": "tick_seconds",
+      "reason": "This suite and the original validator use one-second ticks.",
+      "path": "invalid/servers/31_unsupported_tick.json"
+    },
+    {
+      "id": "32_blank_server_id",
+      "kind": "servers",
+      "expected_error": "server_id",
+      "reason": "The server identifier must not be empty.",
+      "path": "invalid/servers/32_blank_server_id.json"
+    }
+  ]
+}

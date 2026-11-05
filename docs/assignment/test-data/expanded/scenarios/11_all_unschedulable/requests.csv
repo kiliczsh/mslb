@@ -1,0 +1,9 @@
+t,request_id,work_units,mem_mb
+0,nofit-0,8,1025
+0,nofit-1,9,1153
+1,nofit-2,10,1281
+1,nofit-3,11,1409
+2,nofit-4,12,1537
+2,nofit-5,13,1665
+3,nofit-6,14,1793
+3,nofit-7,15,1921

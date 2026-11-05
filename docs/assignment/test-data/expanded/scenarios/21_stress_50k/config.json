@@ -1,0 +1,7 @@
+{
+  "scheduling_strategy": "most_available_memory",
+  "execution_mode": "concurrent",
+  "queue_timeout_ticks": 0,
+  "real_time_ticks": false,
+  "autoscale_enabled": false
+}

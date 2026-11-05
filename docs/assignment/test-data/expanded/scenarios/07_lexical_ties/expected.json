@@ -1,0 +1,16 @@
+{
+  "basis": "documented_contract_and_manual_checkpoints_not_a_production_run",
+  "terminal_counts": {
+    "arrived": 12,
+    "completed": 12,
+    "dropped": 0
+  },
+  "exact_lifecycle": {},
+  "checks": [
+    "Use the lexicographic order node-1, node-10, node-2.",
+    "The event trace must match scenario 08."
+  ],
+  "relation": {
+    "same_trace_as": "08_shuffled_input"
+  }
+}

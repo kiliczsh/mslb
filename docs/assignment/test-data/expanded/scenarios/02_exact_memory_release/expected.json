@@ -1,0 +1,31 @@
+{
+  "basis": "documented_contract_and_manual_checkpoints_not_a_production_run",
+  "terminal_counts": {
+    "arrived": 4,
+    "completed": 4,
+    "dropped": 0
+  },
+  "exact_lifecycle": {
+    "a-half": {
+      "start": 0,
+      "finish": 2
+    },
+    "b-half": {
+      "start": 0,
+      "finish": 2
+    },
+    "c-full": {
+      "start": 2,
+      "finish": 3
+    },
+    "d-small": {
+      "start": 3,
+      "finish": 4
+    }
+  },
+  "checks": [
+    "The first two requests finish at t=2.",
+    "c-full can start at t=2; d-small waits until t=3."
+  ],
+  "relation": null
+}
