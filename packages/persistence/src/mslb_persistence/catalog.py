@@ -128,7 +128,9 @@ class Catalog:
         await self.database.transaction(operation)
 
     async def register_dataset(self, data: DatasetRegistration) -> DatasetRecord:
-        if data.latest_arrival < data.earliest_arrival:
+        if data.latest_arrival < data.earliest_arrival or (
+            (data.original_digest is None) != (data.source_size_bytes is None)
+        ):
             raise StoreError("VALIDATION_ERROR", "Invalid dataset arrival range")
 
         async def operation(session: AsyncSession) -> DatasetRecord:
@@ -139,14 +141,21 @@ class Catalog:
                     row.request_count,
                     row.earliest_arrival,
                     row.latest_arrival,
-                    row.size_bytes,
                 ) != (
                     data.request_count,
                     data.earliest_arrival,
                     data.latest_arrival,
-                    data.size_bytes,
                 ):
                     raise StoreError("CONFLICT", "Dataset identity has different metadata")
+                if row.size_bytes != data.size_bytes:
+                    if row.original_digest is None and data.original_digest is not None:
+                        row.size_bytes = data.size_bytes
+                    else:
+                        raise StoreError("CONFLICT", "Dataset identity has different byte metadata")
+                if row.original_digest is None and data.original_digest is not None:
+                    row.original_digest = data.original_digest
+                    row.source_size_bytes = data.source_size_bytes
+                    await session.flush()
                 return DatasetRecord.from_model(row)
             row = Dataset(
                 id=uuid4(), storage_key=f"datasets/{data.digest}.csv", **data.model_dump()
@@ -171,6 +180,38 @@ class Catalog:
             row = await session.get(Run, run_id)
             if row is None:
                 raise StoreError("NOT_FOUND", "Run does not exist")
+            return RunRecord.from_model(row)
+
+        return await self.database.transaction(operation)
+
+    async def find_idempotent(
+        self, key: str | None, body_digest: str, scope: str = "local"
+    ) -> RunRecord | None:
+        if key is None:
+            return None
+        if (
+            not 1 <= len(key.encode()) <= 128
+            or not 1 <= len(scope.encode()) <= 128
+            or not re.fullmatch(r"[0-9a-f]{64}", body_digest)
+        ):
+            raise StoreError("VALIDATION_ERROR", "Invalid idempotency identity")
+        key_hash = hashlib.sha256(key.encode()).hexdigest()
+
+        async def operation(session: AsyncSession) -> RunRecord | None:
+            previous = await session.scalar(
+                select(IdempotencyRecord).where(
+                    IdempotencyRecord.scope == scope,
+                    IdempotencyRecord.key_hash == key_hash,
+                    IdempotencyRecord.expires_at > func.clock_timestamp(),
+                )
+            )
+            if previous is None:
+                return None
+            if previous.body_digest != body_digest:
+                raise StoreError("CONFLICT", "Idempotency key belongs to a different request")
+            row = await session.get(Run, previous.run_id)
+            if row is None:
+                raise StoreError("NOT_READY", "Idempotency record references missing run")
             return RunRecord.from_model(row)
 
         return await self.database.transaction(operation)

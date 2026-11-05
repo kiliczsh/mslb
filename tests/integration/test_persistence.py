@@ -1,6 +1,8 @@
 """Real PostgreSQL transactions in disposable schemas owned only by this suite."""
 
 import asyncio
+import hashlib
+import io
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -13,7 +15,10 @@ import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
+from mslb_application.artifacts import execute_bundle
+from mslb_application.files import FileReference, ManagedFiles, StorageLimits
 from mslb_application.snapshots import make_snapshot
+from mslb_application.submissions import Submissions
 from mslb_contracts.catalog import DatasetRegistration
 from mslb_contracts.inputs import InputError, RequestInput, ServerInput, read_requests, read_servers
 from mslb_contracts.runs import RunSettings, RunSnapshot
@@ -24,6 +29,7 @@ from mslb_persistence.migrations import configuration, migrate
 from mslb_persistence.models import (
     Attempt,
     Base,
+    Dataset,
     IdempotencyRecord,
     Job,
     Outbox,
@@ -121,7 +127,7 @@ def test_migrations_are_repeatable_match_models_and_downgrade_cleanly() -> None:
                 assert consistent
                 assert (
                     await connection.scalar(text("SELECT version_num FROM alembic_version"))
-                    == "durable_jobs"
+                    == "dataset_sources"
                 )
 
                 def downgrade(sync: Connection) -> None:
@@ -444,5 +450,112 @@ def test_snapshot_integrity_and_dataset_metadata_fail_before_job_creation() -> N
                 assert await session.scalar(select(func.count()).select_from(Run)) == 0
             with pytest.raises(StoreError):
                 await prepared.catalog.get_run(uuid4())
+
+    asyncio.run(scenario())
+
+
+def test_submission_persists_verified_inputs_before_job_and_frozen_run_is_executable(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        async with scratch() as database:
+            prepared = await prepare(database)
+            files = await asyncio.to_thread(ManagedFiles, tmp_path, StorageLimits(min_free_bytes=0))
+            service = Submissions(prepared.catalog, files)
+            source = b"request_id,t,work_units,mem_mb,extra\r\nr2,1,3,2,x\r\nr1,0,4,1,y\r\n"
+            dataset = await service.upload(io.BytesIO(source), "../../source.csv")
+            assert dataset.original_digest == hashlib.sha256(source).hexdigest()
+            assert dataset.source_size_bytes == len(source)
+            settings = RunSettings(strategy="round_robin")
+            run = await service.submit(dataset.id, settings, "durable-submission")
+            saved = await asyncio.to_thread(
+                files.load_snapshot, run.snapshot_key, run.snapshot_digest
+            )
+            assert (await prepared.jobs.get(run.id)).status == "queued"
+            for server in await prepared.catalog.list_servers():
+                await prepared.catalog.delete_server(server.id, server.version)
+            assert await service.submit(dataset.id, settings, "durable-submission") == run
+            with pytest.raises(StoreError, match="different request"):
+                await service.submit(dataset.id, RunSettings(), "durable-submission")
+            manifest = await asyncio.to_thread(execute_bundle, saved, tmp_path / "verified-result")
+            assert manifest.event_count == 6 and manifest.independent_replay == "passed"
+            original = FileReference(
+                f"uploads/{dataset.original_digest}.csv", str(dataset.original_digest), len(source)
+            )
+
+            def read_original() -> bytes:
+                with files.verified_stream(original) as stream:
+                    return stream.read()
+
+            assert await asyncio.to_thread(read_original) == source
+
+    asyncio.run(scenario())
+
+
+def test_concurrent_idempotent_submissions_share_one_durable_job(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with scratch() as database:
+            prepared = await prepare(database)
+            files = await asyncio.to_thread(ManagedFiles, tmp_path, StorageLimits(min_free_bytes=0))
+            service = Submissions(prepared.catalog, files)
+            dataset = await service.upload(
+                io.BytesIO(b"t,request_id,work_units,mem_mb\n0,r,1,1\n"), "request.csv"
+            )
+            runs = await asyncio.gather(
+                service.submit(dataset.id, RunSettings(), "same"),
+                service.submit(dataset.id, RunSettings(), "same"),
+            )
+            assert runs[0] == runs[1]
+            async with database.sessions() as session:
+                assert await session.scalar(select(func.count()).select_from(Job)) == 1
+                assert await session.scalar(select(func.count()).select_from(Outbox)) == 1
+
+    asyncio.run(scenario())
+
+
+def test_snapshot_storage_failure_does_not_register_a_job_or_replace_dataset(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        async with scratch() as database:
+            prepared = await prepare(database)
+            files = await asyncio.to_thread(ManagedFiles, tmp_path, StorageLimits(min_free_bytes=0))
+            service = Submissions(prepared.catalog, files)
+            dataset = await service.upload(
+                io.BytesIO(b"t,request_id,work_units,mem_mb\n0,r,1,1\n"), "request.csv"
+            )
+            await asyncio.to_thread((tmp_path / "snapshots").chmod, 0o500)
+            try:
+                with pytest.raises(PermissionError):
+                    await service.submit(dataset.id, RunSettings())
+            finally:
+                await asyncio.to_thread((tmp_path / "snapshots").chmod, 0o700)
+            async with database.sessions() as session:
+                assert await session.scalar(select(func.count()).select_from(Job)) == 0
+                assert await session.scalar(select(func.count()).select_from(Run)) == 0
+            assert await prepared.catalog.get_dataset(dataset.id) == dataset
+
+    asyncio.run(scenario())
+
+
+def test_reimport_supplies_real_source_provenance_for_legacy_metadata(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with scratch() as database:
+            prepared = await prepare(database)
+            assert prepared.dataset.original_digest is None
+            files = await asyncio.to_thread(ManagedFiles, tmp_path, StorageLimits(min_free_bytes=0))
+            service = Submissions(prepared.catalog, files)
+            source = await asyncio.to_thread(Path("/fixtures/core/requests.csv").read_bytes)
+            current = await service.upload(io.BytesIO(source), "reimported.csv")
+            assert current.id == prepared.dataset.id
+            assert current.original_digest == hashlib.sha256(source).hexdigest()
+            assert current.source_size_bytes == len(source)
+            async with database.engine.begin() as connection:
+                with pytest.raises(IntegrityError):
+                    await connection.execute(
+                        update(Dataset)
+                        .where(Dataset.id == current.id)
+                        .values(source_size_bytes=None)
+                    )
 
     asyncio.run(scenario())

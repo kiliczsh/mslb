@@ -2,11 +2,12 @@
 name = "mslb-application"
 version = "0.1.0"
 requires-python = ">=3.13,<3.14"
-dependencies = ["mslb-contracts", "mslb-engine"]
+dependencies = ["mslb-contracts", "mslb-engine", "mslb-persistence"]
 
 [tool.uv.sources]
 mslb-contracts = { workspace = true }
 mslb-engine = { workspace = true }
+mslb-persistence = { workspace = true }
 
 [build-system]
 requires = ["hatchling==1.33.0"]

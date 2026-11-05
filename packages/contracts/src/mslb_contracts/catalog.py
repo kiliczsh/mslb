@@ -20,3 +20,5 @@ class DatasetRegistration(BaseModel):
     earliest_arrival: Annotated[int, Field(ge=0, le=999_999)]
     latest_arrival: Annotated[int, Field(ge=0, le=999_999)]
     size_bytes: Annotated[int, Field(ge=1, le=10 * 1024 * 1024)]
+    original_digest: Digest | None = None
+    source_size_bytes: Annotated[int, Field(ge=1, le=10 * 1024 * 1024)] | None = None

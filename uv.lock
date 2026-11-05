@@ -94,12 +94,14 @@ source = { editable = "packages/application" }
 dependencies = [
     { name = "mslb-contracts" },
     { name = "mslb-engine" },
+    { name = "mslb-persistence" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "mslb-contracts", editable = "packages/contracts" },
     { name = "mslb-engine", editable = "packages/engine" },
+    { name = "mslb-persistence", editable = "packages/persistence" },
 ]
 
 [[package]]

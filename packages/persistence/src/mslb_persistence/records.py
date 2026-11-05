@@ -41,6 +41,8 @@ class DatasetRecord:
     latest_arrival: int
     size_bytes: int
     created_at: datetime
+    original_digest: str | None
+    source_size_bytes: int | None
 
     @classmethod
     def from_model(cls, row: Dataset) -> Self:
@@ -54,6 +56,8 @@ class DatasetRecord:
             row.latest_arrival,
             row.size_bytes,
             row.created_at,
+            row.original_digest,
+            row.source_size_bytes,
         )
 
 

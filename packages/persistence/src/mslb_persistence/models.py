@@ -84,6 +84,12 @@ class Dataset(Base):
             "AND latest_arrival < 1000000",
             name="arrival_range",
         ),
+        CheckConstraint(
+            "(original_digest IS NULL AND source_size_bytes IS NULL) OR "
+            "(original_digest IS NOT NULL AND source_size_bytes IS NOT NULL "
+            "AND source_size_bytes BETWEEN 1 AND 10485760)",
+            name="source_provenance",
+        ),
     )
     id: Mapped[UUID] = MappedColumn[UUID](primary_key=True)
     digest: Mapped[str] = MappedColumn[str](String(64), unique=True)
@@ -93,6 +99,8 @@ class Dataset(Base):
     earliest_arrival: Mapped[int] = MappedColumn[int](Integer)
     latest_arrival: Mapped[int] = MappedColumn[int](Integer)
     size_bytes: Mapped[int] = MappedColumn[int](Integer)
+    original_digest: Mapped[str | None] = MappedColumn[str | None](String(64))
+    source_size_bytes: Mapped[int | None] = MappedColumn[int | None](Integer)
     created_at: Mapped[datetime] = MappedColumn[datetime](
         DateTime(timezone=True), server_default=func.clock_timestamp()
     )
