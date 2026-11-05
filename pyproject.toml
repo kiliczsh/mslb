@@ -2,16 +2,17 @@
 name = "mslb-workspace"
 version = "0.1.0"
 requires-python = ">=3.13,<3.14"
-dependencies = ["mslb-contracts"]
+dependencies = ["mslb-contracts", "mslb-engine"]
 
 [tool.uv.sources]
 mslb-contracts = { workspace = true }
+mslb-engine = { workspace = true }
 
 [tool.uv]
 package = false
 
 [tool.uv.workspace]
-members = ["packages/contracts"]
+members = ["packages/contracts", "packages/engine"]
 
 [dependency-groups]
 dev = ["ruff", "ty", "pytest", "asyncpg", "redis"]
@@ -36,4 +37,6 @@ all = "error"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 addopts = "-ra -p no:cacheprovider"
+filterwarnings = ["error"]
