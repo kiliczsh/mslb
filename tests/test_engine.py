@@ -1,3 +1,4 @@
+import io
 import json
 import os
 import subprocess
@@ -7,6 +8,7 @@ from pathlib import Path
 import pytest
 from mslb_contracts.inputs import read_requests, read_servers
 from mslb_engine.models import Event, Request, RunConfig, Server, SimulationError, Strategy
+from mslb_engine.replay import validate_trace
 from mslb_engine.simulator import Simulation
 
 from scripts.generate_example import generate
@@ -179,7 +181,14 @@ def test_supported_expanded_golden_lifecycles() -> None:
             ),
         )
         events = [e for frame in simulation.iter_ticks() for e in frame.events]
+        replay = validate_trace(
+            io.BytesIO("".join(event.canonical_line() for event in events).encode()),
+            servers,
+            requests,
+            simulation.config,
+        )
         counts = expected["terminal_counts"]
+        assert replay.finished == counts["completed"] and replay.dropped == counts["dropped"]
         assert sum(e.event == "REQUEST_ARRIVED" for e in events) == counts["arrived"], folder.name
         assert len(finish_ticks(events)) == counts["completed"], folder.name
         assert sum(e.event == "REQUEST_DROPPED" for e in events) == counts["dropped"], folder.name
@@ -233,7 +242,7 @@ def test_failed_run_does_not_replace_previous_output(tmp_path: Path) -> None:
 
 def test_cross_process_hash_seeds_produce_identical_bytes(tmp_path: Path) -> None:
     outputs = []
-    for seed in ("1", "7", "123"):
+    for seed in map(str, range(100)):
         output = tmp_path / f"run-{seed}.jsonl"
         subprocess.run(  # noqa: S603 -- fixed local CLI and bounded test-owned paths
             [
@@ -251,4 +260,4 @@ def test_cross_process_hash_seeds_produce_identical_bytes(tmp_path: Path) -> Non
             capture_output=True,
         )
         outputs.append(output.read_bytes())
-    assert outputs[0] == outputs[1] == outputs[2]
+    assert all(output == outputs[0] for output in outputs)

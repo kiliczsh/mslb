@@ -7,6 +7,7 @@ from pathlib import Path
 
 from mslb_contracts.inputs import read_requests, read_servers
 from mslb_engine.models import Mode, Request, RunConfig, Server, Strategy
+from mslb_engine.replay import validate_trace
 from mslb_engine.simulator import Simulation
 
 
@@ -38,6 +39,8 @@ def generate(servers_path: Path, requests_path: Path, output: Path, config: RunC
                     stream.write(event.canonical_line())
             stream.flush()
             os.fsync(stream.fileno())
+        with temporary.open("rb") as validation_source:
+            validate_trace(validation_source, servers, requests, config)
         os.replace(temporary, output)
     finally:
         temporary.unlink(missing_ok=True)
