@@ -3,37 +3,50 @@
 import asyncio
 import hashlib
 import io
+import json
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from datetime import timedelta
 from pathlib import Path
+from typing import BinaryIO
 from uuid import uuid4
 
 import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
-from mslb_application.artifacts import execute_bundle
+from mslb_application.artifacts import execute_bundle, timeline_record, verify_bundle
+from mslb_application.checkpoints import PREFIX_NAMES, capture_terminal_seal, write_checkpoint
 from mslb_application.files import FileReference, ManagedFiles, StorageLimits
-from mslb_application.snapshots import make_snapshot
+from mslb_application.snapshots import canonical_bytes, domain_config, domain_inputs, make_snapshot
 from mslb_application.submissions import Submissions
 from mslb_contracts.catalog import DatasetRegistration
+from mslb_contracts.checkpoints import ArtifactPrefix
+from mslb_contracts.durability import OutputChunk, PersistedEvent, ProgressCommit, StoredFile
 from mslb_contracts.inputs import InputError, RequestInput, ServerInput, read_requests, read_servers
-from mslb_contracts.runs import RunSettings, RunSnapshot
+from mslb_contracts.runs import BundleManifest, RunSettings, RunSnapshot
+from mslb_engine.metrics import MetricAccumulator
+from mslb_engine.simulator import Simulation
 from mslb_persistence.catalog import Catalog
 from mslb_persistence.database import Database, StoreError
+from mslb_persistence.durability import Durability
 from mslb_persistence.jobs import Jobs
 from mslb_persistence.migrations import configuration, migrate
 from mslb_persistence.models import (
     Attempt,
     Base,
+    CommittedChunk,
     Dataset,
     IdempotencyRecord,
+    IndexedEvent,
     Job,
     Outbox,
+    OutputProgress,
+    PublishedArtifact,
     Run,
+    SavedCheckpoint,
     ServerHistory,
 )
 from mslb_persistence.records import DatasetRecord, Lease, RunRecord
@@ -127,7 +140,7 @@ def test_migrations_are_repeatable_match_models_and_downgrade_cleanly() -> None:
                 assert consistent
                 assert (
                     await connection.scalar(text("SELECT version_num FROM alembic_version"))
-                    == "dataset_sources"
+                    == "fenced_output"
                 )
 
                 def downgrade(sync: Connection) -> None:
@@ -557,5 +570,469 @@ def test_reimport_supplies_real_source_provenance_for_legacy_metadata(tmp_path: 
                         .where(Dataset.id == current.id)
                         .values(source_size_bytes=None)
                     )
+
+    asyncio.run(scenario())
+
+
+def stored(reference: FileReference) -> StoredFile:
+    return StoredFile(key=reference.key, sha256=reference.sha256, size_bytes=reference.size_bytes)
+
+
+class OutputFixture:
+    """Small real engine/files producer for SQL protocol tests, not a worker."""
+
+    def __init__(self, prepared: Prepared, lease: Lease, root: Path) -> None:
+        self.snapshot, self.lease, self.root = prepared.snapshot, lease, root
+        self.files = ManagedFiles(root / "files", StorageLimits(min_free_bytes=0))
+        servers, requests = domain_inputs(prepared.snapshot)
+        self.simulation = Simulation(
+            servers, requests, domain_config(prepared.snapshot.configuration)
+        )
+        self.metrics = MetricAccumulator(requests, servers)
+        self.iterator = self.simulation.iter_ticks()
+        self.streams: dict[str, BinaryIO] = {name: io.BytesIO() for name in PREFIX_NAMES}
+        self.before = {
+            name: ArtifactPrefix(
+                name=name, size_bytes=0, records=0, sha256=hashlib.sha256(b"").hexdigest()
+            )
+            for name in PREFIX_NAMES
+        }
+        self.pending: list[PersistedEvent] = []
+        self.prefix = f"runs/{lease.run_id}/attempt-{lease.fence}"
+
+    def step(self) -> bool:
+        frame = next(self.iterator)
+        self.metrics.observe(frame)
+        self.streams["timeline.jsonl"].write(canonical_bytes(timeline_record(frame)))
+        for event in frame.events:
+            self.streams["run.jsonl"].write(event.canonical_line().encode())
+            sequence = self.before["run.jsonl"].records + len(self.pending) + 1
+            self.pending.append(
+                PersistedEvent.model_validate_json(
+                    canonical_bytes(
+                        dict(
+                            sequence=sequence,
+                            t=event.t,
+                            event=event.event,
+                            request_id=event.request_id,
+                            server_id=event.server_id,
+                            reason=event.reason,
+                        )
+                    )
+                )
+            )
+            if event.reason is not None:
+                self.streams["drop_reasons.jsonl"].write(
+                    canonical_bytes(
+                        dict(t=event.t, request_id=event.request_id, reason=event.reason)
+                    )
+                )
+        if frame.scale_decision is not None:
+            self.streams["autoscaling_decisions.jsonl"].write(
+                frame.scale_decision.canonical_line().encode()
+            )
+        return frame.terminal
+
+    def describe(self) -> ProgressCommit:
+        report = None
+        if self.simulation.terminal:
+            report = stored(
+                self.files.publish(
+                    f"{self.prefix}/metrics.json",
+                    (canonical_bytes(self.metrics.summary()),),
+                    256 * 1024**2,
+                )
+            )
+            seal = capture_terminal_seal(
+                self.snapshot, self.simulation, self.metrics, self.streams, report
+            )
+            reference = stored(
+                self.files.publish(
+                    f"{self.prefix}/terminal.json",
+                    (canonical_bytes(seal.model_dump(mode="json")),),
+                    1024**2,
+                )
+            )
+            prefixes = seal.prefixes
+        else:
+            checkpoint = write_checkpoint(
+                self.root / "scratch", self.snapshot, self.simulation, self.metrics, self.streams
+            )
+            with checkpoint.path.open("rb") as stream:
+                reference = stored(
+                    self.files.publish(
+                        f"{self.prefix}/checkpoint-{checkpoint.next_tick}.json",
+                        (stream.read(),),
+                        32 * 1024**2,
+                    )
+                )
+            prefixes = checkpoint.prefixes
+        chunks: list[OutputChunk] = []
+        for prefix in prefixes:
+            before = self.before[prefix.name]
+            if prefix.records == before.records:
+                continue
+            stream = self.streams[prefix.name]
+            stream.seek(before.size_bytes)
+            suffix = stream.read()
+            stream.seek(0, io.SEEK_END)
+            chunk = stored(
+                self.files.publish(
+                    f"{self.prefix}/chunks/{prefix.name}-{before.records + 1}.jsonl",
+                    (suffix,),
+                    32 * 1024**2,
+                )
+            )
+            ticks: list[int] = []
+            for line in suffix.splitlines():
+                tick = json.loads(line)["t"]
+                assert isinstance(tick, int)
+                ticks.append(tick)
+            chunks.append(
+                OutputChunk(
+                    name=prefix.name,
+                    file=chunk,
+                    first_sequence=before.records + 1,
+                    last_sequence=prefix.records,
+                    byte_offset=before.size_bytes,
+                    first_tick=min(ticks),
+                    last_tick=max(ticks),
+                )
+            )
+        return ProgressCommit(
+            kind="terminal" if self.simulation.terminal else "checkpoint",
+            reference=reference,
+            snapshot_digest=self.snapshot.snapshot_digest,
+            engine_version=self.snapshot.engine_version,
+            next_tick=self.simulation.tick,
+            executed_intervals=self.simulation.executed_intervals,
+            prefixes=prefixes,
+            metrics=report,
+            chunks=tuple(chunks),
+            events=tuple(self.pending),
+        )
+
+    def acknowledge(self, commit: ProgressCommit) -> None:
+        self.before = {prefix.name: prefix for prefix in commit.prefixes}
+        self.pending.clear()
+
+    def candidate(self) -> tuple[StoredFile, BundleManifest]:
+        staging = self.files.path(f"{self.prefix}/candidate")
+        manifest = execute_bundle(self.snapshot, staging)
+        final = self.files.path(f"{self.prefix}/bundles/{manifest.bundle_digest}")
+        final.parent.mkdir(parents=True, exist_ok=True)
+        staging.rename(final)
+        payload = (final / "manifest.json").read_bytes()
+        return StoredFile(
+            key=f"{self.prefix}/bundles/{manifest.bundle_digest}/manifest.json",
+            sha256=hashlib.sha256(payload).hexdigest(),
+            size_bytes=len(payload),
+        ), manifest
+
+
+def test_fenced_progress_keeps_two_checkpoints_and_requires_terminal_seal_for_completion(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        async with scratch() as database:
+            prepared = await prepare(database)
+            run = await prepared.enqueue()
+            lease = await prepared.jobs.claim("producer")
+            assert lease is not None
+            flow = await asyncio.to_thread(OutputFixture, prepared, lease, tmp_path)
+            durable = Durability(database)
+            committed = 0
+            retired: list[StoredFile] = []
+            candidate: StoredFile | None = None
+            manifest: BundleManifest | None = None
+            while not await asyncio.to_thread(flow.step):
+                data = await asyncio.to_thread(flow.describe)
+                retired.extend(await durable.commit(lease, data))
+                flow.acknowledge(data)
+                committed += 1
+                recovery = await durable.recovery(lease)
+                assert (
+                    recovery is not None
+                    and recovery.kind == "checkpoint"
+                    and recovery.next_tick == flow.simulation.tick
+                )
+                with pytest.raises(StoreError):
+                    await durable.published(run.id)
+                if candidate is None:
+                    candidate, manifest = await asyncio.to_thread(flow.candidate)
+                    with pytest.raises(StoreError, match="terminal seal"):
+                        await durable.complete(lease, candidate, manifest)
+            data = await asyncio.to_thread(flow.describe)
+            await durable.commit(lease, data)
+            assert (await prepared.jobs.get(run.id)).status == "running"
+            assert committed > 2 and len(retired) == committed - 2
+            async with database.sessions() as session:
+                assert await session.scalar(select(func.count()).select_from(SavedCheckpoint)) == 2
+            assert candidate is not None and manifest is not None
+            with pytest.raises(StoreError, match="byte identity"):
+                await durable.complete(
+                    lease, candidate.model_copy(update={"sha256": "0" * 64}), manifest
+                )
+            async with database.sessions() as session:
+                indexed = await session.get(IndexedEvent, (run.id, 1))
+                assert indexed is not None
+                original_id = indexed.request_id
+            async with database.engine.begin() as connection:
+                await connection.execute(
+                    update(IndexedEvent)
+                    .where(IndexedEvent.run_id == run.id, IndexedEvent.sequence == 1)
+                    .values(request_id="tampered-index")
+                )
+            with pytest.raises(StoreError, match="index"):
+                await durable.complete(lease, candidate, manifest)
+            async with database.engine.begin() as connection:
+                await connection.execute(
+                    update(IndexedEvent)
+                    .where(IndexedEvent.run_id == run.id, IndexedEvent.sequence == 1)
+                    .values(request_id=original_id)
+                )
+            assert (await durable.complete(lease, candidate, manifest)).status == "completed"
+            assert await durable.published(run.id) == candidate
+            async with database.sessions() as session:
+                attempt = await session.get(Attempt, (run.id, 1))
+                assert attempt is not None and attempt.outcome == "completed"
+            with pytest.raises(StoreError):
+                await durable.complete(lease, candidate, manifest)
+
+    asyncio.run(scenario())
+
+
+def test_committed_terminal_seal_survives_expiry_and_only_new_owner_can_publish(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        async with scratch() as database:
+            prepared = await prepare(database)
+            run = await prepared.enqueue()
+            old = await prepared.jobs.claim("old")
+            assert old is not None
+            flow = await asyncio.to_thread(OutputFixture, prepared, old, tmp_path)
+            while not await asyncio.to_thread(flow.step):
+                pass
+            durable = Durability(database)
+            data = await asyncio.to_thread(flow.describe)
+            await durable.commit(old, data)
+            old_candidate, manifest = await asyncio.to_thread(flow.candidate)
+            await expire(database, old)
+            current = await prepared.jobs.claim("new")
+            assert current is not None and current.attempt == 2
+            recovered = await durable.recovery(current)
+            assert (
+                recovered is not None
+                and recovered.kind == "terminal"
+                and recovered.reference == data.reference
+            )
+            with pytest.raises(StoreError):
+                await durable.complete(old, old_candidate, manifest)
+            with pytest.raises(StoreError):
+                await durable.complete(current, old_candidate, manifest)
+            current_ref = StoredFile(
+                key=f"runs/{run.id}/attempt-{current.fence}/bundles/{manifest.bundle_digest}/manifest.json",
+                sha256=old_candidate.sha256,
+                size_bytes=old_candidate.size_bytes,
+            )
+
+            def copy_candidate() -> None:
+                path = flow.files.path(current_ref.key)
+                path.parent.mkdir(parents=True)
+                for source in flow.files.path(old_candidate.key).parent.iterdir():
+                    (path.parent / source.name).write_bytes(source.read_bytes())
+                assert verify_bundle(path.parent) == manifest
+
+            await asyncio.to_thread(copy_candidate)
+            assert (await durable.complete(current, current_ref, manifest)).status == "completed"
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    "failure", ["gap", "namespace", "identity", "outage", "expired_during_commit"]
+)
+def test_failed_progress_transactions_never_expose_partial_chunks_or_events(
+    tmp_path: Path, failure: str
+) -> None:
+    async def scenario() -> None:
+        async with scratch() as database:
+            prepared = await prepare(database)
+            await prepared.enqueue()
+            lease = await prepared.jobs.claim(
+                "producer", lease_seconds=1 if failure == "expired_during_commit" else 30
+            )
+            assert lease is not None
+            flow = await asyncio.to_thread(OutputFixture, prepared, lease, tmp_path)
+            await asyncio.to_thread(flow.step)
+            data = await asyncio.to_thread(flow.describe)
+            if failure == "gap":
+                data = data.model_copy(
+                    update={
+                        "chunks": (
+                            data.chunks[0].model_copy(update={"first_sequence": 2}),
+                            *data.chunks[1:],
+                        )
+                    }
+                )
+            elif failure == "namespace":
+                data = data.model_copy(
+                    update={
+                        "reference": data.reference.model_copy(
+                            update={"key": "runs/other/attempt-1/checkpoint.json"}
+                        )
+                    }
+                )
+            elif failure == "identity":
+                data = data.model_copy(update={"snapshot_digest": "0" * 64})
+            else:
+                async with database.engine.begin() as connection:
+                    action = (
+                        "PERFORM pg_sleep(1.1); RETURN NEW;"
+                        if failure == "expired_during_commit"
+                        else "RAISE EXCEPTION 'injected storage transaction failure';"
+                    )
+                    await connection.execute(
+                        text(
+                            "CREATE FUNCTION test_progress_fault() RETURNS trigger "
+                            "LANGUAGE plpgsql AS $$ BEGIN " + action + " END $$"
+                        )
+                    )
+                    await connection.execute(
+                        text(
+                            "CREATE TRIGGER test_progress_fault BEFORE INSERT ON committed_chunks "
+                            "FOR EACH ROW EXECUTE FUNCTION test_progress_fault()"
+                        )
+                    )
+            with pytest.raises((StoreError, DBAPIError)):
+                await Durability(database).commit(lease, data)
+            async with database.sessions() as session:
+                for model in (
+                    OutputProgress,
+                    SavedCheckpoint,
+                    CommittedChunk,
+                    IndexedEvent,
+                    PublishedArtifact,
+                ):
+                    assert await session.scalar(select(func.count()).select_from(model)) == 0
+
+    asyncio.run(scenario())
+
+
+def test_cancellation_after_terminal_seal_prevents_artifact_publication(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with scratch() as database:
+            prepared = await prepare(database)
+            run = await prepared.enqueue()
+            lease = await prepared.jobs.claim("producer")
+            assert lease is not None
+            flow = await asyncio.to_thread(OutputFixture, prepared, lease, tmp_path)
+            while not await asyncio.to_thread(flow.step):
+                pass
+            durable = Durability(database)
+            await durable.commit(lease, await asyncio.to_thread(flow.describe))
+            candidate, manifest = await asyncio.to_thread(flow.candidate)
+            await prepared.jobs.cancel(run.id)
+            with pytest.raises(StoreError) as error:
+                await durable.complete(lease, candidate, manifest)
+            assert error.value.code == "INTERRUPTED"
+            assert (await prepared.jobs.acknowledge_cancel(lease)).status == "cancelled"
+            async with database.sessions() as session:
+                assert (
+                    await session.scalar(select(func.count()).select_from(PublishedArtifact)) == 0
+                )
+
+    asyncio.run(scenario())
+
+
+def test_persisted_event_pagination_handles_more_than_501_events_without_gaps(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        async with scratch() as database:
+            prepared = await prepare(database)
+            requests = tuple(
+                RequestInput(t=0, request_id=f"r-{n:04d}", work_units=10, mem_mb=1)
+                for n in range(500)
+            )
+            snapshot = make_snapshot(prepared.snapshot.servers, requests, RunSettings())
+            dataset = await prepared.catalog.register_dataset(
+                DatasetRegistration(
+                    digest=snapshot.dataset_digest,
+                    source_filename="burst.csv",
+                    request_count=500,
+                    earliest_arrival=0,
+                    latest_arrival=0,
+                    size_bytes=8000,
+                )
+            )
+            prepared = replace(prepared, snapshot=snapshot, dataset=dataset)
+            run = await prepared.enqueue()
+            lease = await prepared.jobs.claim("producer")
+            assert lease is not None
+            flow = await asyncio.to_thread(OutputFixture, prepared, lease, tmp_path)
+            await asyncio.to_thread(flow.step)
+            durable = Durability(database)
+            await durable.commit(lease, await asyncio.to_thread(flow.describe))
+            first = await durable.events(run.id, limit=500, start_tick=0, end_tick=0)
+            second = await durable.events(run.id, after_sequence=first[-1].sequence, limit=500)
+            assert len(first) == 500 and len(second) == 3
+            assert [event.sequence for event in (*first, *second)] == list(range(1, 504))
+            with pytest.raises(StoreError):
+                await durable.events(run.id, limit=501)
+
+    asyncio.run(scenario())
+
+
+def test_tick_zero_terminal_seal_completes_without_an_interval_checkpoint(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with scratch() as database:
+            prepared = await prepare(database)
+            snapshot = make_snapshot(
+                prepared.snapshot.servers,
+                (RequestInput(t=0, request_id="too-large", work_units=1, mem_mb=100_000),),
+                RunSettings(),
+            )
+            dataset = await prepared.catalog.register_dataset(
+                DatasetRegistration(
+                    digest=snapshot.dataset_digest,
+                    source_filename="dropped.csv",
+                    request_count=1,
+                    earliest_arrival=0,
+                    latest_arrival=0,
+                    size_bytes=100,
+                )
+            )
+            prepared = replace(prepared, snapshot=snapshot, dataset=dataset)
+            run = await prepared.enqueue()
+            lease = await prepared.jobs.claim("producer")
+            assert lease is not None
+            flow = await asyncio.to_thread(OutputFixture, prepared, lease, tmp_path)
+            assert await asyncio.to_thread(flow.step)
+            data = await asyncio.to_thread(flow.describe)
+            assert data.kind == "terminal" and data.next_tick == data.executed_intervals == 0
+            durable = Durability(database)
+            await durable.commit(lease, data)
+            async with database.sessions() as session:
+                assert await session.scalar(select(func.count()).select_from(SavedCheckpoint)) == 0
+            reference, manifest = await asyncio.to_thread(flow.candidate)
+            assert manifest.terminal_tick == 0 and manifest.event_count == 2
+            async with database.engine.begin() as connection:
+                await connection.execute(
+                    update(IndexedEvent)
+                    .where(IndexedEvent.run_id == run.id, IndexedEvent.sequence == 2)
+                    .values(reason="QUEUE_CAPACITY")
+                )
+            with pytest.raises(StoreError, match="index"):
+                await durable.complete(lease, reference, manifest)
+            async with database.engine.begin() as connection:
+                await connection.execute(
+                    update(IndexedEvent)
+                    .where(IndexedEvent.run_id == run.id, IndexedEvent.sequence == 2)
+                    .values(reason="UNSCHEDULABLE_MEMORY")
+                )
+            assert (await durable.complete(lease, reference, manifest)).status == "completed"
+            assert await durable.published(run.id) == reference
 
     asyncio.run(scenario())

@@ -10,13 +10,16 @@ import pytest
 from mslb_application.artifacts import timeline_record
 from mslb_application.checkpoints import (
     PREFIX_NAMES,
+    capture_terminal_seal,
     checkpoint_due,
     read_checkpoint,
+    read_terminal_seal,
     write_checkpoint,
 )
 from mslb_application.errors import OperationError
 from mslb_application.snapshots import canonical_bytes, domain_config, domain_inputs, make_snapshot
 from mslb_contracts.checkpoints import IntervalCheckpoint
+from mslb_contracts.durability import StoredFile
 from mslb_contracts.inputs import RequestInput, ServerInput
 from mslb_contracts.runs import RunSettings, RunSnapshot
 from mslb_engine.metrics import MetricAccumulator
@@ -410,3 +413,37 @@ with ExitStack() as stack:
         "autoscaling_decisions.jsonl"
     ]
     assert json.loads((tmp_path / "metrics.json").read_bytes()) == metrics.summary()
+
+
+@pytest.mark.parametrize("drop_at_zero", [False, True])
+def test_terminal_seal_round_trip_does_not_require_or_replay_an_interval(
+    drop_at_zero: bool,
+) -> None:
+    saved = make_snapshot(
+        (ServerInput(id="s", cpu_units_per_tick=2, mem_mb=1, rate_limit_per_sec=1),),
+        (RequestInput(t=0, request_id="r", work_units=2, mem_mb=2 if drop_at_zero else 1),),
+        RunSettings(),
+    )
+    simulation, metrics, streams = execution(saved)
+    for frame in simulation.iter_ticks():
+        append(frame, metrics, streams)
+    report_bytes = canonical_bytes(metrics.summary())
+    report = StoredFile(
+        key="reports/metrics.json",
+        sha256=hashlib.sha256(report_bytes).hexdigest(),
+        size_bytes=len(report_bytes),
+    )
+    seal = capture_terminal_seal(saved, simulation, metrics, streams, report)
+    payload = canonical_bytes(seal.model_dump(mode="json"))
+    assert (
+        read_terminal_seal(io.BytesIO(payload), hashlib.sha256(payload).hexdigest(), saved) == seal
+    )
+    if drop_at_zero:
+        assert seal.terminal_tick == seal.executed_intervals == 0
+    with pytest.raises(OperationError):
+        read_terminal_seal(io.BytesIO(payload), "0" * 64, saved)
+    raw = seal.model_dump(mode="json")
+    raw["schema_version"] = 2
+    changed = canonical_bytes(raw)
+    with pytest.raises(OperationError):
+        read_terminal_seal(io.BytesIO(changed), hashlib.sha256(changed).hexdigest(), saved)

@@ -12,7 +12,7 @@ from mslb_persistence.models import Attempt, ExecutionSlot, Job, Outbox
 from mslb_persistence.records import JobRecord, Lease
 
 
-def _ownership(lease: Lease) -> ColumnElement[bool]:
+def ownership_predicate(lease: Lease) -> ColumnElement[bool]:
     return and_(
         Job.run_id == lease.run_id,
         Job.attempts == lease.attempt,
@@ -151,7 +151,7 @@ class Jobs:
         async def operation(session: AsyncSession) -> JobRecord:
             job = await session.scalar(
                 update(Job)
-                .where(_ownership(lease))
+                .where(ownership_predicate(lease))
                 .values(lease_expires_at=func.clock_timestamp() + timedelta(seconds=lease_seconds))
                 .returning(Job)
             )
@@ -208,7 +208,9 @@ class Jobs:
             slot = await _slot(session)
             if slot is None or slot.run_id != lease.run_id:
                 raise StoreError("FENCE_LOST", "Execution slot has another owner")
-            job = await session.scalar(select(Job).where(_ownership(lease)).with_for_update())
+            job = await session.scalar(
+                select(Job).where(ownership_predicate(lease)).with_for_update()
+            )
             if job is None:
                 raise StoreError("FENCE_LOST", "Worker lease is no longer current")
             if cancellation_only and job.status != "cancel_requested":
@@ -224,7 +226,7 @@ class Jobs:
             code = "INTERRUPTED" if status == "cancelled" else error_code
             updated = await session.scalar(
                 update(Job)
-                .where(_ownership(lease), Job.status == job.status)
+                .where(ownership_predicate(lease), Job.status == job.status)
                 .values(
                     status=status,
                     fence=Job.fence + 1,
