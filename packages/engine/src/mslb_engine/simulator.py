@@ -1,8 +1,11 @@
 """Discrete-time exact CPU execution; all external I/O belongs to adapters."""
 
+import re
 from collections.abc import Iterator
+from dataclasses import replace
 from fractions import Fraction
 
+from mslb_engine.autoscaling import Autoscaler
 from mslb_engine.models import (
     EVENT_PRIORITY,
     Event,
@@ -26,6 +29,10 @@ class Simulation:
     ) -> None:
         if not 1 <= len(servers) <= 64 or not 1 <= len(requests) <= 10_000:
             raise SimulationError("VALIDATION_ERROR", "Input count outside supported envelope")
+        if len(servers) > config.max_metric_series:
+            raise SimulationError(
+                "VALIDATION_ERROR", "Initial cluster exceeds metric history budget"
+            )
         if len({s.id for s in servers}) != len(servers):
             raise SimulationError("VALIDATION_ERROR", "Duplicate server IDs")
         if len({r.request_id for r in requests}) != len(requests):
@@ -34,7 +41,18 @@ class Simulation:
         self.requests = tuple(sorted(requests, key=lambda request: (request.t, request.request_id)))
         if self.requests[-1].t >= config.max_simulation_ticks:
             raise SimulationError("VALIDATION_ERROR", "Latest arrival must precede the horizon")
-        self.config = config
+        self.initial_servers = self.servers
+        policy = config.autoscaling.resolved(len(servers))
+        if policy.enabled and any(
+            re.fullmatch(r"autoscale-[0-9]{6,}", server.id) for server in servers
+        ):
+            raise SimulationError(
+                "VALIDATION_ERROR", "Initial server ID collides with generated namespace"
+            )
+        self.config = replace(config, autoscaling=policy)
+        self.autoscaler = Autoscaler(
+            policy, frozenset(s.id for s in servers), config.max_fraction_bits
+        )
         self.by_id = {r.request_id: r for r in requests}
         self.active: dict[str, dict[str, Fraction]] = {s.id: {} for s in self.servers}
         self.pending: list[Request] = []
@@ -104,7 +122,15 @@ class Simulation:
             events.append(Event(self.tick, "REQUEST_ARRIVED", request.request_id))
             self.cursor += 1
         waiting: list[Request] = []
-        max_memory = max(s.mem_mb for s in self.servers)
+        max_memory = max(s.mem_mb for s in self.initial_servers)
+        policy = self.config.autoscaling
+        if (
+            policy.enabled
+            and policy.max_servers is not None
+            and policy.max_servers > len(self.initial_servers)
+            and policy.server_template is not None
+        ):
+            max_memory = max(max_memory, policy.server_template.mem_mb)
         for request in self.pending:
             reason = None
             if request.mem_mb > max_memory:
@@ -138,6 +164,18 @@ class Simulation:
     def iter_ticks(self) -> Iterator[TickFrame]:
         """Advance execution, emitting canonical boundaries and interval samples."""
         while not self.terminal:
+            membership = self.autoscaler.activate(
+                self.tick,
+                self.servers,
+                frozenset(sid for sid, active in self.active.items() if not active),
+            )
+            current_ids = {server.id for server in membership}
+            for sid in set(self.active) - current_ids:
+                del self.active[sid]
+                del self.reserved[sid]
+            for sid in current_ids - set(self.active):
+                self.active[sid], self.reserved[sid] = {}, 0
+            self.servers = membership
             events, starts = self._boundary()
             ordered = tuple(
                 sorted(
@@ -152,7 +190,9 @@ class Simulation:
             active_count = sum(len(active) for active in self.active.values())
             if self.cursor == len(self.requests) and not self.pending and active_count == 0:
                 self.terminal = True
-                yield TickFrame(self.tick, 0, ordered, (), (), terminal=True)
+                yield TickFrame(
+                    self.tick, 0, ordered, (), (), terminal=True, membership=self.servers
+                )
                 return
             if self.tick >= self.config.max_simulation_ticks:
                 raise SimulationError("SIMULATION_LIMIT_EXCEEDED", "Simulation horizon reached")
@@ -160,9 +200,20 @@ class Simulation:
             if self.recorded_samples > self.config.max_samples:
                 raise SimulationError("RESOURCE_LIMIT_EXCEEDED", "Recorded sample bound reached")
             duration = 1
-            if not active_count and not self.pending:
+            if not active_count and not self.pending and not self.config.autoscaling.enabled:
                 duration = self.requests[self.cursor].t - self.tick
+            decision = self.autoscaler.decide(
+                self.tick,
+                self.servers,
+                frozenset(sid for sid, active in self.active.items() if not active),
+                len(self.pending),
+            )
+            if self.autoscaler.counter + len(self.initial_servers) > self.config.max_metric_series:
+                raise SimulationError(
+                    "RESOURCE_LIMIT_EXCEEDED", "Logical server history budget exceeded"
+                )
             samples: list[ServerSample] = []
+            cluster_consumed = Fraction()
             for server in self.servers:
                 active = self.active[server.id]
                 consumed = Fraction(0)
@@ -172,6 +223,7 @@ class Simulation:
                         removed = min(active[rid], share)
                         consumed = self._bounded(consumed + removed)
                         active[rid] = self._bounded(active[rid] - removed)
+                cluster_consumed = self._bounded(cluster_consumed + consumed)
                 samples.append(
                     ServerSample(
                         server.id,
@@ -190,6 +242,15 @@ class Simulation:
                 ordered,
                 tuple(r.request_id for r in self.pending),
                 tuple(samples),
+                membership=self.servers,
+                scale_decision=decision,
+            )
+            self.autoscaler.observe(
+                self.tick + duration,
+                cluster_consumed,
+                sum(server.cpu_units_per_tick for server in self.servers),
+                sum(event.event == "REQUEST_DROPPED" for event in events),
+                sum(event.event == "REQUEST_ARRIVED" for event in events),
             )
             self.tick += duration
             yield frame

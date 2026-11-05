@@ -8,7 +8,7 @@ from pathlib import Path
 
 from mslb_contracts.inputs import read_requests, read_servers
 from mslb_engine.metrics import JsonValue, MetricAccumulator
-from mslb_engine.models import Mode, Request, RunConfig, Server, Strategy
+from mslb_engine.models import Mode, Request, RunConfig, Server, SimulationError, Strategy
 from mslb_engine.replay import validate_trace
 from mslb_engine.simulator import Simulation
 
@@ -20,6 +20,10 @@ def generate(
     config: RunConfig,
 ) -> dict[str, JsonValue]:
     """Publish only a complete trace; discard a failed attempt's temporary file."""
+    if config.autoscaling.enabled:
+        raise SimulationError(
+            "VALIDATION_ERROR", "Single-file generation requires autoscaling disabled"
+        )
     with servers_path.open("rb") as source:
         servers = tuple(
             Server(s.id, s.cpu_units_per_tick, s.mem_mb, s.rate_limit_per_sec)
@@ -30,7 +34,7 @@ def generate(
             Request(r.t, r.request_id, r.work_units, r.mem_mb) for r in read_requests(source)
         )
     simulation = Simulation(servers, requests, config)
-    metrics = MetricAccumulator(requests, servers)
+    metrics = MetricAccumulator(requests, servers, config.max_metric_series)
     output.parent.mkdir(parents=True, exist_ok=True)
     stream = tempfile.NamedTemporaryFile(
         mode="w",

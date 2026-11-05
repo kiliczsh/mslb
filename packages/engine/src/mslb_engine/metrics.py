@@ -110,7 +110,9 @@ class _ServerTotals:
 class MetricAccumulator:
     """Retain only bounded request times and totals, never interval history."""
 
-    def __init__(self, requests: tuple[Request, ...], servers: tuple[Server, ...]) -> None:
+    def __init__(
+        self, requests: tuple[Request, ...], servers: tuple[Server, ...], max_series: int = 10_000
+    ) -> None:
         if not 1 <= len(requests) <= 10_000:
             raise SimulationError("VALIDATION_ERROR", "Invalid metric request population")
         self.requests = {request.request_id: request for request in requests}
@@ -122,16 +124,29 @@ class MetricAccumulator:
         self.drops: dict[str, int] = {}
         if not 1 <= len(servers) <= 64 or len({server.id for server in servers}) != len(servers):
             raise SimulationError("VALIDATION_ERROR", "Invalid metric server population")
+        if type(max_series) is not int or not len(servers) <= max_series <= 10_000:
+            raise SimulationError("VALIDATION_ERROR", "Invalid metric history bound")
+        self.max_series = max_series
+        self.current_servers = {server.id: server for server in servers}
         self.servers = {
             server.id: _ServerTotals(
                 cpu_units_per_tick=server.cpu_units_per_tick, mem_mb=server.mem_mb
             )
-            for server in servers
+            for server in sorted(servers, key=lambda server: server.id)
         }
         self.next_tick = 0
         self.terminal = False
         self.queue_peak = 0
         self.queue_integral = 0
+
+    def _server(self, sid: str) -> _ServerTotals:
+        if sid not in self.servers:
+            if len(self.servers) >= self.max_series:
+                raise SimulationError(
+                    "RESOURCE_LIMIT_EXCEEDED", "Metric server history bound exceeded"
+                )
+            self.servers[sid] = _ServerTotals()
+        return self.servers[sid]
 
     def observe(self, frame: TickFrame) -> None:
         """Consume exactly one boundary and its analytically sized interval."""
@@ -139,6 +154,11 @@ class MetricAccumulator:
             raise SimulationError("INVALID_STATE", "Metric boundaries must be contiguous")
         if frame.terminal != (frame.duration_ticks == 0):
             raise SimulationError("INVALID_STATE", "Only terminal boundaries have zero duration")
+        if frame.membership:
+            self.current_servers = {server.id: server for server in frame.membership}
+            for server in frame.membership:
+                total = self._server(server.id)
+                total.cpu_units_per_tick, total.mem_mb = server.cpu_units_per_tick, server.mem_mb
         for event in frame.events:
             rid = event.request_id
             request = self.requests.get(rid)
@@ -157,7 +177,7 @@ class MetricAccumulator:
                 ):
                     raise SimulationError("VALIDATION_ERROR", "Invalid metric start")
                 self.starts[rid] = (event.t, event.server_id)
-                total = self.servers.setdefault(event.server_id, _ServerTotals())
+                total = self._server(event.server_id)
                 total.started += 1
                 total.waits.append(event.t - request.t)
             elif event.event == "REQUEST_FINISHED":
@@ -181,7 +201,7 @@ class MetricAccumulator:
         self.queue_peak = max(self.queue_peak, len(frame.pending_ids))
         self.queue_integral += len(frame.pending_ids) * frame.duration_ticks
         for sample in frame.samples:
-            total = self.servers.setdefault(sample.server_id, _ServerTotals())
+            total = self._server(sample.server_id)
             total.cpu_units_per_tick = sample.capacity
             total.mem_mb = sample.memory_capacity
             if (
@@ -215,8 +235,6 @@ class MetricAccumulator:
         )
         cluster = _ServerTotals()
         for total in self.servers.values():
-            cluster.cpu_units_per_tick += total.cpu_units_per_tick
-            cluster.mem_mb += total.mem_mb
             cluster.waits.extend(total.waits)
             cluster.responses.extend(total.responses)
             cluster.executions.extend(total.executions)
@@ -227,6 +245,10 @@ class MetricAccumulator:
             cluster.cpu_capacity_ticks += total.cpu_capacity_ticks
             cluster.memory_reserved_mb_ticks += total.memory_reserved_mb_ticks
             cluster.memory_capacity_mb_ticks += total.memory_capacity_mb_ticks
+        cluster.cpu_units_per_tick = sum(
+            server.cpu_units_per_tick for server in self.current_servers.values()
+        )
+        cluster.mem_mb = sum(server.mem_mb for server in self.current_servers.values())
         return {
             "arrived": len(self.arrivals),
             "started": len(self.starts),
@@ -244,7 +266,10 @@ class MetricAccumulator:
             "response": distribution(response).to_data(),
             "execution": distribution(execution).to_data(),
             "cluster": cluster.to_data(),
-            "servers": {sid: total.to_data() for sid, total in sorted(self.servers.items())},
+            "servers": {
+                sid: {**total.to_data(), "active": sid in self.current_servers}
+                for sid, total in sorted(self.servers.items())
+            },
         }
 
 

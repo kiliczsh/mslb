@@ -7,6 +7,8 @@ from fractions import Fraction
 from typing import BinaryIO
 
 from mslb_engine.models import Request, RunConfig, Server
+from mslb_engine.replay_errors import ReplayError
+from mslb_engine.scaling_replay import ScalingReplay
 
 _PRIORITY = {
     "REQUEST_FINISHED": 0,
@@ -14,10 +16,6 @@ _PRIORITY = {
     "REQUEST_DROPPED": 2,
     "REQUEST_STARTED": 3,
 }
-
-
-class ReplayError(ValueError):
-    """Trace violation with a bounded diagnostic independent of upload contents."""
 
 
 @dataclass(frozen=True)
@@ -87,16 +85,20 @@ def validate_trace(
     servers: tuple[Server, ...],
     requests: tuple[Request, ...],
     config: RunConfig,
+    scale_stream: BinaryIO | None = None,
 ) -> ReplaySummary:
     """Reconstruct lifecycle, shares, constraints, drops, and terminal accounting.
 
     Selection strategy is deliberately not reused as an oracle. Every recorded
     assignment must be eligible and work-conserving; strategy identity is checked
-    separately by golden fixtures. This replay currently supports static servers.
+    separately by golden fixtures. Dynamic membership requires an independently
+    reconstructed scaling-decision sidecar.
     """
     if not 1 <= len(servers) <= 64 or not 1 <= len(requests) <= 10_000:
         raise ReplayError("Invalid input collection size")
-    by_server = {server.id: server for server in servers}
+    if len(servers) > config.max_metric_series:
+        raise ReplayError("Initial cluster exceeds metric history budget")
+    by_server = {server.id: server for server in sorted(servers, key=lambda server: server.id)}
     by_request = {request.request_id: request for request in requests}
     if len(by_server) != len(servers) or len(by_request) != len(requests):
         raise ReplayError("Duplicate input IDs")
@@ -116,7 +118,19 @@ def validate_trace(
     sample_count = 0
     tick = 0
     max_memory = max(server.mem_mb for server in servers)
+    policy = config.autoscaling.resolved(len(servers))
+    scaling = ScalingReplay(
+        scale_stream, policy, servers, config.max_fraction_bits, config.max_metric_series
+    )
+    if (
+        policy.enabled
+        and policy.server_template is not None
+        and policy.max_servers is not None
+        and policy.max_servers > len(servers)
+    ):
+        max_memory = max(max_memory, policy.server_template.mem_mb)
     while tick <= config.max_simulation_ticks:
+        scaling.activate(tick, by_server, running, memory)
         boundary: dict[str, list[_Record]] = {kind: [] for kind in _PRIORITY}
         while following is not None and following.t == tick:
             if following.rid not in by_request:
@@ -190,7 +204,7 @@ def validate_trace(
                 request.mem_mb + memory[s.id] <= s.mem_mb
                 and starts[s.id] < s.rate_limit_per_sec
                 and (config.mode == "concurrent" or not running[s.id])
-                for s in servers
+                for s in by_server.values()
             ):
                 raise ReplayError("Scheduling is not work-conserving")
         if config.max_queue_size is not None:
@@ -206,15 +220,19 @@ def validate_trace(
         if arrivals == len(requests) and not pending and not any(running.values()):
             if following is not None or len(finished) + len(dropped) != len(requests):
                 raise ReplayError("Trailing events or incomplete terminal accounting")
+            scaling.finish()
             return ReplaySummary(
                 arrivals, len(started), len(finished), len(dropped), tick, event_count
             )
         if tick == config.max_simulation_ticks:
             raise ReplayError("Trace does not terminate before horizon")
-        sample_count += len(servers)
+        sample_count += len(by_server)
         if sample_count > config.max_samples:
             raise ReplayError("Recorded sample bound exceeded")
-        for sid, active in running.items():
+        scaling.check_decision(tick, by_server, running, len(pending))
+        total_consumed = Fraction()
+        for sid in sorted(running):
+            active = running[sid]
             if active:
                 allocation = Fraction(by_server[sid].cpu_units_per_tick, len(active))
                 consumed = Fraction(0)
@@ -223,7 +241,7 @@ def validate_trace(
                     > config.max_fraction_bits
                 ):
                     raise ReplayError("Arithmetic complexity bound exceeded")
-                for rid in active:
+                for rid in sorted(active):
                     consumed += min(active[rid], allocation)
                     remaining = max(Fraction(0), active[rid] - allocation)
                     if (
@@ -237,8 +255,28 @@ def validate_trace(
                     ):
                         raise ReplayError("Arithmetic complexity bound exceeded")
                     active[rid] = remaining
+                total_consumed += consumed
+                if (
+                    max(
+                        total_consumed.numerator.bit_length(),
+                        total_consumed.denominator.bit_length(),
+                    )
+                    > config.max_fraction_bits
+                ):
+                    raise ReplayError("Cluster arithmetic complexity bound exceeded")
+        scaling.observe(
+            total_consumed,
+            sum(server.cpu_units_per_tick for server in by_server.values()),
+            len(due_drops),
+            len(arriving),
+        )
         tick += 1
-        if not pending and not any(running.values()) and arrivals < len(requests):
+        if (
+            not pending
+            and not any(running.values())
+            and arrivals < len(requests)
+            and not policy.enabled
+        ):
             next_arrival = ordered_requests[arrivals].t
             tick = min(next_arrival, following.t if following is not None else next_arrival)
     raise ReplayError("Unreachable terminal state")
