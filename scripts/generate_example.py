@@ -1,17 +1,24 @@
 """Generate a static logical trace atomically using the real engine."""
 
 import argparse
+import json
 import os
 import tempfile
 from pathlib import Path
 
 from mslb_contracts.inputs import read_requests, read_servers
+from mslb_engine.metrics import JsonValue, MetricAccumulator
 from mslb_engine.models import Mode, Request, RunConfig, Server, Strategy
 from mslb_engine.replay import validate_trace
 from mslb_engine.simulator import Simulation
 
 
-def generate(servers_path: Path, requests_path: Path, output: Path, config: RunConfig) -> None:
+def generate(
+    servers_path: Path,
+    requests_path: Path,
+    output: Path,
+    config: RunConfig,
+) -> dict[str, JsonValue]:
     """Publish only a complete trace; discard a failed attempt's temporary file."""
     with servers_path.open("rb") as source:
         servers = tuple(
@@ -23,6 +30,7 @@ def generate(servers_path: Path, requests_path: Path, output: Path, config: RunC
             Request(r.t, r.request_id, r.work_units, r.mem_mb) for r in read_requests(source)
         )
     simulation = Simulation(servers, requests, config)
+    metrics = MetricAccumulator(requests, servers)
     output.parent.mkdir(parents=True, exist_ok=True)
     stream = tempfile.NamedTemporaryFile(
         mode="w",
@@ -35,13 +43,16 @@ def generate(servers_path: Path, requests_path: Path, output: Path, config: RunC
     try:
         with stream:
             for frame in simulation.iter_ticks():
+                metrics.observe(frame)
                 for event in frame.events:
                     stream.write(event.canonical_line())
             stream.flush()
             os.fsync(stream.fileno())
         with temporary.open("rb") as validation_source:
             validate_trace(validation_source, servers, requests, config)
+        report = metrics.summary()
         os.replace(temporary, output)
+        return report
     finally:
         temporary.unlink(missing_ok=True)
 
@@ -79,7 +90,7 @@ def main() -> None:
     # argparse choices validate these transport strings before constructing the domain config.
     mode: Mode = args.mode
     strategy: Strategy = args.strategy
-    generate(
+    report = generate(
         args.servers,
         args.requests,
         args.output,
@@ -89,6 +100,7 @@ def main() -> None:
             max_simulation_ticks=args.max_simulation_ticks,
         ),
     )
+    print(json.dumps(report, sort_keys=True, ensure_ascii=False, separators=(",", ":")))
 
 
 if __name__ == "__main__":
