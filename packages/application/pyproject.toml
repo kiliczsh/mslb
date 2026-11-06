@@ -2,7 +2,7 @@
 name = "mslb-application"
 version = "0.1.0"
 requires-python = ">=3.13,<3.14"
-dependencies = ["mslb-contracts", "mslb-engine", "mslb-persistence"]
+dependencies = ["mslb-contracts", "mslb-engine", "mslb-persistence", "ijson==3.6.0"]
 
 [tool.uv.sources]
 mslb-contracts = { workspace = true }
