@@ -7,7 +7,7 @@ from mslb_contracts.resources import ResourceProbe
 from pydantic import ValidationError
 
 from mslb_controller.credentials import read_token
-from mslb_controller.engine import EngineError
+from mslb_controller.errors import EngineError
 
 
 class ResourceClient:

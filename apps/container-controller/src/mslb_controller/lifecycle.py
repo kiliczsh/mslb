@@ -2,15 +2,18 @@
 
 from uuid import UUID
 
-from mslb_contracts.docker_runs import ContainerObservation, CreationIntent, StaticReservation
+from mslb_contracts.docker_ownership import ContainerObservation, CreationIntent, StaticReservation
 from mslb_persistence.database import Database
 from mslb_persistence.docker_catalog import DockerCatalog
 from mslb_persistence.docker_records import ControlLease, DeploymentRecord, ResourceRecord
 from mslb_persistence.docker_resources import DockerResources
 
 from mslb_controller import inspection
-from mslb_controller.engine import PROJECT, ContainerInfo, Engine, EngineError
-from mslb_controller.routing import BackendHttp, BackendSpec
+from mslb_controller.backend_http import BackendHttp
+from mslb_controller.engine import PROJECT, Engine
+from mslb_controller.engine_models import ContainerInfo
+from mslb_controller.errors import EngineError
+from mslb_controller.routing_models import BackendSpec
 
 
 class Lifecycle:

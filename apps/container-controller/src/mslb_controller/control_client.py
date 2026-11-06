@@ -11,8 +11,8 @@ from pydantic import BaseModel, ValidationError
 from mslb_controller.control_models import EnrollmentReply as EnrollmentReply
 from mslb_controller.control_models import ResourceReply as ResourceReply
 from mslb_controller.credentials import read_token
-from mslb_controller.engine import EngineError
-from mslb_controller.proxy import LeaseRef
+from mslb_controller.errors import EngineError
+from mslb_controller.proxy_models import LeaseRef
 
 
 class ControlClient:

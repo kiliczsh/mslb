@@ -4,46 +4,28 @@ import asyncio
 import secrets
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
-from typing import Annotated, Literal
+from typing import Literal
 from uuid import UUID
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
-from mslb_persistence.database import Database, StoreError
-from mslb_persistence.docker_records import ControlLease, ResourceRecord
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from mslb_persistence.database import Database
+from mslb_persistence.docker_records import ResourceRecord
+from mslb_persistence.errors import StoreError
+from pydantic import BaseModel, ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException
 from starlette.requests import ClientDisconnect
 
-from mslb_controller.engine import Engine, EngineError
+from mslb_controller.backend_http import BackendHttp
+from mslb_controller.engine import Engine
+from mslb_controller.errors import EngineError, TrafficError
+from mslb_controller.errors import Refusal as Refusal
 from mslb_controller.lifecycle import Lifecycle
+from mslb_controller.proxy_models import Empty as Empty
+from mslb_controller.proxy_models import LeaseRef as LeaseRef
 from mslb_controller.resource_probe import ProbeEngine
-from mslb_controller.routing import BackendHttp, TrafficError
-
-
-class LeaseRef(BaseModel):
-    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
-    run_id: UUID
-    fence: Annotated[int, Field(ge=1, le=9223372036854775807)]
-    owner: Annotated[str, Field(min_length=1, max_length=128)]
-    phase: Literal["running", "cleanup"]
-
-    def lease(self) -> ControlLease:
-        # Expiry is read and enforced in PostgreSQL, never accepted from the caller.
-        return ControlLease(
-            run_id=self.run_id,
-            fence=self.fence,
-            owner=self.owner,
-            expires_at=datetime.min.replace(tzinfo=UTC),
-            phase=self.phase,
-        )
-
-
-class Empty(BaseModel):
-    model_config = ConfigDict(strict=True, extra="forbid")
 
 
 def reply(*, record: ResourceRecord, running: object = None) -> JSONResponse:
@@ -56,12 +38,6 @@ def reply(*, record: ResourceRecord, running: object = None) -> JSONResponse:
             "running": running,
         }
     )
-
-
-class Refusal(Exception):
-    def __init__(self, status: int, code: str) -> None:
-        self.status, self.code = status, code
-        super().__init__(code)
 
 
 async def body[T: BaseModel](*, request: Request, model: type[T]) -> T:

@@ -2,43 +2,23 @@
 
 import asyncio
 import math
-import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from typing import Protocol
 
-from mslb_contracts.docker_runs import DockerSettings
 from mslb_contracts.docker_runtime import HttpEvent, HttpReason, StopReason, TrafficSummary
+from mslb_contracts.docker_settings import DockerSettings
 from mslb_contracts.inputs import RequestInput
 from mslb_contracts.traffic import WorkCompleted, WorkRequest
 
-from mslb_controller.routing import BackendHttp, BackendSpec, Reservation, Router, TrafficError
-
-
-class Clock(Protocol):
-    def now(self) -> float: ...
-    async def pause(self, *, seconds: float) -> None: ...
-
-
-class EventSink(Protocol):
-    async def append(self, *, event: HttpEvent) -> None: ...
-
-
-class MonotonicClock:
-    def now(self) -> float:
-        return time.monotonic()
-
-    async def pause(self, *, seconds: float) -> None:
-        await asyncio.sleep(delay=seconds)
-
-
-class DispatchRefused(TrafficError):
-    """The owned task reached dispatch after its admission became unusable."""
-
-    def __init__(self, *, reason: HttpReason) -> None:
-        self.reason: HttpReason = reason
-        super().__init__(code=reason)
+from mslb_controller.backend_http import BackendHttp
+from mslb_controller.errors import DispatchRefused as DispatchRefused
+from mslb_controller.errors import TrafficError
+from mslb_controller.router import Router
+from mslb_controller.routing_models import BackendSpec, Reservation
+from mslb_controller.traffic_clock import MonotonicClock as MonotonicClock
+from mslb_controller.traffic_protocols import Clock as Clock
+from mslb_controller.traffic_protocols import EventSink as EventSink
 
 
 @dataclass(slots=True, kw_only=True)

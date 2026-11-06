@@ -3,7 +3,6 @@
 import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated
 
 from mslb_contracts.resources import (
     MIB,
@@ -12,24 +11,14 @@ from mslb_contracts.resources import (
     ServiceMemory,
     ServiceName,
 )
-from pydantic import Field, ValidationError
+from pydantic import ValidationError
 
-from mslb_controller.engine import PROJECT, ContainerInfo, Engine, EngineError, EngineModel
+from mslb_controller.engine import PROJECT, Engine
+from mslb_controller.errors import EngineError
 from mslb_controller.inspection import labels, mapping
-
-
-class Capacity(EngineModel):
-    MemTotal: Annotated[int, Field(ge=1)]
-    OSType: str
-    OperatingSystem: str
-
-
-class InspectedMemory(ContainerInfo):
-    RestartCount: Annotated[int, Field(ge=0)]
-
-
-class MemoryStats(EngineModel):
-    memory_stats: dict[str, object]
+from mslb_controller.probe_models import Capacity as Capacity
+from mslb_controller.probe_models import InspectedMemory as InspectedMemory
+from mslb_controller.probe_models import MemoryStats as MemoryStats
 
 
 def integer(*, value: object, minimum: int = 0) -> int:

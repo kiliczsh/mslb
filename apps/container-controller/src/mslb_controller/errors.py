@@ -1,4 +1,6 @@
-"""Safe failures shared by controller routing and daemon adapters."""
+"""Safe failures shared by controller routing, proxy and daemon adapters."""
+
+from mslb_contracts.docker_runtime import HttpReason
 
 
 class TrafficError(Exception):
@@ -18,4 +20,18 @@ class EngineError(Exception):
 
     def __init__(self, code: str, status: int | None = None) -> None:
         self.code, self.status = code, status
+        super().__init__(code)
+
+
+class DispatchRefused(TrafficError):
+    """The owned task reached dispatch after its admission became unusable."""
+
+    def __init__(self, *, reason: HttpReason) -> None:
+        self.reason: HttpReason = reason
+        super().__init__(code=reason)
+
+
+class Refusal(Exception):
+    def __init__(self, status: int, code: str) -> None:
+        self.status, self.code = status, code
         super().__init__(code)

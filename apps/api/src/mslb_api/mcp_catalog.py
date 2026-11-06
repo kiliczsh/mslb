@@ -30,7 +30,9 @@ from mslb_contracts.mcp import (
     ServerUpdate,
     WaitArguments,
 )
-from mslb_contracts.queries import ChartView, ComparisonView, MetricsView, Page, RunView, WaitResult
+from mslb_contracts.metric_views import ChartView, ComparisonView, MetricsView
+from mslb_contracts.pagination import Page
+from mslb_contracts.run_views import RunView, WaitResult
 from pydantic import BaseModel
 
 DIALECT = "https://json-schema.org/draft/2020-12/schema"

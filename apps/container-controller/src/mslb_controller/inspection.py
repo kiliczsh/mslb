@@ -1,16 +1,11 @@
 """Fail-closed inspection of the complete approved work-container template."""
 
-from mslb_contracts.docker_runs import CreationIntent, DeploymentSpec, StaticBackend
+from mslb_contracts.docker_inventory import DeploymentSpec, StaticBackend
+from mslb_contracts.docker_ownership import CreationIntent
 
-from mslb_controller.engine import (
-    IMAGE,
-    NETWORK,
-    PROJECT,
-    ContainerInfo,
-    EngineError,
-    ImageInfo,
-    NetworkInfo,
-)
+from mslb_controller.engine import IMAGE, NETWORK, PROJECT
+from mslb_controller.engine_models import ContainerInfo, ImageInfo, NetworkInfo
+from mslb_controller.errors import EngineError
 
 TMP_PATH = "/run/mslb-tmp"
 TMP_OPTIONS = "rw,noexec,nosuid,nodev,size=16777216,uid=1000,gid=1000"

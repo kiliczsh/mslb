@@ -5,7 +5,7 @@ from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
-from mslb_application.files import ManagedFiles
+from mslb_application.managed_files import ManagedFiles
 from mslb_persistence.database import Database
 
 from mslb_api.app import create_app

@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from mslb_contracts.docker_runs import DockerId, ImageId
+from mslb_contracts.docker_base import DockerId, ImageId
 from pydantic import BaseModel, ConfigDict, Field
 
 

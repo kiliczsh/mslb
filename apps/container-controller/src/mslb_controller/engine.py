@@ -4,7 +4,7 @@ import asyncio
 import re
 
 import httpx
-from mslb_contracts.docker_runs import CreationIntent
+from mslb_contracts.docker_ownership import CreationIntent
 from pydantic import BaseModel, ValidationError
 
 from mslb_controller.engine_models import ContainerInfo as ContainerInfo

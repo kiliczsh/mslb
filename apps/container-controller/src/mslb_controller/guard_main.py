@@ -10,7 +10,7 @@ from mslb_contracts.resources import ResourceProbe
 from mslb_persistence.database import Database
 from mslb_persistence.resource_evidence import EvidenceRecord, ResourceEvidenceStore
 
-from mslb_controller.engine import EngineError
+from mslb_controller.errors import EngineError
 from mslb_controller.guard_health import write_health
 from mslb_controller.host_memory import read_host_memory
 from mslb_controller.resource_client import ResourceClient

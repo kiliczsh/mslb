@@ -2,7 +2,8 @@
 
 from uuid import UUID
 
-from mslb_contracts.docker_runs import DeploymentSpec, DockerId
+from mslb_contracts.docker_base import DockerId
+from mslb_contracts.docker_inventory import DeploymentSpec
 from pydantic import BaseModel, ConfigDict
 
 
