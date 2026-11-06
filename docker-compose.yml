@@ -143,8 +143,61 @@ services:
         max-file: "2"
         mode: non-blocking
         max-buffer-size: 1m
+  api:
+    <<: *tool
+    profiles: []
+    image: mslb-python-tools:local
+    build:
+      context: .
+      dockerfile: infra/tooling/python.Dockerfile
+    command: [python, -m, mslb_api]
+    mem_limit: 384m
+    memswap_limit: 384m
+    environment:
+      DATABASE_URL: postgresql://mslb:local-demo-only@postgres/mslb
+      INPUT_ROOT: /data/inputs
+      OUTPUT_ROOT: /data/outputs
+      API_STATE_ROOT: /data/api-state
+      API_BIND_HOST: 0.0.0.0
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+      AUTH_TOKEN: ${AUTH_TOKEN:-}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost:8000,127.0.0.1:8000,api:8000}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8000,http://127.0.0.1:8000}
+    ports: ["127.0.0.1:8000:8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+    volumes: [inputs:/data/inputs, outputs:/data/outputs:ro, api-state:/data/api-state]
+    networks: [internal, ingress]
+    restart: on-failure:3
+    stop_grace_period: 30s
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/live', timeout=2).close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+        mode: non-blocking
+        max-buffer-size: 1m
+  api-check:
+    <<: *tool
+    image: mslb-python-tools:local
+    command: [python, scripts/check_api.py]
+    environment:
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+      AUTH_TOKEN: ${AUTH_TOKEN:-}
+    depends_on:
+      api: {condition: service_healthy}
+      worker: {condition: service_healthy}
+    networks: [internal]
 
 networks:
+  ingress:
+    driver: bridge
   internal:
     internal: true
 
@@ -153,3 +206,4 @@ volumes:
   exports:
   inputs:
   outputs:
+  api-state:

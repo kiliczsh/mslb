@@ -2,7 +2,7 @@
 name = "mslb-workspace"
 version = "0.1.0"
 requires-python = ">=3.13,<3.14"
-dependencies = ["mslb-contracts", "mslb-engine", "mslb-application", "mslb-persistence", "mslb-worker"]
+dependencies = ["mslb-contracts", "mslb-engine", "mslb-application", "mslb-persistence", "mslb-worker", "mslb-api"]
 
 [tool.uv.sources]
 mslb-contracts = { workspace = true }
@@ -10,15 +10,16 @@ mslb-engine = { workspace = true }
 mslb-application = { workspace = true }
 mslb-persistence = { workspace = true }
 mslb-worker = { workspace = true }
+mslb-api = { workspace = true }
 
 [tool.uv]
 package = false
 
 [tool.uv.workspace]
-members = ["packages/contracts", "packages/engine", "packages/application", "packages/persistence", "apps/worker"]
+members = ["packages/contracts", "packages/engine", "packages/application", "packages/persistence", "apps/worker", "apps/api"]
 
 [dependency-groups]
-dev = ["ruff", "ty", "pytest", "asyncpg", "redis"]
+dev = ["ruff", "ty", "pytest", "asyncpg", "redis", "httpx==0.28.1"]
 
 [tool.ruff]
 target-version = "py313"

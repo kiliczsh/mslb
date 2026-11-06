@@ -47,8 +47,17 @@ try {
             'compose', '--progress', 'plain', '--profile', 'tools', 'build', $service
         )
     }
+    $effectiveConfig = & docker compose --profile tools config --format json
+    if ($LASTEXITCODE -ne 0) { throw 'Compose resolution failed' }
+    $preflightOutput = $effectiveConfig | & docker run --rm -i --network=none --memory=128m --cpus=1 --pids-limit=32 mslb-python-tools:local python scripts/check_deployment.py 2>&1
+    $preflightExit = $LASTEXITCODE
+    $preflightOutput | ForEach-Object { Write-Host $_ }
+    if ($preflightExit -ne 0) { throw 'Effective deployment preflight failed' }
     Invoke-CheckedDocker -DockerArguments @('compose', 'up', '-d', '--wait')
-    foreach ($service in @('dependencies-check', 'migrate', 'python-checks', 'persistence-checks', 'frontend-checks', 'worker-check')) {
+    $hostHealth = Invoke-WebRequest -Uri 'http://127.0.0.1:8000/api/v1/health/live' -TimeoutSec 5
+    if ($hostHealth.StatusCode -ne 200) { throw 'Host loopback API health failed' }
+    Write-Host 'Host loopback API connectivity verified'
+    foreach ($service in @('dependencies-check', 'migrate', 'python-checks', 'persistence-checks', 'frontend-checks', 'worker-check', 'api-check')) {
         Invoke-CheckedDocker -DockerArguments @(
             'compose', '--profile', 'tools', 'run', '--rm', $service
         )
