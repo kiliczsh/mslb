@@ -42,7 +42,7 @@ try {
     [Environment]::SetEnvironmentVariable($keyName, 'safe.directory', 'Process')
     [Environment]::SetEnvironmentVariable($valueName, $repositoryRoot, 'Process')
     Invoke-CheckedDocker -DockerArguments @('compose', '--profile', 'tools', 'config', '--quiet')
-    foreach ($service in @('python-checks', 'frontend-checks')) {
+    foreach ($service in @('python-checks', 'frontend-checks', 'web', 'browser-checks')) {
         Invoke-CheckedDocker -DockerArguments @(
             'compose', '--progress', 'plain', '--profile', 'tools', 'build', $service
         )
@@ -57,7 +57,10 @@ try {
     $hostHealth = Invoke-WebRequest -Uri 'http://127.0.0.1:8000/api/v1/health/live' -TimeoutSec 5
     if ($hostHealth.StatusCode -ne 200) { throw 'Host loopback API health failed' }
     Write-Host 'Host loopback API connectivity verified'
-    foreach ($service in @('dependencies-check', 'migrate', 'python-checks', 'persistence-checks', 'frontend-checks', 'worker-check', 'api-check', 'mcp-check')) {
+    $webHealth = Invoke-WebRequest -Uri 'http://127.0.0.1:8080/health' -TimeoutSec 5
+    if ($webHealth.StatusCode -ne 200) { throw 'Host loopback dashboard health failed' }
+    Write-Host 'Host loopback dashboard connectivity verified'
+    foreach ($service in @('dependencies-check', 'migrate', 'python-checks', 'persistence-checks', 'frontend-checks', 'worker-check', 'api-check', 'mcp-check', 'browser-checks')) {
         Invoke-CheckedDocker -DockerArguments @(
             'compose', '--profile', 'tools', 'run', '--rm', $service
         )

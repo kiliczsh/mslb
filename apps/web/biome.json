@@ -1,5 +1,6 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.6.5/schema.json",
+  "files": { "includes": ["**", "!!dist", "!!.test-output", "!!test-results", "!!node_modules"] },
   "formatter": {
     "indentStyle": "space",
     "indentWidth": 2,

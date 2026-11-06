@@ -10,7 +10,10 @@
     "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true,
     "rootDir": ".",
-    "types": ["node"]
+    "types": ["node", "vite/client"],
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "skipLibCheck": false
   },
-  "include": ["tests/**/*.ts", "src/**/*.ts", "src/**/*.tsx"]
+  "include": ["tests/**/*.ts", "src/**/*.ts", "src/**/*.tsx", "browser/**/*.ts", "*.ts"]
 }

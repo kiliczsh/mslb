@@ -210,7 +210,7 @@ def create_app(
                     capabilities=dict(
                         logical_rest="ready" if api_ready else "unavailable",
                         mcp="ready",
-                        dashboard="not_implemented",
+                        dashboard="incomplete",
                         docker_traffic="not_implemented",
                         telemetry="not_implemented",
                         resource_guard="not_implemented",

@@ -58,11 +58,46 @@ services:
     network_mode: none
   frontend-checks:
     <<: *tool
+    image: mslb-frontend-tools:local
     build:
       context: .
       dockerfile: infra/tooling/frontend.Dockerfile
     network_mode: none
     tmpfs: [/tmp:size=128m, /home/node/.cache:size=32m, "/app/.test-output:size=64m,uid=1000,gid=1000"]
+  web:
+    <<: *tool
+    profiles: []
+    image: mslb-web:local
+    build:
+      context: .
+      dockerfile: infra/web/Dockerfile
+    mem_limit: 128m
+    memswap_limit: 128m
+    ports: ["127.0.0.1:8080:8080"]
+    networks: [internal, ingress]
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://127.0.0.1:8080/health]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  browser-checks:
+    <<: *tool
+    image: mslb-browser-tools:local
+    build:
+      context: .
+      dockerfile: infra/tooling/browser.Dockerfile
+    environment:
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+      AUTH_TOKEN: ${AUTH_TOKEN:-}
+    tmpfs: [/tmp:size=256m, "/app/test-results:size=64m,uid=1000,gid=1000"]
+    shm_size: 128m
+    pids_limit: 256
+    networks: [internal]
+    depends_on:
+      web: {condition: service_healthy}
+      worker: {condition: service_healthy}
   dependencies-check:
     <<: *tool
     image: mslb-python-tools:local
@@ -162,7 +197,7 @@ services:
       AUTH_ENABLED: ${AUTH_ENABLED:-false}
       AUTH_TOKEN: ${AUTH_TOKEN:-}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost:8000,127.0.0.1:8000,api:8000}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8000,http://127.0.0.1:8000}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8000,http://127.0.0.1:8000,http://localhost:8080,http://127.0.0.1:8080,http://web:8080}
     ports: ["127.0.0.1:8000:8000"]
     depends_on:
       postgres: {condition: service_healthy}
