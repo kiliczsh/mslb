@@ -17,15 +17,15 @@ from pydantic import ValidationError
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from mslb_persistence.database import Database, StoreError
+from mslb_persistence.database import Database
+from mslb_persistence.errors import StoreError
+from mslb_persistence.job_models import Job, Run
 from mslb_persistence.jobs import _clock, _end_attempt, _slot, ownership_predicate
-from mslb_persistence.models import (
+from mslb_persistence.output_models import (
     CommittedChunk,
     IndexedEvent,
-    Job,
     OutputProgress,
     PublishedArtifact,
-    Run,
     SavedCheckpoint,
 )
 from mslb_persistence.records import JobRecord, Lease

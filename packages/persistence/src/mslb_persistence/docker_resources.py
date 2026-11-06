@@ -14,10 +14,11 @@ from mslb_contracts.traffic import BackendHealth
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from mslb_persistence.database import Database, StoreError
+from mslb_persistence.database import Database
 from mslb_persistence.docker_control import RESOLVED, current, execution, guard
+from mslb_persistence.docker_models import DockerDeployment, DockerResource, DockerRunState
 from mslb_persistence.docker_records import ControlLease, ResourceRecord, resource_record
-from mslb_persistence.models import DockerDeployment, DockerResource, DockerRunState
+from mslb_persistence.errors import StoreError
 
 
 async def _population(session: AsyncSession, run_id: UUID) -> tuple[DockerResource, ...]:

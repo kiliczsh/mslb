@@ -14,11 +14,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-
-class StoreError(ValueError):
-    def __init__(self, code: str, message: str) -> None:
-        self.code = code
-        super().__init__(message)
+from mslb_persistence.errors import StoreError as StoreError
 
 
 class Database:

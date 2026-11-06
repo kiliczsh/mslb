@@ -16,9 +16,10 @@ from pydantic import ValidationError
 from sqlalchemy import DateTime, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from mslb_persistence.database import Database, StoreError
+from mslb_persistence.database import Database
+from mslb_persistence.errors import StoreError
 from mslb_persistence.jobs import _clock
-from mslb_persistence.models import ResourceEvidence
+from mslb_persistence.resource_models import ResourceEvidence
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

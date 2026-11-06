@@ -9,8 +9,11 @@ from mslb_contracts.runs import LegacyRunSettings, public_settings
 from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from mslb_persistence.database import Database, StoreError
-from mslb_persistence.models import Dataset, Job, OutputProgress, Run
+from mslb_persistence.catalog_models import Dataset
+from mslb_persistence.database import Database
+from mslb_persistence.errors import StoreError
+from mslb_persistence.job_models import Job, Run
+from mslb_persistence.output_models import OutputProgress
 
 
 def dataset_view(row: Dataset) -> DatasetView:

@@ -8,7 +8,8 @@ from uuid import UUID
 from mslb_contracts.catalog import ServerView
 from mslb_contracts.inputs import ServerInput
 
-from mslb_persistence.models import Dataset, Job, ManagedServer, Run
+from mslb_persistence.catalog_models import Dataset, ManagedServer
+from mslb_persistence.job_models import Job, Run
 
 
 def server_view(server: ManagedServer) -> ServerView:

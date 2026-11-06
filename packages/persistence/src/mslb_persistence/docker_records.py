@@ -8,8 +8,8 @@ from uuid import UUID
 from mslb_contracts.canonical import canonical_bytes
 from mslb_contracts.docker_runs import CreationIntent, DeploymentSpec, StaticReservation
 
-from mslb_persistence.database import StoreError
-from mslb_persistence.models import DockerResource
+from mslb_persistence.docker_models import DockerResource
+from mslb_persistence.errors import StoreError
 
 
 @dataclass(frozen=True, slots=True)

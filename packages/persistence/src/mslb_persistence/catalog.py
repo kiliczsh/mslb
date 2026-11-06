@@ -12,17 +12,10 @@ from mslb_contracts.runs import RunSnapshot, verify_snapshot_identity
 from sqlalchemy import delete, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from mslb_persistence.database import Database, StoreError
-from mslb_persistence.models import (
-    Dataset,
-    IdempotencyRecord,
-    Installation,
-    Job,
-    ManagedServer,
-    Outbox,
-    Run,
-    ServerHistory,
-)
+from mslb_persistence.catalog_models import Dataset, Installation, ManagedServer, ServerHistory
+from mslb_persistence.database import Database
+from mslb_persistence.errors import StoreError
+from mslb_persistence.job_models import IdempotencyRecord, Job, Outbox, Run
 from mslb_persistence.records import DatasetRecord, RunRecord, server_input, server_view
 
 

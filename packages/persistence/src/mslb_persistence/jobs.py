@@ -8,8 +8,9 @@ from sqlalchemy import and_, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
-from mslb_persistence.database import Database, StoreError
-from mslb_persistence.models import Attempt, ExecutionSlot, Job, Outbox
+from mslb_persistence.database import Database
+from mslb_persistence.errors import StoreError
+from mslb_persistence.job_models import Attempt, ExecutionSlot, Job, Outbox
 from mslb_persistence.records import JobRecord, Lease
 
 
