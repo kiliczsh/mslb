@@ -12,5 +12,9 @@ def json_response(
 ) -> Response:
     payload = model.model_dump_json().encode()
     if len(payload) > 1024**2:
-        raise OperationError("RESOURCE_LIMIT_EXCEEDED", "Response exceeds its encoded byte budget")
-    return Response(payload, status_code=status, media_type="application/json", headers=headers)
+        raise OperationError(
+            code="RESOURCE_LIMIT_EXCEEDED", message="Response exceeds its encoded byte budget"
+        )
+    return Response(
+        content=payload, status_code=status, media_type="application/json", headers=headers
+    )

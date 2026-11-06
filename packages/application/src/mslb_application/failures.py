@@ -15,7 +15,7 @@ def failure(error: Exception, request_id: str) -> ErrorEnvelope:
     """Translate ordinary failures safely; cancellation/control signals stay outside this API."""
     code, message, details = "INTERNAL_ERROR", "The operation could not be completed", ()
     if isinstance(error, (OperationError, StoreError, SimulationError)):
-        code, message = error.code, str(error)
+        code, message = error.code, str(object=error)
     elif isinstance(error, InputError):
         code, message = "VALIDATION_ERROR", "Input validation failed"
         details = (FieldError(field=error.field[:256], reason=error.reason[:128]),)
@@ -23,7 +23,8 @@ def failure(error: Exception, request_id: str) -> ErrorEnvelope:
         code, message = "VALIDATION_ERROR", "Request validation failed"
         details = tuple(
             FieldError(
-                field=".".join(str(part) for part in item["loc"])[:256], reason=item["type"][:128]
+                field=".".join(str(object=part) for part in item["loc"])[:256],
+                reason=item["type"][:128],
             )
             for item in error.errors()[:32]
         )

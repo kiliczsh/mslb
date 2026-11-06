@@ -36,8 +36,8 @@ class FractionValue(BaseModel):
         """Encode domain arithmetic without passing through floating point."""
         if max(value.numerator.bit_length(), value.denominator.bit_length()) > MAX_FRACTION_BITS:
             raise ValueError("Fraction exceeds the 4096-bit complexity limit")
-        return cls(numerator=str(value.numerator), denominator=str(value.denominator))
+        return cls(numerator=str(object=value.numerator), denominator=str(object=value.denominator))
 
     def to_fraction(self) -> Fraction:
         """Restore exact arithmetic from a validated wire value."""
-        return Fraction(int(self.numerator), int(self.denominator))
+        return Fraction(numerator=int(self.numerator), denominator=int(self.denominator))

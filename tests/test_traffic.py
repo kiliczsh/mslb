@@ -53,27 +53,27 @@ class Body(httpx.AsyncByteStream):
 
 def response(value: object, status: int = HTTPStatus.OK.value) -> httpx.Response:
     return httpx.Response(
-        status,
+        status_code=status,
         headers={"content-type": "application/json"},
-        stream=Body(json.dumps(value).encode()),
+        stream=Body(value=json.dumps(obj=value).encode()),
     )
 
 
 def test_cpu_work_is_finite_repeatable_and_deadline_or_cancellation_never_completes() -> None:
-    first = execute(1, Event(), time.monotonic() + 2)
-    second = execute(1, Event(), time.monotonic() + 2)
+    first = execute(work_units=1, stopped=Event(), deadline=time.monotonic() + 2)
+    second = execute(work_units=1, stopped=Event(), deadline=time.monotonic() + 2)
     assert first.operations == second.operations == 2048
     assert first.checksum == second.checksum
     assert len(first.checksum) == 8 and first.duration_ms >= 0
-    with pytest.raises(WorkStopped, match="WORK_TIMEOUT"):
-        execute(1_000_000_000, Event(), time.monotonic() - 1)
+    with pytest.raises(expected_exception=WorkStopped, match="WORK_TIMEOUT"):
+        execute(work_units=1_000_000_000, stopped=Event(), deadline=time.monotonic() - 1)
     stopped = Event()
     stopped.set()
-    with pytest.raises(WorkStopped, match="WORK_CANCELLED"):
-        execute(1, stopped, time.monotonic() + 2)
+    with pytest.raises(expected_exception=WorkStopped, match="WORK_CANCELLED"):
+        execute(work_units=1, stopped=stopped, deadline=time.monotonic() + 2)
     for invalid in (0, -1, True, 1_000_000_001):
-        with pytest.raises(ValueError):
-            execute(invalid, Event(), time.monotonic() + 2)
+        with pytest.raises(expected_exception=ValueError):
+            execute(work_units=invalid, stopped=Event(), deadline=time.monotonic() + 2)
 
 
 def test_backend_independently_caps_memory_and_inflight_and_holds_cancelled_cpu_reservations() -> (
@@ -83,66 +83,73 @@ def test_backend_independently_caps_memory_and_inflight_and_holds_cancelled_cpu_
         released = Event()
 
         def waiting(_units: int, stopped: Event, _deadline: float) -> CpuResult:
-            if not released.wait(3):
-                raise WorkStopped("WORK_TIMEOUT")
+            if not released.wait(timeout=3):
+                raise WorkStopped(code="WORK_TIMEOUT")
             if stopped.is_set():
-                raise WorkStopped("WORK_CANCELLED")
-            return CpuResult(2048, "00000000", 1.0)
+                raise WorkStopped(code="WORK_CANCELLED")
+            return CpuResult(operations=2048, checksum="00000000", duration_ms=1.0)
 
-        backend = Backend(Settings("backend-a", 8, 2), waiting)
-        first = asyncio.create_task(backend.run(payload("first", 1)))
-        second = asyncio.create_task(backend.run(payload("second", 1)))
+        backend = Backend(
+            settings=Settings(backend_id="backend-a", logical_admission_mem_mb=8, max_inflight=2),
+            work=waiting,
+        )
+        first = asyncio.create_task(coro=backend.run(payload=payload(identifier="first", memory=1)))
+        second = asyncio.create_task(
+            coro=backend.run(payload=payload(identifier="second", memory=1))
+        )
         try:
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(delay=0.01)
             assert backend.inflight == 2 and backend.reserved == 2
-            with pytest.raises(WorkStopped, match="BACKEND_BUSY"):
-                await backend.run(payload("excess"))
+            with pytest.raises(expected_exception=WorkStopped, match="BACKEND_BUSY"):
+                await backend.run(payload=payload(identifier="excess"))
             first.cancel()
-            with pytest.raises(asyncio.CancelledError):
+            with pytest.raises(expected_exception=asyncio.CancelledError):
                 await first
             assert backend.inflight == 2 and backend.reserved == 2
-            with pytest.raises(WorkStopped, match="BACKEND_BUSY"):
-                await backend.run(payload("still-excess"))
+            with pytest.raises(expected_exception=WorkStopped, match="BACKEND_BUSY"):
+                await backend.run(payload=payload(identifier="still-excess"))
             released.set()
             await second
             for _ in range(100):
                 if not backend.active:
                     break
-                await asyncio.sleep(0.001)
+                await asyncio.sleep(delay=0.001)
             assert backend.inflight == backend.reserved == 0
-            with pytest.raises(WorkStopped, match="BACKEND_BUSY"):
-                await backend.run(payload("too-large", 9))
+            with pytest.raises(expected_exception=WorkStopped, match="BACKEND_BUSY"):
+                await backend.run(payload=payload(identifier="too-large", memory=9))
             released.clear()
-            memory_owner = asyncio.create_task(backend.run(payload("memory-owner", 5)))
-            await asyncio.sleep(0.01)
+            memory_owner = asyncio.create_task(
+                coro=backend.run(payload=payload(identifier="memory-owner", memory=5))
+            )
+            await asyncio.sleep(delay=0.01)
             assert backend.inflight == 1 and backend.reserved == 5
-            with pytest.raises(WorkStopped, match="BACKEND_BUSY"):
-                await backend.run(payload("aggregate-memory-excess", 4))
+            with pytest.raises(expected_exception=WorkStopped, match="BACKEND_BUSY"):
+                await backend.run(payload=payload(identifier="aggregate-memory-excess", memory=4))
             released.set()
             await memory_owner
         finally:
             released.set()
             await backend.close()
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 def test_backend_http_validates_streamed_bodies_and_exposes_real_health_without_echoing_input() -> (
     None
 ):
     async def scenario() -> None:
-        settings = Settings("backend-a", 1_000_000_000)
-        backend = Backend(settings)
-        app = create_app(settings, backend)
+        settings = Settings(backend_id="backend-a", logical_admission_mem_mb=1_000_000_000)
+        backend = Backend(settings=settings)
+        app = create_app(settings=settings, backend=backend)
         try:
             async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app), base_url="http://backend-a"
+                transport=httpx.ASGITransport(app=app), base_url="http://backend-a"
             ) as client:
-                value = BackendHealth.model_validate((await client.get("/health")).json())
+                value = BackendHealth.model_validate(obj=(await client.get(url="/health")).json())
                 assert value.backend_id == "backend-a" and value.inflight == 0
                 # This reserves a billion logical MiB but executes only 2048 integer operations.
                 actual = await client.post(
-                    "/work", json=payload("real", 1_000_000_000).model_dump()
+                    url="/work", json=payload(identifier="real", memory=1_000_000_000).model_dump()
                 )
                 assert (
                     actual.status_code == HTTPStatus.OK.value
@@ -153,14 +160,14 @@ def test_backend_http_validates_streamed_bodies_and_exposes_real_health_without_
                     {"request_id": "sensitive-row", "work_units": "1", "mem_mb": 1},
                     {**payload().model_dump(), "command": "sensitive-row"},
                 ):
-                    invalid = await client.post("/work", json=body)
+                    invalid = await client.post(url="/work", json=body)
                     assert (
                         invalid.status_code == HTTPStatus.UNPROCESSABLE_CONTENT.value
                         and "sensitive-row" not in invalid.text
                     )
                 assert (
                     await client.post(
-                        "/work", content=b"{}", headers={"content-type": "text/plain"}
+                        url="/work", content=b"{}", headers={"content-type": "text/plain"}
                     )
                 ).status_code == HTTPStatus.UNSUPPORTED_MEDIA_TYPE.value
 
@@ -169,42 +176,42 @@ def test_backend_http_validates_streamed_bodies_and_exposes_real_health_without_
                         yield b"x" * 4096
 
                 too_large = await client.post(
-                    "/work", content=large(), headers={"content-type": "application/json"}
+                    url="/work", content=large(), headers={"content-type": "application/json"}
                 )
                 assert too_large.status_code == HTTPStatus.CONTENT_TOO_LARGE.value
                 assert backend.inflight == backend.reserved == 0
         finally:
             await backend.close()
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 def test_backend_timeout_is_an_explicit_error_and_shutdown_stops_admission() -> None:
     async def scenario() -> None:
         def expired(_units: int, _stopped: Event, _deadline: float) -> CpuResult:
-            raise WorkStopped("WORK_TIMEOUT")
+            raise WorkStopped(code="WORK_TIMEOUT")
 
-        settings = Settings("backend-b")
-        backend = Backend(settings, expired)
+        settings = Settings(backend_id="backend-b")
+        backend = Backend(settings=settings, work=expired)
         async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(create_app(settings, backend)),
+            transport=httpx.ASGITransport(app=create_app(settings=settings, backend=backend)),
             base_url="http://backend-b",
         ) as client:
-            timed_out = await client.post("/work", json=payload().model_dump())
+            timed_out = await client.post(url="/work", json=payload().model_dump())
             assert timed_out.status_code == HTTPStatus.GATEWAY_TIMEOUT.value
             assert timed_out.json() == {"error": {"code": "WORK_TIMEOUT"}}
             await backend.close()
-            assert not (await client.get("/health")).json()["ready"]
+            assert not (await client.get(url="/health")).json()["ready"]
             assert (
-                await client.post("/work", json=payload().model_dump())
+                await client.post(url="/work", json=payload().model_dump())
             ).status_code == HTTPStatus.TOO_MANY_REQUESTS.value
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 @pytest.mark.parametrize(
-    "strategy,expected",
-    [
+    argnames="strategy,expected",
+    argvalues=[
         ("first_fit", ["backend-a", "backend-a", "backend-b"]),
         ("round_robin", ["backend-a", "backend-b", "backend-a"]),
         ("least_connections", ["backend-a", "backend-b", "backend-a"]),
@@ -218,11 +225,19 @@ def test_router_uses_all_strategies_with_stable_ties_and_reserved_logical_memory
         http = BackendHttp()
         try:
             router = Router(
-                (BackendSpec("backend-b", 16), BackendSpec("backend-a", 8)), strategy, http
+                specs=(
+                    BackendSpec(id="backend-b", logical_admission_mem_mb=16),
+                    BackendSpec(id="backend-a", logical_admission_mem_mb=8),
+                ),
+                strategy=strategy,
+                http=http,
             )
             for state in router.states.values():
                 state.healthy = True
-            reservations = [router.reserve(payload(f"r-{index}", 4)) for index in range(3)]
+            reservations = [
+                router.reserve(request=payload(identifier=f"r-{index}", memory=4))
+                for index in range(3)
+            ]
             assert [item.backend.spec.id for item in reservations] == expected
             for item in reservations:
                 item.release()
@@ -233,7 +248,7 @@ def test_router_uses_all_strategies_with_stable_ties_and_reserved_logical_memory
         finally:
             await http.close()
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 def test_router_bounds_global_rate_health_drain_and_memory_independently() -> None:
@@ -242,41 +257,63 @@ def test_router_bounds_global_rate_health_drain_and_memory_independently() -> No
         http = BackendHttp()
         try:
             router = Router(
-                (BackendSpec("backend-a", 8, 1, 1), BackendSpec("backend-b", 8, 1, 1)),
-                "first_fit",
-                http,
+                specs=(
+                    BackendSpec(
+                        id="backend-a",
+                        logical_admission_mem_mb=8,
+                        max_inflight=1,
+                        starts_per_second=1,
+                    ),
+                    BackendSpec(
+                        id="backend-b",
+                        logical_admission_mem_mb=8,
+                        max_inflight=1,
+                        starts_per_second=1,
+                    ),
+                ),
+                strategy="first_fit",
+                http=http,
                 max_inflight=1,
                 clock=lambda: now[0],
             )
-            with pytest.raises(TrafficError, match="NO_ELIGIBLE_BACKEND"):
-                router.reserve(payload())
+            with pytest.raises(expected_exception=TrafficError, match="NO_ELIGIBLE_BACKEND"):
+                router.reserve(request=payload())
             for state in router.states.values():
                 state.healthy = True
-            first = router.reserve(payload())
-            with pytest.raises(TrafficError, match="GLOBAL_INFLIGHT_LIMIT"):
-                router.reserve(payload())
+            first = router.reserve(request=payload())
+            with pytest.raises(expected_exception=TrafficError, match="GLOBAL_INFLIGHT_LIMIT"):
+                router.reserve(request=payload())
             first.release()
             router.states["backend-b"].draining = True
-            with pytest.raises(TrafficError, match="NO_ELIGIBLE_BACKEND"):
-                router.reserve(payload())
+            with pytest.raises(expected_exception=TrafficError, match="NO_ELIGIBLE_BACKEND"):
+                router.reserve(request=payload())
             now[0] += 1
-            next_one = router.reserve(payload())
+            next_one = router.reserve(request=payload())
             assert next_one.backend.spec.id == "backend-a"
             next_one.release()
-            with pytest.raises(TrafficError, match="UNSCHEDULABLE_MEMORY"):
-                router.reserve(payload(memory=9))
+            with pytest.raises(expected_exception=TrafficError, match="UNSCHEDULABLE_MEMORY"):
+                router.reserve(request=payload(memory=9))
             now[0] = float("nan")
-            with pytest.raises(TrafficError, match="CLOCK_UNAVAILABLE"):
-                router.reserve(payload())
+            with pytest.raises(expected_exception=TrafficError, match="CLOCK_UNAVAILABLE"):
+                router.reserve(request=payload())
         finally:
             await http.close()
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 @pytest.mark.parametrize(
-    "kind",
-    ["success", "status", "redirect", "identity", "operations", "oversized", "timeout", "cancel"],
+    argnames="kind",
+    argvalues=[
+        "success",
+        "status",
+        "redirect",
+        "identity",
+        "operations",
+        "oversized",
+        "timeout",
+        "cancel",
+    ],
 )
 def test_real_transport_contracts_release_every_reservation_without_retries(kind: str) -> None:
     async def scenario() -> None:
@@ -286,11 +323,11 @@ def test_real_transport_contracts_release_every_reservation_without_retries(kind
         async def serve(request: httpx.Request) -> httpx.Response:
             nonlocal calls
             if request.url.path == "/health":
-                return response(health().model_dump())
+                return response(value=health().model_dump())
             calls += 1
             entered.set()
             if kind == "timeout":
-                raise httpx.ReadTimeout("sensitive-network-data")
+                raise httpx.ReadTimeout(message="sensitive-network-data")
             if kind == "cancel":
                 await asyncio.Event().wait()
             result = {
@@ -303,36 +340,36 @@ def test_real_transport_contracts_release_every_reservation_without_retries(kind
             }
             if kind == "oversized":
                 return httpx.Response(
-                    HTTPStatus.OK.value,
+                    status_code=HTTPStatus.OK.value,
                     headers={"content-type": "application/json"},
-                    stream=Body(b"x" * 65537),
+                    stream=Body(value=b"x" * 65537),
                 )
             return response(
-                result,
-                HTTPStatus.SERVICE_UNAVAILABLE.value
+                value=result,
+                status=HTTPStatus.SERVICE_UNAVAILABLE.value
                 if kind == "status"
                 else HTTPStatus.FOUND.value
                 if kind == "redirect"
                 else HTTPStatus.OK.value,
             )
 
-        http = BackendHttp(httpx.MockTransport(serve))
-        router = Router((BackendSpec("backend-a"),), "first_fit", http)
+        http = BackendHttp(transport=httpx.MockTransport(handler=serve))
+        router = Router(specs=(BackendSpec(id="backend-a"),), strategy="first_fit", http=http)
         try:
             await router.refresh()
             assert router.states["backend-a"].healthy
-            task = asyncio.create_task(router.send(payload()))
+            task = asyncio.create_task(coro=router.send(request=payload()))
             if kind == "cancel":
                 await entered.wait()
                 task.cancel()
-                with pytest.raises(asyncio.CancelledError):
+                with pytest.raises(expected_exception=asyncio.CancelledError):
                     await task
             elif kind == "success":
                 assert (await task).backend_id == "backend-a"
             else:
-                with pytest.raises(TrafficError) as error:
+                with pytest.raises(expected_exception=TrafficError) as error:
                     await task
-                assert "sensitive" not in str(error.value)
+                assert "sensitive" not in str(object=error.value)
                 assert error.value.backend_id == "backend-a"
                 if kind in {"status", "redirect"}:
                     assert error.value.status_code == (
@@ -347,7 +384,7 @@ def test_real_transport_contracts_release_every_reservation_without_retries(kind
         finally:
             await http.close()
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 def test_inventory_rejects_arbitrary_endpoints_and_contracts_reject_bad_units() -> None:
@@ -358,18 +395,23 @@ def test_inventory_rejects_arbitrary_endpoints_and_contracts_reject_bad_units() 
         "backend-a.evil.test",
         "backend-a:8080/path",
     ):
-        with pytest.raises(ValueError):
-            BackendSpec(identifier)
+        with pytest.raises(expected_exception=ValueError):
+            BackendSpec(id=identifier)
     for value in ("1", True, 0, 1_000_000_001):
-        with pytest.raises(ValidationError):
-            WorkRequest.model_validate({"request_id": "a", "work_units": value, "mem_mb": 1})
-    with pytest.raises(ValidationError):
+        with pytest.raises(expected_exception=ValidationError):
+            WorkRequest.model_validate(obj={"request_id": "a", "work_units": value, "mem_mb": 1})
+    with pytest.raises(expected_exception=ValidationError):
         WorkRequest(request_id="é" * 65, work_units=1, mem_mb=1)
 
 
 @pytest.mark.parametrize(
-    "service", ["backend-a", "backend-b", "container-controller", "docker-proxy", "resource-guard"]
+    argnames="service",
+    argvalues=["backend-a", "backend-b", "container-controller", "docker-proxy", "resource-guard"],
 )
 def test_deployment_never_publishes_private_work_or_control_ports(service: str) -> None:
-    with pytest.raises(ValueError, match="must not publish"):
-        check(json.dumps({"services": {service: {"ports": [{"host_ip": "127.0.0.1"}]}}}).encode())
+    with pytest.raises(expected_exception=ValueError, match="must not publish"):
+        check(
+            payload=json.dumps(
+                obj={"services": {service: {"ports": [{"host_ip": "127.0.0.1"}]}}}
+            ).encode()
+        )

@@ -37,7 +37,7 @@ class Autoscaler:
     def _bounded(self, value: Fraction) -> Fraction:
         if max(value.numerator.bit_length(), value.denominator.bit_length()) > self.bit_limit:
             raise SimulationError(
-                "RESOURCE_LIMIT_EXCEEDED", "Scaling arithmetic complexity exceeded"
+                code="RESOURCE_LIMIT_EXCEEDED", message="Scaling arithmetic complexity exceeded"
             )
         return value
 
@@ -48,10 +48,12 @@ class Autoscaler:
         if self.policy.enabled:
             self.history.append(
                 Observation(
-                    ending_tick,
-                    self._bounded(consumed / capacity),
-                    drops,
-                    self._bounded(Fraction(drops, max(1, arrivals))),
+                    ending_tick=ending_tick,
+                    cpu_utilization=self._bounded(value=consumed / capacity),
+                    drops=drops,
+                    drop_ratio=self._bounded(
+                        value=Fraction(numerator=drops, denominator=max(1, arrivals))
+                    ),
                 )
             )
 
@@ -64,10 +66,10 @@ class Autoscaler:
         samples = len(self.history)
         cpu_sum, drop_sum = Fraction(), Fraction()
         for sample in self.history:
-            cpu_sum = self._bounded(cpu_sum + sample.cpu_utilization)
-            drop_sum = self._bounded(drop_sum + sample.drop_ratio)
-        cpu_mean = self._bounded(cpu_sum / samples) if samples else Fraction()
-        drop_mean = self._bounded(drop_sum / samples) if samples else Fraction()
+            cpu_sum = self._bounded(value=cpu_sum + sample.cpu_utilization)
+            drop_sum = self._bounded(value=drop_sum + sample.drop_ratio)
+        cpu_mean = self._bounded(value=cpu_sum / samples) if samples else Fraction()
+        drop_mean = self._bounded(value=drop_sum / samples) if samples else Fraction()
         triggers: list[str] = []
         if cpu_mean >= self.policy.scale_out_cpu_threshold:
             triggers.append("cpu_mean")
@@ -77,7 +79,9 @@ class Autoscaler:
             triggers.append("drop_rate_mean")
         maximum, minimum = self.policy.max_servers, self.policy.min_servers
         if maximum is None or minimum is None:
-            raise SimulationError("INVALID_STATE", "Scaling policy defaults must be resolved")
+            raise SimulationError(
+                code="INVALID_STATE", message="Scaling policy defaults must be resolved"
+            )
         added: tuple[str, ...] = ()
         removed: tuple[str, ...] = ()
         action, reason = "none", "not_eligible"
@@ -117,13 +121,13 @@ class Autoscaler:
                 else:
                     reason = "bounds"
         decision = ScaleDecision(
-            tick,
-            action,
-            tuple(triggers),
-            tick + 1 if added or removed else None,
-            added,
-            removed,
-            reason,
+            t=tick,
+            action=action,
+            trigger=tuple(triggers),
+            applied_at=tick + 1 if added or removed else None,
+            server_ids_added=added,
+            server_ids_removed=removed,
+            reason=reason,
         )
         if added or removed:
             self.next_eligible_tick = tick + self.policy.cooldown_ticks + 1
@@ -138,9 +142,13 @@ class Autoscaler:
             return servers
         change = self.pending
         if change.applied_at != tick:
-            raise SimulationError("INVALID_STATE", "Scaling activation boundary mismatch")
+            raise SimulationError(
+                code="INVALID_STATE", message="Scaling activation boundary mismatch"
+            )
         if not set(change.server_ids_removed).issubset(idle_ids - self.initial_ids):
-            raise SimulationError("INVALID_STATE", "Attempted to remove a busy or original server")
+            raise SimulationError(
+                code="INVALID_STATE", message="Attempted to remove a busy or original server"
+            )
         members = {server.id: server for server in servers}
         for sid in change.server_ids_removed:
             del members[sid]
@@ -148,10 +156,13 @@ class Autoscaler:
         for sid in change.server_ids_added:
             if sid in members or template is None:
                 raise SimulationError(
-                    "INVALID_STATE", "Scaling identity collision or missing template"
+                    code="INVALID_STATE", message="Scaling identity collision or missing template"
                 )
             members[sid] = Server(
-                sid, template.cpu_units_per_tick, template.mem_mb, template.rate_limit_per_sec
+                id=sid,
+                cpu_units_per_tick=template.cpu_units_per_tick,
+                mem_mb=template.mem_mb,
+                rate_limit_per_sec=template.rate_limit_per_sec,
             )
         self.pending = None
         return tuple(sorted(members.values(), key=lambda server: server.id))

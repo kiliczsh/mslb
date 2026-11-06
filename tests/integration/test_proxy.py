@@ -28,11 +28,13 @@ from tests.test_docker_engine import fixture
 class ObservedEngine(Engine):
     def __init__(self, intent: CreationIntent) -> None:
         super().__init__(
-            httpx.MockTransport(
-                lambda _request: httpx.Response(HTTPStatus.INTERNAL_SERVER_ERROR.value)
+            transport=httpx.MockTransport(
+                handler=lambda _request: httpx.Response(
+                    status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value
+                )
             )
         )
-        _intent, self.approved_image, self.approved_network, self.info = fixture(intent)
+        _intent, self.approved_image, self.approved_network, self.info = fixture(intent=intent)
         self.absent = False
         self.image_absent = False
         self.create_error: EngineError | None = None
@@ -41,7 +43,7 @@ class ObservedEngine(Engine):
     @override
     async def image(self, image_id: str | None = None) -> ImageInfo:
         if self.image_absent:
-            raise EngineError("ENGINE_STATUS", HTTPStatus.NOT_FOUND.value)
+            raise EngineError(code="ENGINE_STATUS", status=HTTPStatus.NOT_FOUND.value)
         return self.approved_image
 
     @override
@@ -51,7 +53,7 @@ class ObservedEngine(Engine):
     @override
     async def inspect(self, reference: str) -> ContainerInfo:
         if self.absent:
-            raise EngineError("ENGINE_STATUS", HTTPStatus.NOT_FOUND.value)
+            raise EngineError(code="ENGINE_STATUS", status=HTTPStatus.NOT_FOUND.value)
         return self.info
 
     @override
@@ -75,41 +77,43 @@ class ObservedEngine(Engine):
 def test_unknown_create_adopts_exact_definition_under_replacement_cleanup_only() -> None:
     async def run() -> None:
         async with scratch() as database:
-            data = await prepared(database)
+            data = await prepared(database=database)
             await data.enqueue()
-            old = await claim(data)
-            record = await data.resources.prepare_dynamic(old)
-            intent = await data.resources.authorize_create(old, record.id)
-            await data.resources.transition(old, record.id, "uncertain")
-            engine, http = ObservedEngine(intent), BackendHttp()
-            lifecycle = Lifecycle(database, engine, http)
+            old = await claim(data=data)
+            record = await data.resources.prepare_dynamic(lease=old)
+            intent = await data.resources.authorize_create(lease=old, resource_id=record.id)
+            await data.resources.transition(lease=old, resource_id=record.id, action="uncertain")
+            engine, http = ObservedEngine(intent=intent), BackendHttp()
+            lifecycle = Lifecycle(database=database, engine=engine, http=http)
             try:
                 engine.absent = True
-                with pytest.raises(EngineError):
-                    await lifecycle.cleanup(old, record.id)
-                assert (await data.resources.get(old, record.id)).state == "unresolved"
+                with pytest.raises(expected_exception=EngineError):
+                    await lifecycle.cleanup(lease=old, identifier=record.id)
+                assert (
+                    await data.resources.get(lease=old, resource_id=record.id)
+                ).state == "unresolved"
                 assert engine.actions == []
-                await expire(database)
-                recovery = await claim(data, "recovery")
+                await expire(database=database)
+                recovery = await claim(data=data, owner="recovery")
                 assert recovery.phase == "cleanup"
                 engine.absent = False
                 engine.info = engine.info.model_copy(update={"State": {"Running": True}})
-                with pytest.raises(StoreError, match="current"):
-                    await lifecycle.cleanup(old, record.id)
-                resolved = await lifecycle.cleanup(recovery, record.id)
+                with pytest.raises(expected_exception=StoreError, match="current"):
+                    await lifecycle.cleanup(lease=old, identifier=record.id)
+                resolved = await lifecycle.cleanup(lease=recovery, identifier=record.id)
                 assert resolved.state == "removed" and resolved.container_id == engine.info.Id
                 assert engine.actions == ["stop:" + engine.info.Id, "remove:" + engine.info.Id]
-                await data.control.finish_cleanup(recovery)
+                await data.control.finish_cleanup(lease=recovery)
             finally:
                 await engine.close()
                 await http.close()
 
-    asyncio.run(run())
+    asyncio.run(main=run())
 
 
 @pytest.mark.parametrize(
-    "status,state",
-    [
+    argnames="status,state",
+    argvalues=[
         (HTTPStatus.BAD_REQUEST.value, "abandoned"),
         (HTTPStatus.CONFLICT.value, "unresolved"),
         (HTTPStatus.INTERNAL_SERVER_ERROR.value, "unresolved"),
@@ -121,67 +125,73 @@ def test_create_receipts_do_not_retry_or_release_uncertain_capacity(
 ) -> None:
     async def run() -> None:
         async with scratch() as database:
-            data = await prepared(database)
+            data = await prepared(database=database)
             await data.enqueue()
-            lease = await claim(data)
-            record = await data.resources.prepare_dynamic(lease)
+            lease = await claim(data=data)
+            record = await data.resources.prepare_dynamic(lease=lease)
             assert isinstance(record.definition, CreationIntent)
-            engine, http = ObservedEngine(record.definition), BackendHttp()
-            lifecycle = Lifecycle(database, engine, http)
+            engine, http = ObservedEngine(intent=record.definition), BackendHttp()
+            lifecycle = Lifecycle(database=database, engine=engine, http=http)
 
             async def enrolled() -> DeploymentRecord:
-                return await data.catalog.deployment(record.definition.deployment_id)
+                return await data.catalog.deployment(deployment_id=record.definition.deployment_id)
 
-            monkeypatch.setattr(lifecycle, "enroll", enrolled)
+            monkeypatch.setattr(target=lifecycle, name="enroll", value=enrolled)
             engine.create_error = EngineError(
-                "ENGINE_STATUS" if status is not None else "ENGINE_TIMEOUT", status
+                code="ENGINE_STATUS" if status is not None else "ENGINE_TIMEOUT", status=status
             )
             try:
-                with pytest.raises(EngineError):
-                    await lifecycle.create(lease, record.id)
-                assert (await data.resources.get(lease, record.id)).state == state
-                with pytest.raises(StoreError, match="authorized"):
-                    await lifecycle.create(lease, record.id)
+                with pytest.raises(expected_exception=EngineError):
+                    await lifecycle.create(lease=lease, identifier=record.id)
+                assert (await data.resources.get(lease=lease, resource_id=record.id)).state == state
+                with pytest.raises(expected_exception=StoreError, match="authorized"):
+                    await lifecycle.create(lease=lease, identifier=record.id)
                 assert engine.actions == ["create"]
             finally:
                 await engine.close()
                 await http.close()
 
-    asyncio.run(run())
+    asyncio.run(main=run())
 
 
 def test_labels_cannot_authorize_foreign_configuration_or_false_absence() -> None:
     async def run() -> None:
         async with scratch() as database:
-            data = await prepared(database)
+            data = await prepared(database=database)
             await data.enqueue()
-            lease = await claim(data)
-            record = await data.resources.prepare_dynamic(lease)
-            intent = await data.resources.authorize_create(lease, record.id)
-            engine, http = ObservedEngine(intent), BackendHttp()
-            lifecycle = Lifecycle(database, engine, http)
+            lease = await claim(data=data)
+            record = await data.resources.prepare_dynamic(lease=lease)
+            intent = await data.resources.authorize_create(lease=lease, resource_id=record.id)
+            engine, http = ObservedEngine(intent=intent), BackendHttp()
+            lifecycle = Lifecycle(database=database, engine=engine, http=http)
             try:
                 original = engine.info
                 engine.info = original.model_copy(
                     update={"HostConfig": original.HostConfig | {"Privileged": True}}
                 )
-                with pytest.raises(EngineError, match="OWNERSHIP_CONFLICT"):
-                    await lifecycle.cleanup(lease, record.id)
-                assert (await data.resources.get(lease, record.id)).container_id is None
+                with pytest.raises(expected_exception=EngineError, match="OWNERSHIP_CONFLICT"):
+                    await lifecycle.cleanup(lease=lease, identifier=record.id)
+                assert (
+                    await data.resources.get(lease=lease, resource_id=record.id)
+                ).container_id is None
                 assert engine.actions == []
                 engine.info = original
-                await lifecycle.observe(lease, record.id)
+                await lifecycle.observe(lease=lease, identifier=record.id)
                 engine.image_absent = True
-                with pytest.raises(EngineError) as error:
-                    await lifecycle.cleanup(lease, record.id)
+                with pytest.raises(expected_exception=EngineError) as error:
+                    await lifecycle.cleanup(lease=lease, identifier=record.id)
                 assert error.value.status is None
-                assert (await data.resources.get(lease, record.id)).state == "observed"
+                assert (
+                    await data.resources.get(lease=lease, resource_id=record.id)
+                ).state == "observed"
                 assert engine.actions == []
                 engine.absent = True
-                assert (await lifecycle.cleanup(lease, record.id)).state == "removed"
+                assert (
+                    await lifecycle.cleanup(lease=lease, identifier=record.id)
+                ).state == "removed"
                 assert engine.actions == []
             finally:
                 await engine.close()
                 await http.close()
 
-    asyncio.run(run())
+    asyncio.run(main=run())

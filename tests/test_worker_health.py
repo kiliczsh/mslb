@@ -8,8 +8,8 @@ from mslb_worker import health
 
 
 @pytest.mark.parametrize(
-    ("payload", "expected"),
-    [
+    argnames=("payload", "expected"),
+    argvalues=[
         ({"updated": 95}, True),
         ({"updated": 100}, True),
         ({"updated": 90}, False),

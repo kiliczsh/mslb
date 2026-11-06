@@ -53,14 +53,14 @@ class PreparedDocker:
     snapshot: DockerSnapshot
 
     async def enqueue(self, key: str | None = None) -> RunRecord:
-        return await self.catalog.enqueue(self.snapshot, key)
+        return await self.catalog.enqueue(snapshot=self.snapshot, key=key)
 
 
 async def prepared(database: Database, settings: DockerSettings | None = None) -> PreparedDocker:
-    logical = await prepare(database)
-    catalog = DockerCatalog(database)
+    logical = await prepare(database=database)
+    catalog = DockerCatalog(database=database)
     deployment = await catalog.enroll(
-        DeploymentSpec(
+        definition=DeploymentSpec(
             image_id="sha256:" + "c" * 64,
             network_id="d" * 64,
             static=(
@@ -79,12 +79,16 @@ async def prepared(database: Database, settings: DockerSettings | None = None) -
         configuration=settings or DockerSettings(),
     )
     return PreparedDocker(
-        logical, catalog, DockerControl(database), DockerResources(database), snapshot
+        logical=logical,
+        catalog=catalog,
+        control=DockerControl(database=database),
+        resources=DockerResources(database=database),
+        snapshot=snapshot,
     )
 
 
 async def claim(data: PreparedDocker, owner: str = "controller") -> ControlLease:
-    lease = await data.control.claim(owner)
+    lease = await data.control.claim(owner=owner)
     assert lease is not None
     return lease
 
@@ -92,13 +96,13 @@ async def claim(data: PreparedDocker, owner: str = "controller") -> ControlLease
 async def expire(database: Database) -> None:
     async with database.engine.begin() as connection:
         await connection.execute(
-            update(DockerControlSlot)
+            statement=update(table=DockerControlSlot)
             .where(DockerControlSlot.id == 1)
             .values(lease_expires_at=func.clock_timestamp() - timedelta(seconds=1))
         )
         await connection.execute(
-            update(Job)
-            .where(Job.kind == "docker", Job.status.in_(("running", "cancel_requested")))
+            statement=update(table=Job)
+            .where(Job.kind == "docker", Job.status.in_(other=("running", "cancel_requested")))
             .values(lease_expires_at=func.clock_timestamp() - timedelta(seconds=1))
         )
 
@@ -140,260 +144,310 @@ def idle(name: str) -> BackendHealth:
 def test_docker_enqueue_is_atomic_idempotent_and_isolated_from_logical_claims_and_reads() -> None:
     async def scenario() -> None:
         async with scratch() as database:
-            data = await prepared(database)
-            first = await data.enqueue("same-docker-body")
-            assert (await data.enqueue("same-docker-body")).id == first.id
-            assert (await data.catalog.snapshot(first.id)).digest() == first.snapshot_digest
-            with pytest.raises(StoreError, match="different request"):
+            data = await prepared(database=database)
+            first = await data.enqueue(key="same-docker-body")
+            assert (await data.enqueue(key="same-docker-body")).id == first.id
+            assert (await data.catalog.snapshot(run_id=first.id)).digest() == first.snapshot_digest
+            with pytest.raises(expected_exception=StoreError, match="different request"):
                 await data.catalog.enqueue(
-                    data.snapshot.model_copy(
+                    snapshot=data.snapshot.model_copy(
                         update={"configuration": DockerSettings(strategy="round_robin")}
                     ),
-                    "same-docker-body",
+                    key="same-docker-body",
                 )
-            assert await data.logical.jobs.claim("logical-worker") is None
-            with pytest.raises(StoreError) as wrong_cancel:
-                await data.logical.jobs.cancel(first.id)
+            assert await data.logical.jobs.claim(owner="logical-worker") is None
+            with pytest.raises(expected_exception=StoreError) as wrong_cancel:
+                await data.logical.jobs.cancel(run_id=first.id)
             assert wrong_cancel.value.code == "NOT_FOUND"
-            assert (await data.logical.jobs.get(first.id)).status == "queued"
-            assert await Reads(database).runs() == ()
-            with pytest.raises(StoreError) as missing:
-                await Reads(database).run(first.id)
+            assert (await data.logical.jobs.get(run_id=first.id)).status == "queued"
+            assert await Reads(database=database).runs() == ()
+            with pytest.raises(expected_exception=StoreError) as missing:
+                await Reads(database=database).run(run_id=first.id)
             assert missing.value.code == "NOT_FOUND"
-            logical = await data.logical.enqueue("logical-body")
-            logical_lease = await data.logical.jobs.claim("logical-worker")
+            logical = await data.logical.enqueue(key="logical-body")
+            logical_lease = await data.logical.jobs.claim(owner="logical-worker")
             assert logical_lease is not None and logical_lease.run_id == logical.id
-            selected = await claim(data)
+            selected = await claim(data=data)
             assert selected.run_id == first.id and selected.phase == "running"
-            with pytest.raises(StoreError) as wrong_adapter:
+            with pytest.raises(expected_exception=StoreError) as wrong_adapter:
                 await data.logical.jobs.renew(
-                    Lease(selected.run_id, 1, selected.fence, selected.owner, selected.expires_at)
+                    lease=Lease(
+                        run_id=selected.run_id,
+                        attempt=1,
+                        fence=selected.fence,
+                        owner=selected.owner,
+                        expires_at=selected.expires_at,
+                    )
                 )
             assert wrong_adapter.value.code == "FENCE_LOST"
             assert len(await data.logical.jobs.pending_outbox()) == 2
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 def test_racing_controllers_get_one_owner_and_stale_control_cannot_reserve_or_finalize() -> None:
     async def scenario() -> None:
         async with scratch() as database:
-            data = await prepared(database)
+            data = await prepared(database=database)
             run = await data.enqueue()
-            raced = await asyncio.gather(data.control.claim("first"), data.control.claim("second"))
+            raced = await asyncio.gather(
+                data.control.claim(owner="first"), data.control.claim(owner="second")
+            )
             owners = [lease for lease in raced if lease is not None]
             assert len(owners) == 1
             lease = owners[0]
-            renewed = await data.control.renew(lease, 60)
+            renewed = await data.control.renew(lease=lease, lease_seconds=60)
             assert renewed.expires_at > lease.expires_at
-            await expire(database)
-            recovering = await claim(data, "recovery")
+            await expire(database=database)
+            recovering = await claim(data=data, owner="recovery")
             assert recovering.phase == "cleanup" and recovering.fence > lease.fence
-            assert (await Jobs(database).get(run.id)).status == "failed"
-            assert (await Jobs(database).get(run.id)).error_code == "INTERRUPTED"
+            assert (await Jobs(database=database).get(run_id=run.id)).status == "failed"
+            assert (await Jobs(database=database).get(run_id=run.id)).error_code == "INTERRUPTED"
             for operation in (
-                data.resources.reserve_static(lease, "backend-a"),
-                data.control.renew(lease),
-                data.control.finish_cleanup(lease, manifest(run, lease)),
+                data.resources.reserve_static(lease=lease, name="backend-a"),
+                data.control.renew(lease=lease),
+                data.control.finish_cleanup(lease=lease, manifest=manifest(run=run, lease=lease)),
             ):
-                with pytest.raises(StoreError) as stale:
+                with pytest.raises(expected_exception=StoreError) as stale:
                     await operation
                 assert stale.value.code == "FENCE_LOST"
-            result = await data.control.finish_cleanup(recovering)
+            result = await data.control.finish_cleanup(lease=recovering)
             assert result.status == "failed" and result.attempts == 1
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 def test_reservations_are_bounded_and_ambiguous_creation_is_not_retried() -> None:
     async def scenario() -> None:
         async with scratch() as database:
-            data = await prepared(database)
+            data = await prepared(database=database)
             await data.enqueue()
-            lease = await claim(data)
-            static_a = await data.resources.reserve_static(lease, "backend-a")
-            assert (await data.resources.reserve_static(lease, "backend-a")).id == static_a.id
-            await data.resources.reserve_static(lease, "backend-b")
+            lease = await claim(data=data)
+            static_a = await data.resources.reserve_static(lease=lease, name="backend-a")
+            assert (
+                await data.resources.reserve_static(lease=lease, name="backend-a")
+            ).id == static_a.id
+            await data.resources.reserve_static(lease=lease, name="backend-b")
             identity = uuid4()
-            first = await data.resources.prepare_dynamic(lease, identity)
-            assert (await data.resources.prepare_dynamic(lease, identity)).id == first.id
-            second = await data.resources.prepare_dynamic(lease)
+            first = await data.resources.prepare_dynamic(lease=lease, intent_id=identity)
+            assert (
+                await data.resources.prepare_dynamic(lease=lease, intent_id=identity)
+            ).id == first.id
+            second = await data.resources.prepare_dynamic(lease=lease)
             assert first.name != second.name and first.slot != second.slot
-            with pytest.raises(StoreError) as full:
-                await data.resources.prepare_dynamic(lease)
+            with pytest.raises(expected_exception=StoreError) as full:
+                await data.resources.prepare_dynamic(lease=lease)
             assert full.value.code == "RATE_LIMITED"
-            created = await data.resources.authorize_create(lease, first.id)
+            created = await data.resources.authorize_create(lease=lease, resource_id=first.id)
             assert created.name == first.name
-            with pytest.raises(StoreError):
-                await data.resources.authorize_create(lease, first.id)
-            await data.resources.transition(lease, first.id, "uncertain")
-            with pytest.raises(StoreError):
-                await data.resources.transition(lease, first.id, "abandon")
+            with pytest.raises(expected_exception=StoreError):
+                await data.resources.authorize_create(lease=lease, resource_id=first.id)
+            await data.resources.transition(lease=lease, resource_id=first.id, action="uncertain")
+            with pytest.raises(expected_exception=StoreError):
+                await data.resources.transition(lease=lease, resource_id=first.id, action="abandon")
             for status in (
                 HTTPStatus.CONFLICT.value,
                 HTTPStatus.INTERNAL_SERVER_ERROR.value,
                 HTTPStatus.GATEWAY_TIMEOUT.value,
             ):
-                with pytest.raises(StoreError):
-                    await data.resources.reject_create(lease, first.id, status)
-            assert (await data.resources.list(lease))[2].state == "unresolved"
+                with pytest.raises(expected_exception=StoreError):
+                    await data.resources.reject_create(
+                        lease=lease, resource_id=first.id, daemon_status=status
+                    )
+            assert (await data.resources.list(lease=lease))[2].state == "unresolved"
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 def test_conflicting_inspection_never_authorizes_unrelated_container_removal() -> None:
     async def scenario() -> None:
         async with scratch() as database:
-            data = await prepared(database)
+            data = await prepared(database=database)
             await data.enqueue()
-            lease = await claim(data)
-            resource = await data.resources.prepare_dynamic(lease)
-            definition = await data.resources.authorize_create(lease, resource.id)
+            lease = await claim(data=data)
+            resource = await data.resources.prepare_dynamic(lease=lease)
+            definition = await data.resources.authorize_create(lease=lease, resource_id=resource.id)
             wrong = definition.model_copy(update={"network_id": "f" * 64})
             conflict = await data.resources.observe_dynamic(
-                lease, resource.id, ContainerObservation(container_id="1" * 64, definition=wrong)
+                lease=lease,
+                resource_id=resource.id,
+                observed=ContainerObservation(container_id="1" * 64, definition=wrong),
             )
             assert conflict.state == "conflict" and conflict.container_id is None
-            with pytest.raises(StoreError):
-                await data.resources.transition(lease, resource.id, "drain")
+            with pytest.raises(expected_exception=StoreError):
+                await data.resources.transition(
+                    lease=lease, resource_id=resource.id, action="drain"
+                )
             adopted = await data.resources.observe_dynamic(
-                lease,
-                resource.id,
-                ContainerObservation(container_id="2" * 64, definition=definition),
+                lease=lease,
+                resource_id=resource.id,
+                observed=ContainerObservation(container_id="2" * 64, definition=definition),
             )
             assert adopted.state == "observed" and adopted.container_id == "2" * 64
-            peer = await data.resources.prepare_dynamic(lease)
-            peer_definition = await data.resources.authorize_create(lease, peer.id)
+            peer = await data.resources.prepare_dynamic(lease=lease)
+            peer_definition = await data.resources.authorize_create(
+                lease=lease, resource_id=peer.id
+            )
             duplicate = await data.resources.observe_dynamic(
-                lease,
-                peer.id,
-                ContainerObservation(container_id="2" * 64, definition=peer_definition),
+                lease=lease,
+                resource_id=peer.id,
+                observed=ContainerObservation(container_id="2" * 64, definition=peer_definition),
             )
             assert duplicate.state == "conflict" and duplicate.container_id is None
-            await data.resources.transition(lease, resource.id, "authorize_start")
-            await data.resources.transition(lease, resource.id, "started")
+            await data.resources.transition(
+                lease=lease, resource_id=resource.id, action="authorize_start"
+            )
+            await data.resources.transition(lease=lease, resource_id=resource.id, action="started")
             wrong_id = await data.resources.observe_dynamic(
-                lease,
-                resource.id,
-                ContainerObservation(container_id="3" * 64, definition=definition),
+                lease=lease,
+                resource_id=resource.id,
+                observed=ContainerObservation(container_id="3" * 64, definition=definition),
             )
             assert wrong_id.state == "conflict" and wrong_id.container_id == "2" * 64
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
-@pytest.mark.parametrize("crash_phase", ["prepared", "creating", "observed", "starting"])
+@pytest.mark.parametrize(
+    argnames="crash_phase", argvalues=["prepared", "creating", "observed", "starting"]
+)
 def test_interruption_reconciles_existing_intent_without_replaying_work_or_freeing_capacity(
     crash_phase: str,
 ) -> None:
     async def scenario() -> None:
         async with scratch() as database:
-            data = await prepared(database)
+            data = await prepared(database=database)
             run = await data.enqueue()
             next_run = await data.enqueue()
-            lease = await claim(data)
-            resource = await data.resources.prepare_dynamic(lease)
+            lease = await claim(data=data)
+            resource = await data.resources.prepare_dynamic(lease=lease)
             assert isinstance(resource.definition, CreationIntent)
             definition = resource.definition
             if crash_phase != "prepared":
-                definition = await data.resources.authorize_create(lease, resource.id)
+                definition = await data.resources.authorize_create(
+                    lease=lease, resource_id=resource.id
+                )
             if crash_phase in {"observed", "starting"}:
                 await data.resources.observe_dynamic(
-                    lease,
-                    resource.id,
-                    ContainerObservation(container_id="4" * 64, definition=definition),
+                    lease=lease,
+                    resource_id=resource.id,
+                    observed=ContainerObservation(container_id="4" * 64, definition=definition),
                 )
             if crash_phase == "starting":
-                await data.resources.transition(lease, resource.id, "authorize_start")
-            await expire(database)
-            cleanup = await claim(data, "replacement")
+                await data.resources.transition(
+                    lease=lease, resource_id=resource.id, action="authorize_start"
+                )
+            await expire(database=database)
+            cleanup = await claim(data=data, owner="replacement")
             assert cleanup.run_id == run.id and cleanup.phase == "cleanup"
-            assert await data.control.claim("other") is None
-            with pytest.raises(StoreError):
-                await data.resources.prepare_dynamic(cleanup)
-            with pytest.raises(StoreError):
-                await data.control.finish_cleanup(cleanup)
+            assert await data.control.claim(owner="other") is None
+            with pytest.raises(expected_exception=StoreError):
+                await data.resources.prepare_dynamic(lease=cleanup)
+            with pytest.raises(expected_exception=StoreError):
+                await data.control.finish_cleanup(lease=cleanup)
             if crash_phase == "prepared":
-                await data.resources.transition(cleanup, resource.id, "abandon")
+                await data.resources.transition(
+                    lease=cleanup, resource_id=resource.id, action="abandon"
+                )
             else:
                 # Inspect/adopt the same frozen intent after a lost daemon response.
                 observed = await data.resources.observe_dynamic(
-                    cleanup,
-                    resource.id,
-                    ContainerObservation(container_id="4" * 64, definition=definition),
+                    lease=cleanup,
+                    resource_id=resource.id,
+                    observed=ContainerObservation(container_id="4" * 64, definition=definition),
                 )
                 assert observed.container_id == "4" * 64 and observed.name == resource.name
-                await data.resources.transition(cleanup, resource.id, "drain")
-                await data.resources.transition(cleanup, resource.id, "removed")
-            result = await data.control.finish_cleanup(cleanup)
+                await data.resources.transition(
+                    lease=cleanup, resource_id=resource.id, action="drain"
+                )
+                await data.resources.transition(
+                    lease=cleanup, resource_id=resource.id, action="removed"
+                )
+            result = await data.control.finish_cleanup(lease=cleanup)
             assert result.status == "failed" and result.attempts == 1
-            assert (await claim(data, "next-owner")).run_id == next_run.id
-            with pytest.raises(StoreError):
+            assert (await claim(data=data, owner="next-owner")).run_id == next_run.id
+            with pytest.raises(expected_exception=StoreError):
                 await data.resources.observe_dynamic(
-                    lease,
-                    resource.id,
-                    ContainerObservation(container_id="4" * 64, definition=definition),
+                    lease=lease,
+                    resource_id=resource.id,
+                    observed=ContainerObservation(container_id="4" * 64, definition=definition),
                 )
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 def test_cleanup_requires_idle_static_backends_and_a_separate_completed_manifest() -> None:
     async def scenario() -> None:
         async with scratch() as database:
-            data = await prepared(database)
+            data = await prepared(database=database)
             run = await data.enqueue()
-            lease = await claim(data)
-            backend = await data.resources.reserve_static(lease, "backend-a")
-            cleanup = await data.control.begin_cleanup(lease, "completed")
-            with pytest.raises(StoreError):
-                await data.control.finish_cleanup(cleanup, manifest(run, cleanup))
-            await data.resources.transition(cleanup, backend.id, "drain")
-            with pytest.raises(StoreError):
-                await data.resources.release_static(
-                    cleanup,
-                    backend.id,
-                    "a" * 64,
-                    idle("backend-a").model_copy(update={"inflight": 1}),
+            lease = await claim(data=data)
+            backend = await data.resources.reserve_static(lease=lease, name="backend-a")
+            cleanup = await data.control.begin_cleanup(lease=lease, outcome="completed")
+            with pytest.raises(expected_exception=StoreError):
+                await data.control.finish_cleanup(
+                    lease=cleanup, manifest=manifest(run=run, lease=cleanup)
                 )
-            with pytest.raises(StoreError):
+            await data.resources.transition(lease=cleanup, resource_id=backend.id, action="drain")
+            with pytest.raises(expected_exception=StoreError):
                 await data.resources.release_static(
-                    cleanup, backend.id, "b" * 64, idle("backend-a")
+                    lease=cleanup,
+                    resource_id=backend.id,
+                    container_id="a" * 64,
+                    observed=idle(name="backend-a").model_copy(update={"inflight": 1}),
                 )
-            await data.resources.release_static(cleanup, backend.id, "a" * 64, idle("backend-a"))
-            with pytest.raises(StoreError):
-                await data.control.finish_cleanup(cleanup)
-            with pytest.raises(StoreError):
-                await data.control.finish_cleanup(cleanup, manifest(run, cleanup, total=3))
-            result = await data.control.finish_cleanup(cleanup, manifest(run, cleanup))
+            with pytest.raises(expected_exception=StoreError):
+                await data.resources.release_static(
+                    lease=cleanup,
+                    resource_id=backend.id,
+                    container_id="b" * 64,
+                    observed=idle(name="backend-a"),
+                )
+            await data.resources.release_static(
+                lease=cleanup,
+                resource_id=backend.id,
+                container_id="a" * 64,
+                observed=idle(name="backend-a"),
+            )
+            with pytest.raises(expected_exception=StoreError):
+                await data.control.finish_cleanup(lease=cleanup)
+            with pytest.raises(expected_exception=StoreError):
+                await data.control.finish_cleanup(
+                    lease=cleanup, manifest=manifest(run=run, lease=cleanup, total=3)
+                )
+            result = await data.control.finish_cleanup(
+                lease=cleanup, manifest=manifest(run=run, lease=cleanup)
+            )
             assert result.status == "completed"
             async with database.sessions() as session:
-                assert await session.get(DockerPublication, run.id) is not None
-                assert await session.get(PublishedArtifact, run.id) is None
+                assert await session.get(entity=DockerPublication, ident=run.id) is not None
+                assert await session.get(entity=PublishedArtifact, ident=run.id) is None
             second = await data.enqueue()
-            new_lease = await claim(data, "next")
+            new_lease = await claim(data=data, owner="next")
             assert new_lease.run_id == second.id
             assert (
-                await data.resources.reserve_static(new_lease, "backend-a")
+                await data.resources.reserve_static(lease=new_lease, name="backend-a")
             ).container_id == "a" * 64
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 def test_cancellation_wins_during_cleanup_and_cannot_publish_an_artifact() -> None:
     async def scenario() -> None:
         async with scratch() as database:
-            data = await prepared(database)
+            data = await prepared(database=database)
             run = await data.enqueue()
-            lease = await claim(data)
-            cleanup = await data.control.begin_cleanup(lease, "completed")
-            await data.control.cancel(run.id)
-            result = await data.control.finish_cleanup(cleanup, manifest(run, cleanup))
+            lease = await claim(data=data)
+            cleanup = await data.control.begin_cleanup(lease=lease, outcome="completed")
+            await data.control.cancel(run_id=run.id)
+            result = await data.control.finish_cleanup(
+                lease=cleanup, manifest=manifest(run=run, lease=cleanup)
+            )
             assert result.status == "cancelled"
             async with database.sessions() as session:
-                assert await session.get(DockerPublication, run.id) is None
+                assert await session.get(entity=DockerPublication, ident=run.id) is None
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 def test_automatic_cleanup_retries_are_bounded_and_explicit_retry_does_not_release_resources() -> (
@@ -401,26 +455,28 @@ def test_automatic_cleanup_retries_are_bounded_and_explicit_retry_does_not_relea
 ):
     async def scenario() -> None:
         async with scratch() as database:
-            data = await prepared(database)
+            data = await prepared(database=database)
             run = await data.enqueue()
-            lease = await claim(data)
-            resource = await data.resources.prepare_dynamic(lease)
-            await data.resources.authorize_create(lease, resource.id)
+            lease = await claim(data=data)
+            resource = await data.resources.prepare_dynamic(lease=lease)
+            await data.resources.authorize_create(lease=lease, resource_id=resource.id)
             for number in range(3):
-                await expire(database)
-                cleanup = await data.control.claim(f"cleanup-{number}")
+                await expire(database=database)
+                cleanup = await data.control.claim(owner=f"cleanup-{number}")
                 assert cleanup is not None and cleanup.phase == "cleanup"
-            await expire(database)
-            assert await data.control.claim("too-many") is None
-            await data.control.retry_cleanup(run.id)
-            retried = await claim(data, "operator-requested")
-            assert retried.phase == "cleanup" and len(await data.resources.list(retried)) == 1
-            with pytest.raises(StoreError):
-                await data.control.finish_cleanup(retried)
-            await data.resources.reject_create(retried, resource.id, HTTPStatus.NOT_FOUND.value)
-            assert (await data.control.finish_cleanup(retried)).status == "failed"
+            await expire(database=database)
+            assert await data.control.claim(owner="too-many") is None
+            await data.control.retry_cleanup(run_id=run.id)
+            retried = await claim(data=data, owner="operator-requested")
+            assert retried.phase == "cleanup" and len(await data.resources.list(lease=retried)) == 1
+            with pytest.raises(expected_exception=StoreError):
+                await data.control.finish_cleanup(lease=retried)
+            await data.resources.reject_create(
+                lease=retried, resource_id=resource.id, daemon_status=HTTPStatus.NOT_FOUND.value
+            )
+            assert (await data.control.finish_cleanup(lease=retried)).status == "failed"
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 def test_expiry_at_final_mutation_rolls_back_prepared_resources(
@@ -429,105 +485,109 @@ def test_expiry_at_final_mutation_rolls_back_prepared_resources(
     original = docker_resources.guard
 
     async def delayed_guard(session: AsyncSession, lease: ControlLease) -> DockerControlSlot:
-        await asyncio.sleep(1.05)
-        return await original(session, lease)
+        await asyncio.sleep(delay=1.05)
+        return await original(session=session, lease=lease)
 
     async def scenario() -> None:
         async with scratch() as database:
-            data = await prepared(database)
+            data = await prepared(database=database)
             run = await data.enqueue()
-            lease = await data.control.claim("expiring", lease_seconds=1)
+            lease = await data.control.claim(owner="expiring", lease_seconds=1)
             assert lease is not None
             with monkeypatch.context() as patch:
-                patch.setattr(docker_resources, "guard", delayed_guard)
-                with pytest.raises(StoreError) as expired:
-                    await data.resources.prepare_dynamic(lease)
+                patch.setattr(target=docker_resources, name="guard", value=delayed_guard)
+                with pytest.raises(expected_exception=StoreError) as expired:
+                    await data.resources.prepare_dynamic(lease=lease)
                 assert expired.value.code == "FENCE_LOST"
             async with database.sessions() as session:
                 assert (
                     await session.scalar(
-                        select(func.count())
+                        statement=select(func.count())
                         .select_from(DockerResource)
                         .where(DockerResource.run_id == run.id)
                     )
                     == 0
                 )
-            cleanup = await claim(data, "reconciler")
+            cleanup = await claim(data=data, owner="reconciler")
             assert cleanup.phase == "cleanup"
-            assert (await data.control.finish_cleanup(cleanup)).status == "failed"
+            assert (await data.control.finish_cleanup(lease=cleanup)).status == "failed"
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 def test_resource_history_is_finite_without_preventing_cleanup() -> None:
     async def scenario() -> None:
         async with scratch() as database:
-            data = await prepared(database)
+            data = await prepared(database=database)
             await data.enqueue()
-            lease = await claim(data)
+            lease = await claim(data=data)
             names = set()
             for _ in range(64):
-                resource = await data.resources.prepare_dynamic(lease)
+                resource = await data.resources.prepare_dynamic(lease=lease)
                 names.add(resource.name)
-                await data.resources.transition(lease, resource.id, "abandon")
+                await data.resources.transition(
+                    lease=lease, resource_id=resource.id, action="abandon"
+                )
             assert len(names) == 64
-            with pytest.raises(StoreError) as bounded:
-                await data.resources.prepare_dynamic(lease)
+            with pytest.raises(expected_exception=StoreError) as bounded:
+                await data.resources.prepare_dynamic(lease=lease)
             assert bounded.value.code == "RESOURCE_LIMIT_EXCEEDED"
-            cleanup = await data.control.begin_cleanup(lease, "failed", "RESOURCE_LIMIT_EXCEEDED")
-            assert (await data.control.finish_cleanup(cleanup)).status == "failed"
+            cleanup = await data.control.begin_cleanup(
+                lease=lease, outcome="failed", error_code="RESOURCE_LIMIT_EXCEEDED"
+            )
+            assert (await data.control.finish_cleanup(lease=cleanup)).status == "failed"
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 def test_logical_and_docker_jobs_share_one_twenty_job_pending_budget() -> None:
     async def scenario() -> None:
         async with scratch() as database:
-            data = await prepared(database)
+            data = await prepared(database=database)
             for _ in range(10):
                 await data.logical.enqueue()
                 await data.enqueue()
             for submission in (data.enqueue(), data.logical.enqueue()):
-                with pytest.raises(StoreError) as full:
+                with pytest.raises(expected_exception=StoreError) as full:
                     await submission
                 assert full.value.code == "RATE_LIMITED"
             assert len(await data.logical.jobs.pending_outbox()) == 20
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 def test_idempotency_expires_and_never_returns_a_run_through_the_wrong_mode() -> None:
     async def scenario() -> None:
         async with scratch() as database:
-            data = await prepared(database)
-            first = await data.enqueue("expires")
-            with pytest.raises(StoreError) as conflict:
-                await data.logical.enqueue("expires")
+            data = await prepared(database=database)
+            first = await data.enqueue(key="expires")
+            with pytest.raises(expected_exception=StoreError) as conflict:
+                await data.logical.enqueue(key="expires")
             assert conflict.value.code == "CONFLICT"
             async with database.engine.begin() as connection:
                 await connection.execute(
-                    update(IdempotencyRecord).values(
+                    statement=update(table=IdempotencyRecord).values(
                         expires_at=func.clock_timestamp() - timedelta(seconds=1)
                     )
                 )
             changed = data.snapshot.model_copy(
                 update={"configuration": DockerSettings(strategy="round_robin")}
             )
-            second = await data.catalog.enqueue(changed, "expires")
+            second = await data.catalog.enqueue(snapshot=changed, key="expires")
             assert second.id != first.id
             digest = hashlib.sha256(
-                canonical_bytes(
-                    {
-                        "dataset_id": str(changed.dataset_id),
+                data=canonical_bytes(
+                    value={
+                        "dataset_id": str(object=changed.dataset_id),
                         "settings": changed.configuration.model_dump(mode="json"),
                     }
                 )
             ).hexdigest()
-            with pytest.raises(StoreError) as wrong_mode:
-                await data.logical.catalog.find_idempotent("expires", digest)
+            with pytest.raises(expected_exception=StoreError) as wrong_mode:
+                await data.logical.catalog.find_idempotent(key="expires", body_digest=digest)
             assert wrong_mode.value.code == "CONFLICT"
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 def test_final_publication_rolls_back_if_its_lease_expires(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -536,44 +596,46 @@ def test_final_publication_rolls_back_if_its_lease_expires(monkeypatch: pytest.M
     async def delayed_guard(
         session: AsyncSession, lease: ControlLease, release: bool = False
     ) -> DockerControlSlot:
-        await asyncio.sleep(1.05)
-        return await original(session, lease, release)
+        await asyncio.sleep(delay=1.05)
+        return await original(session=session, lease=lease, release=release)
 
     async def scenario() -> None:
         async with scratch() as database:
-            data = await prepared(database)
+            data = await prepared(database=database)
             run = await data.enqueue()
-            lease = await data.control.claim("finalizer", lease_seconds=1)
+            lease = await data.control.claim(owner="finalizer", lease_seconds=1)
             assert lease is not None
-            cleanup = await data.control.begin_cleanup(lease, "completed")
+            cleanup = await data.control.begin_cleanup(lease=lease, outcome="completed")
             with monkeypatch.context() as patch:
-                patch.setattr(docker_control, "guard", delayed_guard)
-                with pytest.raises(StoreError) as expired:
-                    await data.control.finish_cleanup(cleanup, manifest(run, cleanup))
+                patch.setattr(target=docker_control, name="guard", value=delayed_guard)
+                with pytest.raises(expected_exception=StoreError) as expired:
+                    await data.control.finish_cleanup(
+                        lease=cleanup, manifest=manifest(run=run, lease=cleanup)
+                    )
                 assert expired.value.code == "FENCE_LOST"
-            assert (await Jobs(database).get(run.id)).status == "running"
+            assert (await Jobs(database=database).get(run_id=run.id)).status == "running"
             async with database.sessions() as session:
-                assert await session.get(DockerPublication, run.id) is None
-            recovered = await claim(data, "replacement")
-            assert (await data.control.finish_cleanup(recovered)).status == "failed"
+                assert await session.get(entity=DockerPublication, ident=run.id) is None
+            recovered = await claim(data=data, owner="replacement")
+            assert (await data.control.finish_cleanup(lease=recovered)).status == "failed"
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 def test_unassigned_static_backends_still_consume_physical_capacity() -> None:
     async def scenario() -> None:
         async with scratch() as database:
-            data = await prepared(database)
+            data = await prepared(database=database)
             await data.enqueue()
-            lease = await claim(data)
-            await data.resources.prepare_dynamic(lease)
-            await data.resources.prepare_dynamic(lease)
-            assert len(await data.resources.list(lease)) == 2
-            with pytest.raises(StoreError) as bounded:
-                await data.resources.prepare_dynamic(lease)
+            lease = await claim(data=data)
+            await data.resources.prepare_dynamic(lease=lease)
+            await data.resources.prepare_dynamic(lease=lease)
+            assert len(await data.resources.list(lease=lease)) == 2
+            with pytest.raises(expected_exception=StoreError) as bounded:
+                await data.resources.prepare_dynamic(lease=lease)
             assert bounded.value.code == "RATE_LIMITED"
-            await data.resources.reserve_static(lease, "backend-a")
-            await data.resources.reserve_static(lease, "backend-b")
-            assert len(await data.resources.list(lease)) == 4
+            await data.resources.reserve_static(lease=lease, name="backend-a")
+            await data.resources.reserve_static(lease=lease, name="backend-b")
+            assert len(await data.resources.list(lease=lease)) == 4
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())

@@ -30,50 +30,71 @@ class Submissions:
 
     async def upload(self, source: BinaryIO, filename: str) -> DatasetRecord:
         if self.pending is not None:
-            raise OperationError("RATE_LIMITED", "Input processing capacity is occupied")
-        return await self.admission.run(lambda: self._upload(source, filename))
+            raise OperationError(
+                code="RATE_LIMITED", message="Input processing capacity is occupied"
+            )
+        return await self.admission.run(
+            operation=lambda: self._upload(source=source, filename=filename)
+        )
 
     async def _upload(self, source: BinaryIO, filename: str) -> DatasetRecord:
-        data = await asyncio.to_thread(self.files.ingest, source, filename)
-        return await self.catalog.register_dataset(data)
+        data = await asyncio.to_thread(self.files.ingest, source=source, filename=filename)
+        return await self.catalog.register_dataset(data=data)
 
     async def submit(
         self, dataset_id: UUID, settings: RunSettings, key: str | None = None, scope: str = "local"
     ) -> RunRecord:
         """Share bounded identical in-flight keys while rejecting changed concurrent bodies."""
         digest = hashlib.sha256(
-            canonical_bytes(
-                {"dataset_id": str(dataset_id), "settings": settings.model_dump(mode="json")}
+            data=canonical_bytes(
+                value={
+                    "dataset_id": str(object=dataset_id),
+                    "settings": settings.model_dump(mode="json"),
+                }
             )
         ).hexdigest()
-        existing = await self.catalog.find_idempotent(key, digest, scope)
+        existing = await self.catalog.find_idempotent(key=key, body_digest=digest, scope=scope)
         if existing is not None:
             return existing
         if key is None:
             if self.pending is not None:
-                raise OperationError("RATE_LIMITED", "Input processing capacity is occupied")
+                raise OperationError(
+                    code="RATE_LIMITED", message="Input processing capacity is occupied"
+                )
             return await self.admission.run(
-                lambda: self._submit(dataset_id, settings, key, scope, digest)
+                operation=lambda: self._submit(
+                    dataset_id=dataset_id, settings=settings, key=key, scope=scope, digest=digest
+                )
             )
-        identity = (scope, hashlib.sha256(key.encode()).hexdigest())
+        identity = (scope, hashlib.sha256(data=key.encode()).hexdigest())
         if self.pending is not None and self.pending_identity == identity:
             if digest != self.pending_digest:
-                raise OperationError("CONFLICT", "Idempotency key has a different request body")
+                raise OperationError(
+                    code="CONFLICT", message="Idempotency key has a different request body"
+                )
             if self.followers >= 31:
-                raise OperationError("RATE_LIMITED", "Idempotent retry capacity is occupied")
+                raise OperationError(
+                    code="RATE_LIMITED", message="Idempotent retry capacity is occupied"
+                )
             self.followers += 1
             try:
-                return await asyncio.shield(self.pending)
+                return await asyncio.shield(arg=self.pending)
             finally:
                 self.followers -= 1
         if self.pending is not None or self.admission.lock.locked():
-            raise OperationError("RATE_LIMITED", "Input processing capacity is occupied")
+            raise OperationError(
+                code="RATE_LIMITED", message="Input processing capacity is occupied"
+            )
         task = asyncio.create_task(
-            self.admission.run(lambda: self._submit(dataset_id, settings, key, scope, digest))
+            coro=self.admission.run(
+                operation=lambda: self._submit(
+                    dataset_id=dataset_id, settings=settings, key=key, scope=scope, digest=digest
+                )
+            )
         )
         self.pending, self.pending_identity, self.pending_digest = task, identity, digest
         try:
-            return await settle(task)
+            return await settle(task=task)
         finally:
             self.pending = None
             self.pending_identity = None
@@ -83,9 +104,9 @@ class Submissions:
         self, dataset_id: UUID, settings: RunSettings, key: str | None, scope: str, digest: str
     ) -> RunRecord:
         """Load validated input, freeze current server versions and enqueue immutable work."""
-        dataset = await self.catalog.get_dataset(dataset_id)
+        dataset = await self.catalog.get_dataset(dataset_id=dataset_id)
         requests = await asyncio.to_thread(
-            self.files.load_requests, dataset.digest, dataset.size_bytes
+            self.files.load_requests, digest=dataset.digest, size_bytes=dataset.size_bytes
         )
         current = await self.catalog.list_servers()
         servers = tuple(
@@ -97,8 +118,15 @@ class Submissions:
             )
             for s in current
         )
-        snapshot = await asyncio.to_thread(make_snapshot, servers, requests, settings)
-        await asyncio.to_thread(self.files.save_snapshot, snapshot)
+        snapshot = await asyncio.to_thread(
+            make_snapshot, servers=servers, requests=requests, settings=settings
+        )
+        await asyncio.to_thread(self.files.save_snapshot, snapshot=snapshot)
         return await self.catalog.enqueue(
-            dataset_id, snapshot, tuple((s.id, s.version) for s in current), digest, key, scope
+            dataset_id=dataset_id,
+            snapshot=snapshot,
+            versions=tuple((s.id, s.version) for s in current),
+            body_digest=digest,
+            key=key,
+            scope=scope,
         )

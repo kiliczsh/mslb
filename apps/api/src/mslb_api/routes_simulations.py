@@ -25,39 +25,41 @@ from mslb_api.route_values import Cursor, Limit
 def register_simulations(*, router: APIRouter, services: Services, queries: Queries) -> None:
     """Register the simulations endpoints on the composed application router."""
 
-    @router.get("/strategies", response_model=Page[StrategyView])
+    @router.get(path="/strategies", response_model=Page[StrategyView])
     async def strategies() -> Response:
         """List the same four deterministic strategies used by REST and MCP."""
-        return json_response(services.strategies())
+        return json_response(model=services.strategies())
 
-    @router.post("/simulations/compare", response_model=ComparisonView)
+    @router.post(path="/simulations/compare", response_model=ComparisonView)
     async def compare(body: CompareRequest) -> Response:
         """Compare completed runs only when their frozen workloads are compatible."""
-        return json_response(await queries.compare(body.run_ids))
+        return json_response(model=await queries.compare(run_ids=body.run_ids))
 
     @router.post(
-        "/simulations", status_code=HTTPStatus.ACCEPTED.value, response_model=SimulationAccepted
+        path="/simulations",
+        status_code=HTTPStatus.ACCEPTED.value,
+        response_model=SimulationAccepted,
     )
     async def submit(body: SimulationCreate, request: Request) -> Response:
         """Durably queue immutable logical work and support idempotent retries."""
-        run = await services.submit(body, request.headers.get("idempotency-key"))
+        run = await services.submit(body=body, key=request.headers.get("idempotency-key"))
         return json_response(
-            run,
-            HTTPStatus.ACCEPTED.value,
-            {"Location": f"/api/v1/simulations/{run.run_id}"},
+            model=run,
+            status=HTTPStatus.ACCEPTED.value,
+            headers={"Location": f"/api/v1/simulations/{run.run_id}"},
         )
 
-    @router.get("/simulations", response_model=Page[RunView])
+    @router.get(path="/simulations", response_model=Page[RunView])
     async def history(limit: Limit = 100, cursor: Cursor = None) -> Response:
         """Page saved run history in stable creation-time and ID order."""
-        return json_response(await queries.runs(limit, cursor))
+        return json_response(model=await queries.runs(limit=limit, cursor=cursor))
 
-    @router.get("/simulations/{run_id}", response_model=RunDetail)
+    @router.get(path="/simulations/{run_id}", response_model=RunDetail)
     async def detail(run_id: UUID) -> Response:
         """Read frozen policy, durable progress and published validation results."""
-        return json_response(await services.detail(run_id))
+        return json_response(model=await services.detail(run_id=run_id))
 
-    @router.post("/simulations/{run_id}/cancel", response_model=RunView)
+    @router.post(path="/simulations/{run_id}/cancel", response_model=RunView)
     async def cancel(run_id: UUID) -> Response:
         """Request durable cancellation with priority over later completion."""
-        return json_response(await services.cancel(run_id))
+        return json_response(model=await services.cancel(run_id=run_id))

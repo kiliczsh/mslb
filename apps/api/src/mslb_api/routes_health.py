@@ -11,18 +11,18 @@ from starlette.responses import Response
 def register_health(*, app: FastAPI, database: Database) -> None:
     """Register the health endpoints on the composed application router."""
 
-    @app.get("/api/v1/health/live", include_in_schema=False)
+    @app.get(path="/api/v1/health/live", include_in_schema=False)
     async def live() -> Response:
         """Report process liveness without requiring dependent services."""
-        return Response('{"live":true}', media_type="application/json")
+        return Response(content='{"live":true}', media_type="application/json")
 
-    @app.get("/api/v1/health/ready", include_in_schema=False)
+    @app.get(path="/api/v1/health/ready", include_in_schema=False)
     async def ready() -> Response:
         """Report logical dependency health and honest incomplete-product readiness."""
         api_ready = await database.ready()
         return Response(
-            canonical_bytes(
-                {
+            content=canonical_bytes(
+                value={
                     "ready": False,
                     "api_ready": api_ready,
                     "complete_product": False,

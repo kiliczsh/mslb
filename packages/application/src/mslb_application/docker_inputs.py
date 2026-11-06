@@ -38,7 +38,10 @@ class DockerSubmissions:
         checked = DockerSettings.model_validate(obj=settings.model_dump())
         digest = hashlib.sha256(
             string=canonical_bytes(
-                value={"dataset_id": str(dataset_id), "settings": checked.model_dump(mode="json")}
+                value={
+                    "dataset_id": str(object=dataset_id),
+                    "settings": checked.model_dump(mode="json"),
+                }
             )
         ).hexdigest()
         existing = await self.catalog.find_idempotent(

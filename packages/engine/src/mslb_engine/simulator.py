@@ -22,30 +22,37 @@ class Simulation:
         config: RunConfig,
     ) -> None:
         if not 1 <= len(servers) <= 64 or not 1 <= len(requests) <= 10_000:
-            raise SimulationError("VALIDATION_ERROR", "Input count outside supported envelope")
+            raise SimulationError(
+                code="VALIDATION_ERROR", message="Input count outside supported envelope"
+            )
         if len(servers) > config.max_metric_series:
             raise SimulationError(
-                "VALIDATION_ERROR", "Initial cluster exceeds metric history budget"
+                code="VALIDATION_ERROR", message="Initial cluster exceeds metric history budget"
             )
         if len({s.id for s in servers}) != len(servers):
-            raise SimulationError("VALIDATION_ERROR", "Duplicate server IDs")
+            raise SimulationError(code="VALIDATION_ERROR", message="Duplicate server IDs")
         if len({r.request_id for r in requests}) != len(requests):
-            raise SimulationError("VALIDATION_ERROR", "Duplicate request IDs")
+            raise SimulationError(code="VALIDATION_ERROR", message="Duplicate request IDs")
         self.servers = tuple(sorted(servers, key=lambda server: server.id))
         self.requests = tuple(sorted(requests, key=lambda request: (request.t, request.request_id)))
         if self.requests[-1].t >= config.max_simulation_ticks:
-            raise SimulationError("VALIDATION_ERROR", "Latest arrival must precede the horizon")
+            raise SimulationError(
+                code="VALIDATION_ERROR", message="Latest arrival must precede the horizon"
+            )
         self.initial_servers = self.servers
-        policy = config.autoscaling.resolved(len(servers))
+        policy = config.autoscaling.resolved(initial_count=len(servers))
         if policy.enabled and any(
-            re.fullmatch(r"autoscale-[0-9]{6,}", server.id) for server in servers
+            re.fullmatch(pattern=r"autoscale-[0-9]{6,}", string=server.id) for server in servers
         ):
             raise SimulationError(
-                "VALIDATION_ERROR", "Initial server ID collides with generated namespace"
+                code="VALIDATION_ERROR",
+                message="Initial server ID collides with generated namespace",
             )
         self.config = replace(config, autoscaling=policy)
         self.autoscaler = Autoscaler(
-            policy, frozenset(s.id for s in servers), config.max_fraction_bits
+            policy=policy,
+            initial_ids=frozenset(s.id for s in servers),
+            bit_limit=config.max_fraction_bits,
         )
         self.by_id = {r.request_id: r for r in requests}
         self.active: dict[str, dict[str, Fraction]] = {s.id: {} for s in self.servers}
@@ -67,7 +74,9 @@ class Simulation:
             max(value.numerator.bit_length(), value.denominator.bit_length())
             > self.config.max_fraction_bits
         ):
-            raise SimulationError("RESOURCE_LIMIT_EXCEEDED", "Exact arithmetic complexity exceeded")
+            raise SimulationError(
+                code="RESOURCE_LIMIT_EXCEEDED", message="Exact arithmetic complexity exceeded"
+            )
         return value
 
     def _select(self, eligible: list[Server]) -> Server | None:
@@ -93,16 +102,23 @@ class Simulation:
                 and starts[s.id] < s.rate_limit_per_sec
                 and (self.config.mode == "concurrent" or not self.active[s.id])
             ]
-            server = self._select(eligible)
+            server = self._select(eligible=eligible)
             if server is None:
                 waiting.append(request)
                 continue
-            self.active[server.id][request.request_id] = Fraction(request.work_units)
+            self.active[server.id][request.request_id] = Fraction(numerator=request.work_units)
             self.reserved[server.id] += request.mem_mb
             starts[server.id] += 1
             if self.config.strategy == "round_robin":
                 self.anchor = server.id
-            events.append(Event(self.tick, "REQUEST_STARTED", request.request_id, server.id))
+            events.append(
+                Event(
+                    t=self.tick,
+                    event="REQUEST_STARTED",
+                    request_id=request.request_id,
+                    server_id=server.id,
+                )
+            )
         # Eligibility only decreases during this phase, so a second stable scan
         # cannot unblock a survivor. One scan is the work-conserving fixed point.
         self.pending = waiting
@@ -116,11 +132,20 @@ class Simulation:
                 if self.active[server.id][rid] == 0:
                     del self.active[server.id][rid]
                     self.reserved[server.id] -= self.by_id[rid].mem_mb
-                    events.append(Event(self.tick, "REQUEST_FINISHED", rid, server.id))
+                    events.append(
+                        Event(
+                            t=self.tick,
+                            event="REQUEST_FINISHED",
+                            request_id=rid,
+                            server_id=server.id,
+                        )
+                    )
         while self.cursor < len(self.requests) and self.requests[self.cursor].t == self.tick:
             request = self.requests[self.cursor]
             self.pending.append(request)
-            events.append(Event(self.tick, "REQUEST_ARRIVED", request.request_id))
+            events.append(
+                Event(t=self.tick, event="REQUEST_ARRIVED", request_id=request.request_id)
+            )
             self.cursor += 1
         waiting: list[Request] = []
         max_memory = max(s.mem_mb for s in self.initial_servers)
@@ -144,18 +169,23 @@ class Simulation:
                 waiting.append(request)
             else:
                 events.append(
-                    Event(self.tick, "REQUEST_DROPPED", request.request_id, reason=reason)
+                    Event(
+                        t=self.tick,
+                        event="REQUEST_DROPPED",
+                        request_id=request.request_id,
+                        reason=reason,
+                    )
                 )
         self.pending = waiting
-        self._schedule(events, starts)
+        self._schedule(events=events, starts=starts)
         limit = self.config.max_queue_size
         if limit is not None:
             for request in self.pending[limit:]:
                 events.append(
                     Event(
-                        self.tick,
-                        "REQUEST_DROPPED",
-                        request.request_id,
+                        t=self.tick,
+                        event="REQUEST_DROPPED",
+                        request_id=request.request_id,
                         reason="QUEUE_CAPACITY",
                     )
                 )
@@ -167,9 +197,9 @@ class Simulation:
         while not self.terminal:
             self.checkpoint_ready = False
             membership = self.autoscaler.activate(
-                self.tick,
-                self.servers,
-                frozenset(sid for sid, active in self.active.items() if not active),
+                tick=self.tick,
+                servers=self.servers,
+                idle_ids=frozenset(sid for sid, active in self.active.items() if not active),
             )
             current_ids = {server.id for server in membership}
             for sid in set(self.active) - current_ids:
@@ -194,66 +224,80 @@ class Simulation:
                 self.terminal = True
                 self.event_count += len(ordered)
                 yield TickFrame(
-                    self.tick, 0, ordered, (), (), terminal=True, membership=self.servers
+                    t=self.tick,
+                    duration_ticks=0,
+                    events=ordered,
+                    pending_ids=(),
+                    samples=(),
+                    terminal=True,
+                    membership=self.servers,
                 )
                 return
             if self.tick >= self.config.max_simulation_ticks:
-                raise SimulationError("SIMULATION_LIMIT_EXCEEDED", "Simulation horizon reached")
+                raise SimulationError(
+                    code="SIMULATION_LIMIT_EXCEEDED", message="Simulation horizon reached"
+                )
             self.recorded_samples += len(self.servers)
             if self.recorded_samples > self.config.max_samples:
-                raise SimulationError("RESOURCE_LIMIT_EXCEEDED", "Recorded sample bound reached")
+                raise SimulationError(
+                    code="RESOURCE_LIMIT_EXCEEDED", message="Recorded sample bound reached"
+                )
             duration = 1
             if not active_count and not self.pending and not self.config.autoscaling.enabled:
                 duration = self.requests[self.cursor].t - self.tick
             decision = self.autoscaler.decide(
-                self.tick,
-                self.servers,
-                frozenset(sid for sid, active in self.active.items() if not active),
-                len(self.pending),
+                tick=self.tick,
+                servers=self.servers,
+                idle_ids=frozenset(sid for sid, active in self.active.items() if not active),
+                queue_depth=len(self.pending),
             )
             if self.autoscaler.counter + len(self.initial_servers) > self.config.max_metric_series:
                 raise SimulationError(
-                    "RESOURCE_LIMIT_EXCEEDED", "Logical server history budget exceeded"
+                    code="RESOURCE_LIMIT_EXCEEDED", message="Logical server history budget exceeded"
                 )
             samples: list[ServerSample] = []
             cluster_consumed = Fraction()
             for server in self.servers:
                 active = self.active[server.id]
-                consumed = Fraction(0)
+                consumed = Fraction(numerator=0)
                 if active:
-                    share = self._bounded(Fraction(server.cpu_units_per_tick, len(active)))
+                    share = self._bounded(
+                        value=Fraction(numerator=server.cpu_units_per_tick, denominator=len(active))
+                    )
                     for rid in sorted(active):
                         removed = min(active[rid], share)
-                        consumed = self._bounded(consumed + removed)
-                        active[rid] = self._bounded(active[rid] - removed)
-                cluster_consumed = self._bounded(cluster_consumed + consumed)
+                        consumed = self._bounded(value=consumed + removed)
+                        active[rid] = self._bounded(value=active[rid] - removed)
+                cluster_consumed = self._bounded(value=cluster_consumed + consumed)
                 samples.append(
                     ServerSample(
-                        server.id,
-                        server.cpu_units_per_tick,
-                        server.mem_mb,
-                        tuple(sorted(active)),
-                        self.reserved[server.id],
-                        Fraction(server.cpu_units_per_tick if active else 0),
-                        consumed,
-                        starts[server.id],
+                        server_id=server.id,
+                        capacity=server.cpu_units_per_tick,
+                        memory_capacity=server.mem_mb,
+                        active_ids=tuple(sorted(active)),
+                        reserved_mem_mb=self.reserved[server.id],
+                        allocated_cpu=Fraction(
+                            numerator=server.cpu_units_per_tick if active else 0
+                        ),
+                        consumed_cpu=consumed,
+                        starts=starts[server.id],
                     )
                 )
             frame = TickFrame(
-                self.tick,
-                duration,
-                ordered,
-                tuple(r.request_id for r in self.pending),
-                tuple(samples),
+                t=self.tick,
+                duration_ticks=duration,
+                events=ordered,
+                pending_ids=tuple(r.request_id for r in self.pending),
+                samples=tuple(samples),
                 membership=self.servers,
                 scale_decision=decision,
             )
             self.autoscaler.observe(
-                self.tick + duration,
-                cluster_consumed,
-                sum(server.cpu_units_per_tick for server in self.servers),
-                sum(event.event == "REQUEST_DROPPED" for event in events),
-                sum(event.event == "REQUEST_ARRIVED" for event in events),
+                ending_tick=self.tick + duration,
+                consumed=cluster_consumed,
+                capacity=sum(server.cpu_units_per_tick for server in self.servers),
+                drops=sum(event.event == "REQUEST_DROPPED" for event in events),
+                arrivals=sum(event.event == "REQUEST_ARRIVED" for event in events),
             )
             self.tick += duration
             self.executed_intervals += 1

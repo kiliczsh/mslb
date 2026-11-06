@@ -36,23 +36,23 @@ NAMES: tuple[PrefixName, ...] = (
     "timeline.jsonl",
     "drop_reasons.jsonl",
 )
-EMPTY_HASH = hashlib.sha256(b"").hexdigest()
+EMPTY_HASH = hashlib.sha256(data=b"").hexdigest()
 
 
 def _require(condition: bool, message: str) -> None:
     if not condition:
-        raise StoreError("INVALID_STATE", message)
+        raise StoreError(code="INVALID_STATE", message=message)
 
 
 def _file(value: dict[str, object]) -> StoredFile:
-    return StoredFile.model_validate_json(canonical_bytes(value))
+    return StoredFile.model_validate_json(json_data=canonical_bytes(value=value))
 
 
 def _owned(lease: Lease, reference: StoredFile) -> None:
     _require(
-        reference.key.startswith(f"runs/{lease.run_id}/attempt-{lease.fence}/")
-        and all(part not in {"", ".", ".."} for part in reference.key.split("/")),
-        "Output must use the current run/attempt namespace",
+        condition=reference.key.startswith(f"runs/{lease.run_id}/attempt-{lease.fence}/")
+        and all(part not in {"", ".", ".."} for part in reference.key.split(sep="/")),
+        message="Output must use the current run/attempt namespace",
     )
 
 
@@ -63,17 +63,20 @@ def _prefixes(row: OutputProgress | None) -> dict[str, ArtifactPrefix]:
             for name in NAMES
         }
     result = tuple(
-        ArtifactPrefix.model_validate_json(canonical_bytes(item)) for item in row.prefixes
+        ArtifactPrefix.model_validate_json(json_data=canonical_bytes(value=item))
+        for item in row.prefixes
     )
     return {prefix.name: prefix for prefix in result}
 
 
 async def _job(session: AsyncSession, lease: Lease) -> Job:
-    job = await session.scalar(select(Job).where(ownership_predicate(lease)).with_for_update())
+    job = await session.scalar(
+        statement=select(Job).where(ownership_predicate(lease=lease)).with_for_update()
+    )
     if job is None:
-        raise StoreError("FENCE_LOST", "Worker ownership is no longer current")
+        raise StoreError(code="FENCE_LOST", message="Worker ownership is no longer current")
     if job.status == "cancel_requested":
-        raise StoreError("INTERRUPTED", "Cancellation wins over output publication")
+        raise StoreError(code="INTERRUPTED", message="Cancellation wins over output publication")
     return job
 
 
@@ -81,13 +84,13 @@ async def _guard(session: AsyncSession, lease: Lease) -> None:
     # This is the last mutation before commit. Earlier chunk/index/reference
     # inserts roll back together if the lease expired during the transaction.
     current = await session.scalar(
-        update(Job)
-        .where(ownership_predicate(lease), Job.status == "running")
+        statement=update(table=Job)
+        .where(ownership_predicate(lease=lease), Job.status == "running")
         .values(fence=Job.fence)
         .returning(Job.run_id)
     )
     if current is None:
-        raise StoreError("FENCE_LOST", "Worker lease expired before progress commit")
+        raise StoreError(code="FENCE_LOST", message="Worker lease expired before progress commit")
 
 
 async def _verify_index(
@@ -96,15 +99,17 @@ async def _verify_index(
     """Verify canonical indexed events match the exact committed chunk accounting."""
     trace, drops, count = hashlib.sha256(), hashlib.sha256(), 0
     rows = await session.stream_scalars(
-        select(IndexedEvent).where(IndexedEvent.run_id == run_id).order_by(IndexedEvent.sequence),
+        statement=select(IndexedEvent)
+        .where(IndexedEvent.run_id == run_id)
+        .order_by(IndexedEvent.sequence),
         execution_options={"yield_per": 500},
     )
     try:
         async for row in rows:
             try:
                 event = PersistedEvent.model_validate_json(
-                    canonical_bytes(
-                        {
+                    json_data=canonical_bytes(
+                        value={
                             "sequence": row.sequence,
                             "t": row.t,
                             "event": row.event,
@@ -116,16 +121,18 @@ async def _verify_index(
                 )
             except ValidationError:
                 raise StoreError(
-                    "VALIDATION_FAILED", "Committed event index schema is invalid"
+                    code="VALIDATION_FAILED", message="Committed event index schema is invalid"
                 ) from None
             count += 1
             if event.sequence != count:
-                raise StoreError("VALIDATION_FAILED", "Committed event index is not contiguous")
+                raise StoreError(
+                    code="VALIDATION_FAILED", message="Committed event index is not contiguous"
+                )
             trace.update(event.canonical_trace_line())
             if event.reason is not None:
                 drops.update(
                     canonical_bytes(
-                        {"t": event.t, "request_id": event.request_id, "reason": event.reason}
+                        value={"t": event.t, "request_id": event.request_id, "reason": event.reason}
                     )
                 )
     finally:
@@ -135,46 +142,55 @@ async def _verify_index(
         or trace.hexdigest() != prefixes["run.jsonl"].sha256
         or drops.hexdigest() != prefixes["drop_reasons.jsonl"].sha256
     ):
-        raise StoreError("VALIDATION_FAILED", "Committed event index differs from sealed output")
+        raise StoreError(
+            code="VALIDATION_FAILED", message="Committed event index differs from sealed output"
+        )
 
 
 def _validate(
     lease: Lease, data: ProgressCommit, previous: OutputProgress | None, run: Run
 ) -> None:
     """Reject noncontiguous prefixes and inconsistent checkpoint/seal accounting before commit."""
-    _owned(lease, data.reference)
+    _owned(lease=lease, reference=data.reference)
     _require(
-        data.snapshot_digest == run.snapshot_digest and data.engine_version == run.engine_version,
-        "Progress belongs to incompatible frozen inputs",
+        condition=data.snapshot_digest == run.snapshot_digest
+        and data.engine_version == run.engine_version,
+        message="Progress belongs to incompatible frozen inputs",
     )
-    _require(previous is None or previous.kind != "terminal", "Terminal output is already sealed")
+    _require(
+        condition=previous is None or previous.kind != "terminal",
+        message="Terminal output is already sealed",
+    )
     old_tick = previous.next_tick if previous is not None else 0
     old_intervals = previous.executed_intervals if previous is not None else 0
     horizon = run.configuration.get("max_simulation_ticks")
     _require(
-        type(horizon) is int and data.next_tick <= horizon, "Progress exceeds the frozen horizon"
+        condition=type(horizon) is int and data.next_tick <= horizon,
+        message="Progress exceeds the frozen horizon",
     )
     if data.kind == "checkpoint":
         _require(
-            data.metrics is None
+            condition=data.metrics is None
             and old_tick < data.next_tick
             and old_intervals < data.executed_intervals <= data.next_tick
             and 0 < data.reference.size_bytes <= 32 * 1024**2,
-            "Checkpoint must represent a new completed interval",
+            message="Checkpoint must represent a new completed interval",
         )
     else:
         _require(
-            data.metrics is not None
+            condition=data.metrics is not None
             and data.next_tick >= old_tick
             and old_intervals <= data.executed_intervals <= data.next_tick
             and 0 < data.reference.size_bytes <= 1024**2,
-            "Terminal seal has invalid boundary or metrics",
+            message="Terminal seal has invalid boundary or metrics",
         )
         if data.metrics is not None:
-            _owned(lease, data.metrics)
+            _owned(lease=lease, reference=data.metrics)
     prefixes = {prefix.name: prefix for prefix in data.prefixes}
-    _require(set(prefixes) == set(NAMES), "All unique output prefixes are required")
-    previous_prefixes = _prefixes(previous)
+    _require(
+        condition=set(prefixes) == set(NAMES), message="All unique output prefixes are required"
+    )
+    previous_prefixes = _prefixes(row=previous)
     for name in NAMES:
         before, after = previous_prefixes[name], prefixes[name]
         sequence, offset = before.records + 1, before.size_bytes
@@ -182,57 +198,57 @@ def _validate(
             (chunk for chunk in data.chunks if chunk.name == name), key=lambda c: c.first_sequence
         )
         for chunk in chunks:
-            _owned(lease, chunk.file)
+            _owned(lease=lease, reference=chunk.file)
             _require(
-                chunk.first_sequence == sequence
+                condition=chunk.first_sequence == sequence
                 and chunk.byte_offset == offset
                 and chunk.last_sequence >= chunk.first_sequence
                 and 0 < chunk.file.size_bytes <= 32 * 1024**2
                 and old_tick <= chunk.first_tick <= chunk.last_tick <= data.next_tick
                 and (data.kind == "terminal" or chunk.last_tick < data.next_tick),
-                "Output chunk ranges are not contiguous",
+                message="Output chunk ranges are not contiguous",
             )
             sequence, offset = chunk.last_sequence + 1, offset + chunk.file.size_bytes
         _require(
-            after.records == sequence - 1
+            condition=after.records == sequence - 1
             and after.size_bytes == offset
             and (bool(chunks) or after.sha256 == before.sha256),
-            "Prefix does not match committed chunks",
+            message="Prefix does not match committed chunks",
         )
     _require(
-        prefixes["run.jsonl"].records <= 30_000
+        condition=prefixes["run.jsonl"].records <= 30_000
         and prefixes["drop_reasons.jsonl"].records <= 10_000
         and prefixes["timeline.jsonl"].records
         == data.executed_intervals + (data.kind == "terminal"),
-        "Output counts exceed the frozen execution envelope",
+        message="Output counts exceed the frozen execution envelope",
     )
     first = previous_prefixes["run.jsonl"].records + 1
     _require(
-        tuple(event.sequence for event in data.events)
+        condition=tuple(event.sequence for event in data.events)
         == tuple(range(first, prefixes["run.jsonl"].records + 1)),
-        "Event index must commit exactly the contiguous trace suffix",
+        message="Event index must commit exactly the contiguous trace suffix",
     )
     _require(
-        all(
+        condition=all(
             old_tick <= event.t <= data.next_tick
             and (data.kind == "terminal" or event.t < data.next_tick)
             for event in data.events
         ),
-        "Event index crosses an unprocessed boundary",
+        message="Event index crosses an unprocessed boundary",
     )
     _require(
-        sum(prefix.size_bytes for prefix in data.prefixes)
+        condition=sum(prefix.size_bytes for prefix in data.prefixes)
         + data.reference.size_bytes
         + (data.metrics.size_bytes if data.metrics is not None else 0)
         <= 512 * 1024**2,
-        "Committed output exceeds the run storage ceiling",
+        message="Committed output exceeds the run storage ceiling",
     )
 
 
 def _recovery(row: OutputProgress, run: Run) -> RecoveryState:
     return RecoveryState.model_validate_json(
-        canonical_bytes(
-            {
+        json_data=canonical_bytes(
+            value={
                 "kind": row.kind,
                 "reference": row.reference,
                 "snapshot_digest": run.snapshot_digest,
@@ -256,18 +272,20 @@ class Durability:
     async def removable(self, lease: Lease, key: str) -> bool:
         """Authorize exact, unreferenced run files while current ownership is valid."""
         prefix = f"runs/{lease.run_id}/attempt-"
-        suffix = key.removeprefix(prefix).split("/", 1)
+        suffix = key.removeprefix(prefix).split(sep="/", maxsplit=1)
         if (
             not key.startswith(prefix)
             or len(suffix) != 2
             or not suffix[0].isdigit()
             or not 1 <= int(suffix[0]) <= lease.fence
-            or any(part in {"", ".", ".."} for part in key.split("/"))
+            or any(part in {"", ".", ".."} for part in key.split(sep="/"))
         ):
-            raise StoreError("INVALID_STATE", "Cleanup is outside the owned run namespace")
+            raise StoreError(
+                code="INVALID_STATE", message="Cleanup is outside the owned run namespace"
+            )
 
         async def operation(session: AsyncSession) -> bool:
-            await _job(session, lease)
+            await _job(session=session, lease=lease)
             queries = (
                 select(SavedCheckpoint.run_id).where(
                     SavedCheckpoint.reference["key"].as_string() == key
@@ -284,37 +302,37 @@ class Durability:
                 ),
             )
             for query in queries:
-                if await session.scalar(select(query.exists())) is True:
+                if await session.scalar(statement=select(query.exists())) is True:
                     return False
             return True
 
-        return await self.database.transaction(operation)
+        return await self.database.transaction(operation=operation)
 
     async def recovery(self, lease: Lease) -> RecoveryState | None:
         async def operation(session: AsyncSession) -> RecoveryState | None:
-            await _job(session, lease)
-            run = await session.get(Run, lease.run_id)
+            await _job(session=session, lease=lease)
+            run = await session.get(entity=Run, ident=lease.run_id)
             if run is None:
-                raise StoreError("NOT_READY", "Frozen run is missing")
-            row = await session.get(OutputProgress, lease.run_id)
-            return _recovery(row, run) if row is not None else None
+                raise StoreError(code="NOT_READY", message="Frozen run is missing")
+            row = await session.get(entity=OutputProgress, ident=lease.run_id)
+            return _recovery(row=row, run=run) if row is not None else None
 
-        return await self.database.transaction(operation)
+        return await self.database.transaction(operation=operation)
 
     async def commit(self, lease: Lease, data: ProgressCommit) -> tuple[StoredFile, ...]:
         """Commit all references/indexes/progress together; return retired checkpoints."""
 
         async def operation(session: AsyncSession) -> tuple[StoredFile, ...]:
-            await _job(session, lease)
-            run = await session.get(Run, lease.run_id)
+            await _job(session=session, lease=lease)
+            run = await session.get(entity=Run, ident=lease.run_id)
             if run is None:
-                raise StoreError("NOT_READY", "Frozen run is missing")
-            previous = await session.get(OutputProgress, lease.run_id)
-            _validate(lease, data, previous, run)
+                raise StoreError(code="NOT_READY", message="Frozen run is missing")
+            previous = await session.get(entity=OutputProgress, ident=lease.run_id)
+            _validate(lease=lease, data=data, previous=previous, run=run)
             revision = previous.revision + 1 if previous is not None else 1
             for chunk in data.chunks:
                 session.add(
-                    CommittedChunk(
+                    instance=CommittedChunk(
                         run_id=lease.run_id,
                         name=chunk.name,
                         first_sequence=chunk.first_sequence,
@@ -328,7 +346,7 @@ class Durability:
                     )
                 )
             for event in data.events:
-                session.add(IndexedEvent(run_id=lease.run_id, **event.model_dump()))
+                session.add(instance=IndexedEvent(run_id=lease.run_id, **event.model_dump()))
             values = {
                 "revision": revision,
                 "kind": data.kind,
@@ -341,7 +359,7 @@ class Durability:
                 else None,
             }
             if previous is None:
-                session.add(OutputProgress(run_id=lease.run_id, **values))
+                session.add(instance=OutputProgress(run_id=lease.run_id, **values))
             else:
                 previous.revision, previous.kind = revision, data.kind
                 previous.reference, previous.next_tick = (
@@ -355,7 +373,7 @@ class Durability:
                 )
             if data.kind == "checkpoint":
                 session.add(
-                    SavedCheckpoint(
+                    instance=SavedCheckpoint(
                         run_id=lease.run_id,
                         revision=revision,
                         attempt=lease.attempt,
@@ -367,21 +385,21 @@ class Durability:
             await session.flush()
             retired = tuple(
                 await session.scalars(
-                    select(SavedCheckpoint)
+                    statement=select(SavedCheckpoint)
                     .where(SavedCheckpoint.run_id == lease.run_id)
                     .order_by(SavedCheckpoint.revision.desc())
-                    .offset(2)
-                    .limit(500)
+                    .offset(offset=2)
+                    .limit(limit=500)
                 )
             )
-            references = tuple(_file(row.reference) for row in retired)
+            references = tuple(_file(value=row.reference) for row in retired)
             for row in retired:
-                await session.delete(row)
+                await session.delete(instance=row)
             await session.flush()
-            await _guard(session, lease)
+            await _guard(session=session, lease=lease)
             return references
 
-        return await self.database.transaction(operation)
+        return await self.database.transaction(operation=operation)
 
     async def chunks(
         self, run_id: UUID, name: PrefixName, after_sequence: int = 0, limit: int = 500
@@ -393,23 +411,23 @@ class Durability:
             or type(after_sequence) is not int
             or after_sequence < 0
         ):
-            raise StoreError("VALIDATION_ERROR", "Invalid chunk page")
+            raise StoreError(code="VALIDATION_ERROR", message="Invalid chunk page")
 
         async def operation(session: AsyncSession) -> tuple[OutputChunk, ...]:
             rows = await session.scalars(
-                select(CommittedChunk)
+                statement=select(CommittedChunk)
                 .where(
                     CommittedChunk.run_id == run_id,
                     CommittedChunk.name == name,
                     CommittedChunk.first_sequence > after_sequence,
                 )
                 .order_by(CommittedChunk.first_sequence)
-                .limit(limit)
+                .limit(limit=limit)
             )
             return tuple(
                 OutputChunk.model_validate_json(
-                    canonical_bytes(
-                        {
+                    json_data=canonical_bytes(
+                        value={
                             "name": row.name,
                             "file": row.file,
                             "first_sequence": row.first_sequence,
@@ -423,7 +441,7 @@ class Durability:
                 for row in rows
             )
 
-        return await self.database.transaction(operation)
+        return await self.database.transaction(operation=operation)
 
     async def events(
         self,
@@ -441,13 +459,13 @@ class Durability:
             and 1 <= limit <= 500
             and 0 <= start_tick <= end_tick <= 1_000_000
         ):
-            raise StoreError("VALIDATION_ERROR", "Invalid event page")
+            raise StoreError(code="VALIDATION_ERROR", message="Invalid event page")
 
         async def operation(session: AsyncSession) -> tuple[PersistedEvent, ...]:
-            if await session.get(Job, run_id) is None:
-                raise StoreError("NOT_FOUND", "Run does not exist")
+            if await session.get(entity=Job, ident=run_id) is None:
+                raise StoreError(code="NOT_FOUND", message="Run does not exist")
             rows = await session.scalars(
-                select(IndexedEvent)
+                statement=select(IndexedEvent)
                 .where(
                     IndexedEvent.run_id == run_id,
                     IndexedEvent.sequence > after_sequence,
@@ -455,12 +473,12 @@ class Durability:
                     IndexedEvent.t <= end_tick,
                 )
                 .order_by(IndexedEvent.sequence)
-                .limit(limit)
+                .limit(limit=limit)
             )
             return tuple(
                 PersistedEvent.model_validate_json(
-                    canonical_bytes(
-                        {
+                    json_data=canonical_bytes(
+                        value={
                             "sequence": row.sequence,
                             "t": row.t,
                             "event": row.event,
@@ -473,84 +491,89 @@ class Durability:
                 for row in rows
             )
 
-        return await self.database.transaction(operation)
+        return await self.database.transaction(operation=operation)
 
     async def complete(
         self, lease: Lease, reference: StoredFile, manifest: BundleManifest
     ) -> JobRecord:
         """Publish only a worker-validated candidate matching a committed terminal seal."""
-        _owned(lease, reference)
+        _owned(lease=lease, reference=reference)
         _require(
-            reference.key.endswith(f"/bundles/{manifest.bundle_digest}/manifest.json"),
-            "Candidate path is not content addressed",
+            condition=reference.key.endswith(f"/bundles/{manifest.bundle_digest}/manifest.json"),
+            message="Candidate path is not content addressed",
         )
 
         async def operation(session: AsyncSession) -> JobRecord:
-            slot = await _slot(session)
+            slot = await _slot(session=session)
             if slot is None or slot.run_id != lease.run_id:
-                raise StoreError("FENCE_LOST", "Execution slot has another owner")
-            job = await _job(session, lease)
-            run = await session.get(Run, lease.run_id)
-            progress = await session.get(OutputProgress, lease.run_id)
+                raise StoreError(code="FENCE_LOST", message="Execution slot has another owner")
+            job = await _job(session=session, lease=lease)
+            run = await session.get(entity=Run, ident=lease.run_id)
+            progress = await session.get(entity=OutputProgress, ident=lease.run_id)
             _require(
-                run is not None and progress is not None and progress.kind == "terminal",
-                "Completion requires a committed terminal seal",
+                condition=run is not None and progress is not None and progress.kind == "terminal",
+                message="Completion requires a committed terminal seal",
             )
             if run is None or progress is None:
-                raise StoreError("NOT_READY", "Completion references are missing")
-            prefixes = _prefixes(progress)
+                raise StoreError(code="NOT_READY", message="Completion references are missing")
+            prefixes = _prefixes(row=progress)
             _require(
-                manifest.snapshot_digest == run.snapshot_digest
+                condition=manifest.snapshot_digest == run.snapshot_digest
                 and manifest.engine_version == run.engine_version
                 and manifest.terminal_tick == progress.next_tick
                 and manifest.event_count == prefixes["run.jsonl"].records
                 and manifest.decision_count == prefixes["autoscaling_decisions.jsonl"].records,
-                "Validated manifest does not match terminal identity or sequences",
+                message="Validated manifest does not match terminal identity or sequences",
             )
             for prefix in prefixes.values():
                 artifact = manifest.artifacts.get(prefix.name)
                 _require(
-                    artifact is not None
+                    condition=artifact is not None
                     and artifact.sha256 == prefix.sha256
                     and artifact.size_bytes == prefix.size_bytes,
-                    "Validated artifact differs from the sealed prefix",
+                    message="Validated artifact differs from the sealed prefix",
                 )
-            _require(progress.metrics is not None, "Terminal metrics reference is missing")
+            _require(
+                condition=progress.metrics is not None,
+                message="Terminal metrics reference is missing",
+            )
             if progress.metrics is None:
-                raise StoreError("NOT_READY", "Terminal metrics are missing")
-            metrics = _file(progress.metrics)
+                raise StoreError(code="NOT_READY", message="Terminal metrics are missing")
+            metrics = _file(value=progress.metrics)
             report = manifest.artifacts.get("metrics.json")
             _require(
-                report is not None
+                condition=report is not None
                 and report.sha256 == metrics.sha256
                 and report.size_bytes == metrics.size_bytes,
-                "Validated metrics differ from terminal seal",
+                message="Validated metrics differ from terminal seal",
             )
-            encoded = canonical_bytes(manifest.model_dump(mode="json"))
+            encoded = canonical_bytes(value=manifest.model_dump(mode="json"))
             content_digest = hashlib.sha256(
-                canonical_bytes(manifest.model_dump(mode="json", exclude={"bundle_digest"}))
+                data=canonical_bytes(
+                    value=manifest.model_dump(mode="json", exclude={"bundle_digest"})
+                )
             ).hexdigest()
             _require(
-                reference.size_bytes == len(encoded)
-                and reference.sha256 == hashlib.sha256(encoded).hexdigest()
+                condition=reference.size_bytes == len(encoded)
+                and reference.sha256 == hashlib.sha256(data=encoded).hexdigest()
                 and manifest.bundle_digest == content_digest,
-                "Candidate manifest byte identity mismatch",
+                message="Candidate manifest byte identity mismatch",
             )
-            await _verify_index(session, lease.run_id, prefixes)
+            await _verify_index(session=session, run_id=lease.run_id, prefixes=prefixes)
             session.add(
-                PublishedArtifact(
+                instance=PublishedArtifact(
                     run_id=lease.run_id,
                     manifest=reference.model_dump(mode="json"),
                     bundle_digest=manifest.bundle_digest,
                 )
             )
-            now = await _clock(session)
-            await _end_attempt(session, job, "completed", now)
+            now = await _clock(session=session)
+            await _end_attempt(session=session, job=job, outcome="completed", now=now)
             slot.run_id = None
             await session.flush()
             updated = await session.scalar(
-                update(Job)
-                .where(ownership_predicate(lease), Job.status == "running")
+                statement=update(table=Job)
+                .where(ownership_predicate(lease=lease), Job.status == "running")
                 .values(
                     status="completed",
                     fence=Job.fence + 1,
@@ -562,23 +585,25 @@ class Durability:
                 .returning(Job)
             )
             if updated is None:
-                raise StoreError("FENCE_LOST", "Worker lost ownership before completion commit")
-            return JobRecord.from_model(updated)
+                raise StoreError(
+                    code="FENCE_LOST", message="Worker lost ownership before completion commit"
+                )
+            return JobRecord.from_model(row=updated)
 
-        return await self.database.transaction(operation)
+        return await self.database.transaction(operation=operation)
 
     async def published(self, run_id: UUID) -> StoredFile:
         """Return only the final manifest reference associated with durable completion."""
 
         async def operation(session: AsyncSession) -> StoredFile:
-            job = await session.get(Job, run_id)
+            job = await session.get(entity=Job, ident=run_id)
             if job is None:
-                raise StoreError("NOT_FOUND", "Run does not exist")
+                raise StoreError(code="NOT_FOUND", message="Run does not exist")
             if job.status != "completed":
-                raise StoreError("INVALID_STATE", "Run has no completed artifact")
-            artifact = await session.get(PublishedArtifact, run_id)
+                raise StoreError(code="INVALID_STATE", message="Run has no completed artifact")
+            artifact = await session.get(entity=PublishedArtifact, ident=run_id)
             if artifact is None:
-                raise StoreError("NOT_READY", "Completed artifact pointer is missing")
-            return _file(artifact.manifest)
+                raise StoreError(code="NOT_READY", message="Completed artifact pointer is missing")
+            return _file(value=artifact.manifest)
 
-        return await self.database.transaction(operation)
+        return await self.database.transaction(operation=operation)

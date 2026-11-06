@@ -39,8 +39,8 @@ from mslb_application.snapshots import domain_config, domain_inputs
 
 def _fraction(value: Fraction, bits: int = 4096) -> Fraction:
     _require(
-        max(value.numerator.bit_length(), value.denominator.bit_length()) <= bits,
-        "Checkpoint arithmetic complexity exceeds the frozen limit",
+        condition=max(value.numerator.bit_length(), value.denominator.bit_length()) <= bits,
+        message="Checkpoint arithmetic complexity exceeds the frozen limit",
     )
     return value
 
@@ -61,25 +61,29 @@ def _preflight(simulation: Simulation, metrics: MetricAccumulator, maximum: int)
     identifiers. Fraction decimal digits are estimated from bit lengths, without
     first allocating decimal representations of every exact value.
     """
-    _require(type(maximum) is int and 1 <= maximum <= MAX_CHECKPOINT_BYTES, "Invalid byte budget")
     _require(
-        simulation.checkpoint_ready
+        condition=type(maximum) is int and 1 <= maximum <= MAX_CHECKPOINT_BYTES,
+        message="Invalid byte budget",
+    )
+    _require(
+        condition=simulation.checkpoint_ready
         and not simulation.terminal
         and not metrics.terminal
         and simulation.tick == metrics.next_tick
         and simulation.tick > 0,
-        "Checkpoint requires a completed, observed, nonterminal interval",
+        message="Checkpoint requires a completed, observed, nonterminal interval",
     )
     estimated = (
         8192
         + sum(
             512
-            + 8 * len(json.dumps(request.request_id, ensure_ascii=False).encode("utf-8"))
+            + 8
+            * len(json.dumps(obj=request.request_id, ensure_ascii=False).encode(encoding="utf-8"))
             + 6
             * len(
                 json.dumps(
-                    metrics.starts.get(request.request_id, (0, ""))[1], ensure_ascii=False
-                ).encode("utf-8")
+                    obj=metrics.starts.get(request.request_id, (0, ""))[1], ensure_ascii=False
+                ).encode(encoding="utf-8")
             )
             for request in simulation.requests
         )
@@ -101,12 +105,14 @@ def _preflight(simulation: Simulation, metrics: MetricAccumulator, maximum: int)
         ]
     )
     for value in fractions:
-        _fraction(value)
+        _fraction(value=value)
         estimated += (
             value.numerator.bit_length() + value.denominator.bit_length()
         ) * 30103 // 100000 + 96
     if estimated > maximum:
-        raise OperationError("RESOURCE_LIMIT_EXCEEDED", "Checkpoint allocation exceeds its budget")
+        raise OperationError(
+            code="RESOURCE_LIMIT_EXCEEDED", message="Checkpoint allocation exceeds its budget"
+        )
 
 
 def _capture(
@@ -116,10 +122,15 @@ def _capture(
     streams: Mapping[str, BinaryIO],
 ) -> IntervalCheckpoint:
     """Capture bounded completed-interval state with exact fractions and committed prefixes."""
-    _require(set(streams) == set(PREFIX_NAMES), "All four checkpoint prefixes are required")
+    _require(
+        condition=set(streams) == set(PREFIX_NAMES),
+        message="All four checkpoint prefixes are required",
+    )
     pending = simulation.autoscaler.pending
     change = (
-        PendingChange.model_validate_json(pending.canonical_line()) if pending is not None else None
+        PendingChange.model_validate_json(json_data=pending.canonical_line())
+        if pending is not None
+        else None
     )
     return IntervalCheckpoint(
         engine_version=snapshot.engine_version,
@@ -133,11 +144,11 @@ def _capture(
         round_robin_anchor=simulation.anchor,
         servers=tuple(
             ServerExecution(
-                server=_server_input(server),
+                server=_server_input(server=server),
                 reserved_mem_mb=simulation.reserved[server.id],
                 start_counter=simulation.last_start_counters[server.id],
                 active=tuple(
-                    ActiveWork(request_id=rid, remaining=FractionValue.from_fraction(work))
+                    ActiveWork(request_id=rid, remaining=FractionValue.from_fraction(value=work))
                     for rid, work in sorted(simulation.active[server.id].items())
                 ),
             )
@@ -148,9 +159,9 @@ def _capture(
             history=tuple(
                 ScalingObservation(
                     ending_tick=item.ending_tick,
-                    cpu_utilization=FractionValue.from_fraction(item.cpu_utilization),
+                    cpu_utilization=FractionValue.from_fraction(value=item.cpu_utilization),
                     drops=item.drops,
-                    drop_ratio=FractionValue.from_fraction(item.drop_ratio),
+                    drop_ratio=FractionValue.from_fraction(value=item.drop_ratio),
                 )
                 for item in simulation.autoscaler.history
             ),
@@ -175,8 +186,8 @@ def _capture(
                     server_id=sid,
                     cpu_units_per_tick=total.cpu_units_per_tick,
                     mem_mb=total.mem_mb,
-                    cpu_allocated=FractionValue.from_fraction(total.cpu_allocated),
-                    cpu_consumed=FractionValue.from_fraction(total.cpu_consumed),
+                    cpu_allocated=FractionValue.from_fraction(value=total.cpu_allocated),
+                    cpu_consumed=FractionValue.from_fraction(value=total.cpu_consumed),
                     cpu_capacity_ticks=total.cpu_capacity_ticks,
                     memory_reserved_mb_ticks=total.memory_reserved_mb_ticks,
                     memory_capacity_mb_ticks=total.memory_capacity_mb_ticks,
@@ -186,70 +197,89 @@ def _capture(
             queue_peak=metrics.queue_peak,
             queue_integral=metrics.queue_integral,
         ),
-        prefixes=tuple(_scan_prefix(name, streams[name]) for name in PREFIX_NAMES),
+        prefixes=tuple(_scan_prefix(name=name, stream=streams[name]) for name in PREFIX_NAMES),
     )
 
 
 def _restore(snapshot: RunSnapshot, state: IntervalCheckpoint) -> RestoredCheckpoint:
     """Rebuild known classes explicitly; no pickle, imports, or executable payloads."""
     _require(
-        state.snapshot_digest == snapshot.snapshot_digest
+        condition=state.snapshot_digest == snapshot.snapshot_digest
         and state.engine_version == snapshot.engine_version,
-        "Checkpoint belongs to incompatible inputs, configuration, or engine",
+        message="Checkpoint belongs to incompatible inputs, configuration, or engine",
     )
-    servers, requests = domain_inputs(snapshot)
-    simulation = Simulation(servers, requests, domain_config(snapshot.configuration))
+    servers, requests = domain_inputs(snapshot=snapshot)
+    simulation = Simulation(
+        servers=servers, requests=requests, config=domain_config(settings=snapshot.configuration)
+    )
     _require(
-        state.next_tick <= simulation.config.max_simulation_ticks, "Invalid checkpoint horizon"
+        condition=state.next_tick <= simulation.config.max_simulation_ticks,
+        message="Invalid checkpoint horizon",
     )
-    _require(state.recorded_samples <= simulation.config.max_samples, "Sample budget exceeded")
-    _require(state.executed_intervals <= state.next_tick, "Invalid executed interval count")
     _require(
-        len(state.metrics.servers) <= simulation.config.max_metric_series, "History budget exceeded"
+        condition=state.recorded_samples <= simulation.config.max_samples,
+        message="Sample budget exceeded",
     )
-    _require(state.input_cursor <= len(requests), "Invalid input cursor")
+    _require(
+        condition=state.executed_intervals <= state.next_tick,
+        message="Invalid executed interval count",
+    )
+    _require(
+        condition=len(state.metrics.servers) <= simulation.config.max_metric_series,
+        message="History budget exceeded",
+    )
+    _require(condition=state.input_cursor <= len(requests), message="Invalid input cursor")
     expected_arrivals = tuple(sorted(r.request_id for r in requests[: state.input_cursor]))
-    _require(state.metrics.arrivals == expected_arrivals, "Arrival cursor/lifecycle mismatch")
     _require(
-        all(r.t < state.next_tick for r in requests[: state.input_cursor])
+        condition=state.metrics.arrivals == expected_arrivals,
+        message="Arrival cursor/lifecycle mismatch",
+    )
+    _require(
+        condition=all(r.t < state.next_tick for r in requests[: state.input_cursor])
         and all(r.t >= state.next_tick for r in requests[state.input_cursor :]),
-        "Input cursor crosses the next boundary",
+        message="Input cursor crosses the next boundary",
     )
     simulation.servers = tuple(
         Server(
-            s.server.id, s.server.cpu_units_per_tick, s.server.mem_mb, s.server.rate_limit_per_sec
+            id=s.server.id,
+            cpu_units_per_tick=s.server.cpu_units_per_tick,
+            mem_mb=s.server.mem_mb,
+            rate_limit_per_sec=s.server.rate_limit_per_sec,
         )
         for s in state.servers
     )
     _require(
-        tuple(s.id for s in simulation.servers)
+        condition=tuple(s.id for s in simulation.servers)
         == tuple(sorted({s.id for s in simulation.servers})),
-        "Membership must be unique and sorted",
+        message="Membership must be unique and sorted",
     )
     original = {server.id: server for server in servers}
     members = {server.id: server for server in simulation.servers}
-    _require(original.items() <= members.items(), "Original membership or capacities changed")
+    _require(
+        condition=original.items() <= members.items(),
+        message="Original membership or capacities changed",
+    )
     template = simulation.config.autoscaling.server_template
 
     def capacity(sid: str) -> tuple[int, int]:
         if sid in original:
             return original[sid].cpu_units_per_tick, original[sid].mem_mb
-        match = re.fullmatch(r"autoscale-([0-9]{6,})", sid)
+        match = re.fullmatch(pattern=r"autoscale-([0-9]{6,})", string=sid)
         _require(
-            match is not None
+            condition=match is not None
             and template is not None
             and simulation.config.autoscaling.enabled
             and 1 <= int(match[1]) <= state.autoscaler.counter
             and sid == f"autoscale-{int(match[1]):06d}",
-            "Unknown generated server identity",
+            message="Unknown generated server identity",
         )
         if template is None:
-            raise OperationError("CHECKPOINT_INVALID", "Missing scaling template")
+            raise OperationError(code="CHECKPOINT_INVALID", message="Missing scaling template")
         return template.cpu_units_per_tick, template.mem_mb
 
     for server in simulation.servers:
         _require(
-            (server.cpu_units_per_tick, server.mem_mb) == capacity(server.id)
+            condition=(server.cpu_units_per_tick, server.mem_mb) == capacity(sid=server.id)
             and (
                 server.id in original
                 or (
@@ -257,43 +287,51 @@ def _restore(snapshot: RunSnapshot, state: IntervalCheckpoint) -> RestoredCheckp
                     and server.rate_limit_per_sec == template.rate_limit_per_sec
                 )
             ),
-            "Membership capacities differ from frozen inputs",
+            message="Membership capacities differ from frozen inputs",
         )
-    metrics = MetricAccumulator(requests, servers, simulation.config.max_metric_series)
+    metrics = MetricAccumulator(
+        requests=requests, servers=servers, max_series=simulation.config.max_metric_series
+    )
     metrics.current_servers = members
     metrics.arrivals = set(state.metrics.arrivals)
     metrics.starts = {item.request_id: (item.t, item.server_id) for item in state.metrics.starts}
     metrics.finishes = {item.request_id: item.t for item in state.metrics.finishes}
     metrics.drops = {item.request_id: item.t for item in state.metrics.drops}
-    _require(len(metrics.starts) == len(state.metrics.starts), "Duplicate request starts")
-    _require(len(metrics.finishes) == len(state.metrics.finishes), "Duplicate completions")
-    _require(len(metrics.drops) == len(state.metrics.drops), "Duplicate drops")
     _require(
-        set(metrics.starts) <= metrics.arrivals
+        condition=len(metrics.starts) == len(state.metrics.starts),
+        message="Duplicate request starts",
+    )
+    _require(
+        condition=len(metrics.finishes) == len(state.metrics.finishes),
+        message="Duplicate completions",
+    )
+    _require(condition=len(metrics.drops) == len(state.metrics.drops), message="Duplicate drops")
+    _require(
+        condition=set(metrics.starts) <= metrics.arrivals
         and set(metrics.finishes) <= set(metrics.starts)
         and set(metrics.drops) <= metrics.arrivals
         and not set(metrics.drops) & set(metrics.starts),
-        "Invalid checkpoint request lifecycle",
+        message="Invalid checkpoint request lifecycle",
     )
     metrics.servers = {}
     for total in state.metrics.servers:
         sid = total.server_id
-        _require(sid not in metrics.servers, "Duplicate server integrals")
+        _require(condition=sid not in metrics.servers, message="Duplicate server integrals")
         _require(
-            (total.cpu_units_per_tick, total.mem_mb) == capacity(sid),
-            "Historical capacities changed",
+            condition=(total.cpu_units_per_tick, total.mem_mb) == capacity(sid=sid),
+            message="Historical capacities changed",
         )
-        allocated = _fraction(total.cpu_allocated.to_fraction())
-        consumed = _fraction(total.cpu_consumed.to_fraction())
+        allocated = _fraction(value=total.cpu_allocated.to_fraction())
+        consumed = _fraction(value=total.cpu_consumed.to_fraction())
         _require(
-            0 <= consumed <= allocated <= total.cpu_capacity_ticks
+            condition=0 <= consumed <= allocated <= total.cpu_capacity_ticks
             and total.memory_reserved_mb_ticks <= total.memory_capacity_mb_ticks
             and total.cpu_capacity_ticks % total.cpu_units_per_tick == 0
             and total.memory_capacity_mb_ticks % total.mem_mb == 0
             and total.cpu_capacity_ticks // total.cpu_units_per_tick
             == total.memory_capacity_mb_ticks // total.mem_mb
             <= state.next_tick,
-            "Invalid historical resource integrals",
+            message="Invalid historical resource integrals",
         )
         metrics.servers[sid] = ServerTotals(
             cpu_units_per_tick=total.cpu_units_per_tick,
@@ -304,93 +342,108 @@ def _restore(snapshot: RunSnapshot, state: IntervalCheckpoint) -> RestoredCheckp
             memory_reserved_mb_ticks=total.memory_reserved_mb_ticks,
             memory_capacity_mb_ticks=total.memory_capacity_mb_ticks,
         )
-    _require(set(members) <= set(metrics.servers), "Current membership missing from metrics")
+    _require(
+        condition=set(members) <= set(metrics.servers),
+        message="Current membership missing from metrics",
+    )
     for rid, (t, sid) in metrics.starts.items():
         request = simulation.by_id[rid]
         _require(
-            request.t <= t < state.next_tick and sid in metrics.servers, "Invalid start tick/server"
+            condition=request.t <= t < state.next_tick and sid in metrics.servers,
+            message="Invalid start tick/server",
         )
         total = metrics.servers[sid]
         total.started += 1
         total.waits.append(t - request.t)
     for rid, t in metrics.finishes.items():
         start, sid = metrics.starts[rid]
-        _require(start < t < state.next_tick, "Invalid completion tick")
+        _require(condition=start < t < state.next_tick, message="Invalid completion tick")
         total = metrics.servers[sid]
         total.finished += 1
         total.responses.append(t - simulation.by_id[rid].t)
         total.executions.append(t - start)
     for rid, t in metrics.drops.items():
-        _require(simulation.by_id[rid].t <= t < state.next_tick, "Invalid drop tick")
+        _require(
+            condition=simulation.by_id[rid].t <= t < state.next_tick, message="Invalid drop tick"
+        )
     simulation.active, simulation.reserved, simulation.last_start_counters = {}, {}, {}
     live: set[str] = set()
     work_consumed = dict.fromkeys(metrics.servers, Fraction())
     for rid in metrics.finishes:
         sid = metrics.starts[rid][1]
-        work_consumed[sid] = _fraction(work_consumed[sid] + simulation.by_id[rid].work_units)
+        work_consumed[sid] = _fraction(value=work_consumed[sid] + simulation.by_id[rid].work_units)
     for item in state.servers:
         sid = item.server.id
         active: dict[str, Fraction] = {}
         for work in item.active:
             rid = work.request_id
             _require(
-                rid in metrics.starts and rid not in metrics.finishes and rid not in live,
-                "Invalid active request",
+                condition=rid in metrics.starts and rid not in metrics.finishes and rid not in live,
+                message="Invalid active request",
             )
-            remaining = _fraction(work.remaining.to_fraction(), simulation.config.max_fraction_bits)
+            remaining = _fraction(
+                value=work.remaining.to_fraction(), bits=simulation.config.max_fraction_bits
+            )
             _require(
-                metrics.starts[rid][1] == sid
+                condition=metrics.starts[rid][1] == sid
                 and 0 <= remaining <= simulation.by_id[rid].work_units,
-                "Invalid remaining work or active server",
+                message="Invalid remaining work or active server",
             )
             active[rid] = remaining
             live.add(rid)
             work_consumed[sid] = _fraction(
-                work_consumed[sid] + simulation.by_id[rid].work_units - remaining
+                value=work_consumed[sid] + simulation.by_id[rid].work_units - remaining
             )
         _require(
-            sum(simulation.by_id[rid].mem_mb for rid in active)
+            condition=sum(simulation.by_id[rid].mem_mb for rid in active)
             == item.reserved_mem_mb
             <= item.server.mem_mb
             and item.start_counter <= item.server.rate_limit_per_sec
             and (simulation.config.mode == "concurrent" or len(active) <= 1),
-            "Invalid memory reservation, start counter, or sequential concurrency",
+            message="Invalid memory reservation, start counter, or sequential concurrency",
         )
         _require(
-            item.start_counter
+            condition=item.start_counter
             == sum(
                 t == state.next_tick - 1 and server_id == sid
                 for t, server_id in metrics.starts.values()
             ),
-            "Last interval start counters do not match request times",
+            message="Last interval start counters do not match request times",
         )
         simulation.active[sid] = active
         simulation.reserved[sid] = item.reserved_mem_mb
         simulation.last_start_counters[sid] = item.start_counter
-    _require(live == set(metrics.starts) - set(metrics.finishes), "Missing active request state")
     _require(
-        all(metrics.servers[sid].cpu_consumed == work for sid, work in work_consumed.items()),
-        "CPU conservation mismatch",
+        condition=live == set(metrics.starts) - set(metrics.finishes),
+        message="Missing active request state",
     )
     _require(
-        set(state.pending_ids) == metrics.arrivals - set(metrics.starts) - set(metrics.drops)
+        condition=all(
+            metrics.servers[sid].cpu_consumed == work for sid, work in work_consumed.items()
+        ),
+        message="CPU conservation mismatch",
+    )
+    _require(
+        condition=set(state.pending_ids)
+        == metrics.arrivals - set(metrics.starts) - set(metrics.drops)
         and len(state.pending_ids) == len(set(state.pending_ids)),
-        "Pending queue/lifecycle mismatch",
+        message="Pending queue/lifecycle mismatch",
     )
     simulation.pending = [simulation.by_id[rid] for rid in state.pending_ids]
     _require(
-        simulation.pending == sorted(simulation.pending, key=lambda r: (r.t, r.request_id)),
-        "Queue order changed",
+        condition=simulation.pending
+        == sorted(simulation.pending, key=lambda r: (r.t, r.request_id)),
+        message="Queue order changed",
     )
     _require(
-        simulation.config.max_queue_size is None
+        condition=simulation.config.max_queue_size is None
         or len(simulation.pending) <= simulation.config.max_queue_size,
-        "Queue capacity exceeded",
+        message="Queue capacity exceeded",
     )
     _require(
-        state.metrics.queue_peak >= len(simulation.pending)
+        condition=state.metrics.queue_peak >= len(simulation.pending)
         and state.metrics.queue_integral <= len(requests) * state.next_tick,
-        "Invalid queue integrals",
+        message="Invalid queue integrals",
     )
     metrics.next_tick = simulation.tick = state.next_tick
     metrics.queue_peak, metrics.queue_integral = (
@@ -400,9 +453,9 @@ def _restore(snapshot: RunSnapshot, state: IntervalCheckpoint) -> RestoredCheckp
     simulation.cursor = state.input_cursor
     simulation.anchor = state.round_robin_anchor
     _require(
-        simulation.anchor is None
+        condition=simulation.anchor is None
         or (simulation.config.strategy == "round_robin" and simulation.anchor in metrics.servers),
-        "Invalid scheduler anchor",
+        message="Invalid scheduler anchor",
     )
     simulation.recorded_samples = state.recorded_samples
     simulation.executed_intervals = state.executed_intervals
@@ -415,25 +468,31 @@ def _restore(snapshot: RunSnapshot, state: IntervalCheckpoint) -> RestoredCheckp
         )
     else:
         samples = len(servers) * state.executed_intervals
-    _require(samples == state.recorded_samples, "Recorded sample count does not match intervals")
     _require(
-        state.event_count
-        == len(metrics.arrivals) + len(metrics.starts) + len(metrics.finishes) + len(metrics.drops),
-        "Event sequence does not match lifecycle counts",
+        condition=samples == state.recorded_samples,
+        message="Recorded sample count does not match intervals",
     )
-    _restore_scaler(simulation, state, metrics)
-    prefixes = {prefix.name: prefix for prefix in state.prefixes}
-    _require(len(prefixes) == 4 and set(prefixes) == set(PREFIX_NAMES), "Invalid prefix names")
     _require(
-        prefixes["run.jsonl"].records == state.event_count
+        condition=state.event_count
+        == len(metrics.arrivals) + len(metrics.starts) + len(metrics.finishes) + len(metrics.drops),
+        message="Event sequence does not match lifecycle counts",
+    )
+    _restore_scaler(simulation=simulation, state=state, metrics=metrics)
+    prefixes = {prefix.name: prefix for prefix in state.prefixes}
+    _require(
+        condition=len(prefixes) == 4 and set(prefixes) == set(PREFIX_NAMES),
+        message="Invalid prefix names",
+    )
+    _require(
+        condition=prefixes["run.jsonl"].records == state.event_count
         and prefixes["autoscaling_decisions.jsonl"].records == state.decision_count
         and prefixes["timeline.jsonl"].records == state.executed_intervals
         and prefixes["drop_reasons.jsonl"].records == len(metrics.drops)
         and sum(prefix.size_bytes for prefix in state.prefixes) <= 512 * 1024 * 1024,
-        "Prefix sequences or storage bounds disagree with execution state",
+        message="Prefix sequences or storage bounds disagree with execution state",
     )
     simulation.checkpoint_ready = True
-    return RestoredCheckpoint(simulation, metrics, state.prefixes)
+    return RestoredCheckpoint(simulation=simulation, metrics=metrics, prefixes=state.prefixes)
 
 
 def _restore_scaler(
@@ -444,59 +503,78 @@ def _restore_scaler(
     pending = saved.pending
     if not policy.enabled:
         _require(
-            not saved.history
+            condition=not saved.history
             and saved.counter == saved.next_eligible_tick == state.decision_count == 0
             and pending is None,
-            "Disabled scaler contains runtime state",
+            message="Disabled scaler contains runtime state",
         )
     else:
         count = min(policy.window_ticks, state.executed_intervals)
         _require(
-            state.executed_intervals == state.next_tick
+            condition=state.executed_intervals == state.next_tick
             and tuple(item.ending_tick for item in saved.history)
             == tuple(range(state.next_tick - count + 1, state.next_tick + 1))
             and state.decision_count <= state.executed_intervals,
-            "Scaling observation window or sequence is inconsistent",
+            message="Scaling observation window or sequence is inconsistent",
         )
         _require(
-            policy.min_servers is not None and policy.max_servers is not None, "Unresolved policy"
+            condition=policy.min_servers is not None and policy.max_servers is not None,
+            message="Unresolved policy",
         )
         minimum, maximum = policy.min_servers, policy.max_servers
         if minimum is None or maximum is None:
-            raise OperationError("CHECKPOINT_INVALID", "Unresolved policy bounds")
-        _require(minimum <= len(simulation.servers) <= maximum, "Membership outside policy bounds")
+            raise OperationError(code="CHECKPOINT_INVALID", message="Unresolved policy bounds")
+        _require(
+            condition=minimum <= len(simulation.servers) <= maximum,
+            message="Membership outside policy bounds",
+        )
     drops_by_tick = Counter(metrics.drops.values())
     arrivals_by_tick = Counter(request.t for request in simulation.requests)
     for item in saved.history:
-        cpu = _fraction(item.cpu_utilization.to_fraction(), simulation.config.max_fraction_bits)
-        ratio = _fraction(item.drop_ratio.to_fraction(), simulation.config.max_fraction_bits)
-        _require(0 <= cpu <= 1 and 0 <= ratio <= 10_000, "Invalid scaling observation")
+        cpu = _fraction(
+            value=item.cpu_utilization.to_fraction(), bits=simulation.config.max_fraction_bits
+        )
+        ratio = _fraction(
+            value=item.drop_ratio.to_fraction(), bits=simulation.config.max_fraction_bits
+        )
+        _require(
+            condition=0 <= cpu <= 1 and 0 <= ratio <= 10_000, message="Invalid scaling observation"
+        )
         drops = drops_by_tick[item.ending_tick - 1]
         arrivals = arrivals_by_tick[item.ending_tick - 1]
         _require(
-            item.drops == drops and ratio == Fraction(drops, max(1, arrivals)),
-            "Scaling drop observations disagree with request lifecycle",
+            condition=item.drops == drops
+            and ratio == Fraction(numerator=drops, denominator=max(1, arrivals)),
+            message="Scaling drop observations disagree with request lifecycle",
         )
-        simulation.autoscaler.history.append(Observation(item.ending_tick, cpu, item.drops, ratio))
+        simulation.autoscaler.history.append(
+            Observation(
+                ending_tick=item.ending_tick,
+                cpu_utilization=cpu,
+                drops=item.drops,
+                drop_ratio=ratio,
+            )
+        )
     _require(
-        saved.next_eligible_tick <= state.next_tick + policy.cooldown_ticks
+        condition=saved.next_eligible_tick <= state.next_tick + policy.cooldown_ticks
         and (saved.counter > 0 or saved.next_eligible_tick == 0),
-        "Scaling cooldown exceeds possible decision history",
+        message="Scaling cooldown exceeds possible decision history",
     )
     simulation.autoscaler.counter = saved.counter
     simulation.autoscaler.next_eligible_tick = saved.next_eligible_tick
     added = set(pending.server_ids_added) if pending is not None else set()
     _require(
-        len(metrics.servers) == len(simulation.initial_servers) + saved.counter - len(added)
+        condition=len(metrics.servers)
+        == len(simulation.initial_servers) + saved.counter - len(added)
         and saved.counter + len(simulation.initial_servers) <= simulation.config.max_metric_series,
-        "Generated membership history count mismatch",
+        message="Generated membership history count mismatch",
     )
     if pending is not None:
         members = set(simulation.active)
         originals = {server.id for server in simulation.initial_servers}
         removed = set(pending.server_ids_removed)
         _require(
-            pending.t == state.next_tick - 1
+            condition=pending.t == state.next_tick - 1
             and pending.applied_at == state.next_tick
             and saved.next_eligible_tick == pending.t + policy.cooldown_ticks + 1
             and (
@@ -508,19 +586,19 @@ def _restore_scaler(
             and not added & set(metrics.servers)
             and removed <= members - originals
             and all(not simulation.active[sid] for sid in removed),
-            "Invalid pending membership change",
+            message="Invalid pending membership change",
         )
         if added:
             _require(
-                pending.server_ids_added
+                condition=pending.server_ids_added
                 == tuple(
                     f"autoscale-{index:06d}"
                     for index in range(saved.counter - len(added) + 1, saved.counter + 1)
                 ),
-                "Pending generated names are not contiguous",
+                message="Pending generated names are not contiguous",
             )
         _require(
-            len(added) <= policy.scale_out_step
+            condition=len(added) <= policy.scale_out_step
             and len(removed) <= policy.scale_in_step
             and pending.server_ids_removed == tuple(sorted(removed, reverse=True))
             and policy.min_servers is not None
@@ -528,14 +606,14 @@ def _restore_scaler(
             and policy.min_servers
             <= len(members) + len(added) - len(removed)
             <= policy.max_servers,
-            "Pending membership change exceeds step or population bounds",
+            message="Pending membership change exceeds step or population bounds",
         )
         simulation.autoscaler.pending = ScaleDecision(
-            pending.t,
-            pending.action,
-            pending.trigger,
-            pending.applied_at,
-            pending.server_ids_added,
-            pending.server_ids_removed,
-            pending.reason,
+            t=pending.t,
+            action=pending.action,
+            trigger=pending.trigger,
+            applied_at=pending.applied_at,
+            server_ids_added=pending.server_ids_added,
+            server_ids_removed=pending.server_ids_removed,
+            reason=pending.reason,
         )

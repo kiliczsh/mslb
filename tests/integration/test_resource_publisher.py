@@ -62,7 +62,7 @@ def test_replaced_publisher_resets_after_fence_loss_and_cannot_overwrite_recover
             await old.publish_once()
             async with database.engine.begin() as connection:
                 await connection.execute(
-                    statement=update(ResourceEvidence).values(
+                    statement=update(table=ResourceEvidence).values(
                         lease_expires_at=func.clock_timestamp() - timedelta(seconds=1)
                     )
                 )

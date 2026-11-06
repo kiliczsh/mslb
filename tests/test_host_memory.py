@@ -87,7 +87,7 @@ def test_reader_checks_owner_mode_type_links_and_length(
     def root_stat(fd: int) -> os.stat_result:
         fields = list(original_fstat(fd=fd))
         fields[4] = evidence_owner
-        return os.stat_result(fields)
+        return os.stat_result(sequence=fields)
 
     monkeypatch.setattr(target=host_memory.os, name="fstat", value=root_stat)
     assert host_memory.read_host_memory() is None

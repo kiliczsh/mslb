@@ -38,7 +38,9 @@ from mslb_application.snapshots import (
 
 def _check_cancel(cancelled: Callable[[], bool] | None) -> None:
     if cancelled is not None and cancelled():
-        raise OperationError("INTERRUPTED", "Run cancelled before artifact publication")
+        raise OperationError(
+            code="INTERRUPTED", message="Run cancelled before artifact publication"
+        )
 
 
 def execute_bundle(
@@ -48,77 +50,98 @@ def execute_bundle(
     cancelled: Callable[[], bool] | None = None,
 ) -> BundleManifest:
     """Publish a new immutable directory only after independent validation."""
-    verify_snapshot(snapshot)
-    _check_cancel(cancelled)
+    verify_snapshot(snapshot=snapshot)
+    _check_cancel(cancelled=cancelled)
     destination = destination.resolve()
     existing: BundleManifest | None = None
     if destination.exists():
         try:
-            existing = verify_bundle(destination)
+            existing = verify_bundle(directory=destination)
         except (ValueError, OSError):
             raise OperationError(
-                "CONFLICT", "Destination is not an intact verified bundle"
+                code="CONFLICT", message="Destination is not an intact verified bundle"
             ) from None
         if existing.snapshot_digest != snapshot.snapshot_digest:
-            raise OperationError("CONFLICT", "Destination belongs to different run inputs")
+            raise OperationError(
+                code="CONFLICT", message="Destination belongs to different run inputs"
+            )
     destination.parent.mkdir(parents=True, exist_ok=True)
-    servers, requests = domain_inputs(snapshot)
-    config = domain_config(snapshot.configuration)
+    servers, requests = domain_inputs(snapshot=snapshot)
+    config = domain_config(settings=snapshot.configuration)
     with tempfile.TemporaryDirectory(prefix=".mslb-attempt-", dir=destination.parent) as attempt:
         directory = Path(attempt)
-        budget = _Budget(limits or BundleLimits())
+        budget = _Budget(limits=limits or BundleLimits())
         event_count = decision_count = 0
-        simulation = Simulation(servers, requests, config)
-        metrics = MetricAccumulator(requests, servers, config.max_metric_series)
+        simulation = Simulation(servers=servers, requests=requests, config=config)
+        metrics = MetricAccumulator(
+            requests=requests, servers=servers, max_series=config.max_metric_series
+        )
         with ExitStack() as stack:
             outputs = {
-                name: _Artifact(directory / name, budget, stack) for name in sorted(ARTIFACT_NAMES)
+                name: _Artifact(path=directory / name, budget=budget, stack=stack)
+                for name in sorted(ARTIFACT_NAMES)
             }
-            outputs["snapshot.json"].json(snapshot.model_dump(mode="json"))
+            outputs["snapshot.json"].json(value=snapshot.model_dump(mode="json"))
             outputs["servers.json"].json(
-                {"tick_seconds": 1, "servers": [server.model_dump() for server in snapshot.servers]}
+                value={
+                    "tick_seconds": 1,
+                    "servers": [server.model_dump() for server in snapshot.servers],
+                }
             )
             rows = (
                 (request.t, request.request_id, request.work_units, request.mem_mb)
                 for request in requests
             )
-            _rows(outputs["requests.csv"], [("t", "request_id", "work_units", "mem_mb")])
-            _rows(outputs["requests.csv"], rows)
+            _rows(
+                artifact=outputs["requests.csv"], rows=[("t", "request_id", "work_units", "mem_mb")]
+            )
+            _rows(artifact=outputs["requests.csv"], rows=rows)
             for frame in simulation.iter_ticks():
-                _check_cancel(cancelled)
-                metrics.observe(frame)
-                outputs["timeline.jsonl"].json(timeline_record(frame))
+                _check_cancel(cancelled=cancelled)
+                metrics.observe(frame=frame)
+                outputs["timeline.jsonl"].json(value=timeline_record(frame=frame))
                 for event in frame.events:
-                    outputs["run.jsonl"].write(event.canonical_line().encode("utf-8"))
+                    outputs["run.jsonl"].write(data=event.canonical_line().encode(encoding="utf-8"))
                     event_count += 1
                     if event.reason is not None:
                         outputs["drop_reasons.jsonl"].json(
-                            {"t": event.t, "request_id": event.request_id, "reason": event.reason}
+                            value={
+                                "t": event.t,
+                                "request_id": event.request_id,
+                                "reason": event.reason,
+                            }
                         )
                 if frame.scale_decision is not None:
                     outputs["autoscaling_decisions.jsonl"].write(
-                        frame.scale_decision.canonical_line().encode("utf-8")
+                        data=frame.scale_decision.canonical_line().encode(encoding="utf-8")
                     )
                     decision_count += 1
-            outputs["metrics.json"].json(metrics.summary())
+            outputs["metrics.json"].json(value=metrics.summary())
             for artifact in outputs.values():
                 artifact.sync()
             manifest = validate_artifact_files(
-                snapshot, directory, simulation.tick, event_count, decision_count
+                snapshot=snapshot,
+                directory=directory,
+                terminal_tick=simulation.tick,
+                event_count=event_count,
+                decision_count=decision_count,
             )
-            final = _Artifact(directory / "manifest.json", budget, stack)
-            final.json(manifest.model_dump(mode="json"))
+            final = _Artifact(path=directory / "manifest.json", budget=budget, stack=stack)
+            final.json(value=manifest.model_dump(mode="json"))
             final.sync()
-        _check_cancel(cancelled)
+        _check_cancel(cancelled=cancelled)
         if existing is not None:
             if existing.bundle_digest != manifest.bundle_digest:
                 raise OperationError(
-                    "VALIDATION_FAILED", "Fresh execution differs from existing verified bundle"
+                    code="VALIDATION_FAILED",
+                    message="Fresh execution differs from existing verified bundle",
                 )
             return existing
         if destination.exists():
-            raise OperationError("CONFLICT", "Bundle destination appeared during execution")
-        directory.rename(destination)
+            raise OperationError(
+                code="CONFLICT", message="Bundle destination appeared during execution"
+            )
+        directory.rename(target=destination)
         return manifest
 
 
@@ -127,63 +150,83 @@ def verify_bundle(directory: Path) -> BundleManifest:
     directory = directory.resolve()
     manifest_path = directory / "manifest.json"
     if manifest_path.is_symlink() or not manifest_path.is_file():
-        raise OperationError("VALIDATION_FAILED", "Manifest is missing or unsafe")
-    with manifest_path.open("rb") as stream:
+        raise OperationError(code="VALIDATION_FAILED", message="Manifest is missing or unsafe")
+    with manifest_path.open(mode="rb") as stream:
         payload = stream.read(1024 * 1024 + 1)
     if len(payload) > 1024 * 1024:
-        raise OperationError("VALIDATION_FAILED", "Manifest exceeds its size limit")
+        raise OperationError(code="VALIDATION_FAILED", message="Manifest exceeds its size limit")
     try:
-        manifest = BundleManifest.model_validate_json(payload)
+        manifest = BundleManifest.model_validate_json(json_data=payload)
     except ValidationError:
-        raise OperationError("VALIDATION_FAILED", "Invalid artifact manifest schema") from None
+        raise OperationError(
+            code="VALIDATION_FAILED", message="Invalid artifact manifest schema"
+        ) from None
     digest = hashlib.sha256(
-        canonical_bytes(manifest.model_dump(mode="json", exclude={"bundle_digest"}))
+        data=canonical_bytes(value=manifest.model_dump(mode="json", exclude={"bundle_digest"}))
     ).hexdigest()
     if manifest.bundle_digest != digest or set(manifest.artifacts) != ARTIFACT_NAMES:
-        raise OperationError("VALIDATION_FAILED", "Artifact manifest identity mismatch")
+        raise OperationError(
+            code="VALIDATION_FAILED", message="Artifact manifest identity mismatch"
+        )
     if {path.name for path in directory.iterdir()} != ARTIFACT_NAMES | {"manifest.json"}:
-        raise OperationError("VALIDATION_FAILED", "Unexpected bundle contents")
+        raise OperationError(code="VALIDATION_FAILED", message="Unexpected bundle contents")
     total = len(payload)
     for name, metadata in manifest.artifacts.items():
         path = directory / name
         if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(directory):
-            raise OperationError("VALIDATION_FAILED", "Unsafe artifact path")
-        size, digest = _hash_file(path, metadata.size_bytes)
+            raise OperationError(code="VALIDATION_FAILED", message="Unsafe artifact path")
+        size, digest = _hash_file(path=path, maximum=metadata.size_bytes)
         total += size
         if size != metadata.size_bytes or digest != metadata.sha256 or total > 512 * 1024 * 1024:
-            raise OperationError("VALIDATION_FAILED", "Artifact length or digest mismatch")
-    with (directory / "snapshot.json").open("rb") as stream:
-        snapshot = read_snapshot(stream)
+            raise OperationError(
+                code="VALIDATION_FAILED", message="Artifact length or digest mismatch"
+            )
+    with (directory / "snapshot.json").open(mode="rb") as stream:
+        snapshot = read_snapshot(stream=stream)
     if (
         manifest.snapshot_digest != snapshot.snapshot_digest
         or manifest.engine_version != snapshot.engine_version
     ):
-        raise OperationError("VALIDATION_FAILED", "Bundle belongs to a different snapshot")
-    with (directory / "servers.json").open("rb") as stream:
-        if read_servers(stream) != snapshot.servers:
-            raise OperationError("VALIDATION_FAILED", "Server artifact differs from snapshot")
-    with (directory / "requests.csv").open("rb") as stream:
-        if read_requests(stream) != snapshot.requests:
-            raise OperationError("VALIDATION_FAILED", "Request artifact differs from snapshot")
-    servers, requests = domain_inputs(snapshot)
+        raise OperationError(
+            code="VALIDATION_FAILED", message="Bundle belongs to a different snapshot"
+        )
+    with (directory / "servers.json").open(mode="rb") as stream:
+        if read_servers(stream=stream) != snapshot.servers:
+            raise OperationError(
+                code="VALIDATION_FAILED", message="Server artifact differs from snapshot"
+            )
+    with (directory / "requests.csv").open(mode="rb") as stream:
+        if read_requests(stream=stream) != snapshot.requests:
+            raise OperationError(
+                code="VALIDATION_FAILED", message="Request artifact differs from snapshot"
+            )
+    servers, requests = domain_inputs(snapshot=snapshot)
     with (
-        (directory / "run.jsonl").open("rb") as trace,
-        (directory / "autoscaling_decisions.jsonl").open("rb") as sidecar,
+        (directory / "run.jsonl").open(mode="rb") as trace,
+        (directory / "autoscaling_decisions.jsonl").open(mode="rb") as sidecar,
     ):
         replay = validate_trace(
-            trace, servers, requests, domain_config(snapshot.configuration), sidecar
+            stream=trace,
+            servers=servers,
+            requests=requests,
+            config=domain_config(settings=snapshot.configuration),
+            scale_stream=sidecar,
         )
-    with (directory / "autoscaling_decisions.jsonl").open("rb") as stream:
+    with (directory / "autoscaling_decisions.jsonl").open(mode="rb") as stream:
         decisions = sum(block.count(b"\n") for block in iter(lambda: stream.read(64 * 1024), b""))
     if (
         replay.terminal_tick != manifest.terminal_tick
         or replay.events != manifest.event_count
         or decisions != manifest.decision_count
     ):
-        raise OperationError("VALIDATION_FAILED", "Terminal seal does not match replay")
+        raise OperationError(
+            code="VALIDATION_FAILED", message="Terminal seal does not match replay"
+        )
     if (
-        _original_validation(directory, snapshot) != manifest.original_validator
+        _original_validation(directory=directory, snapshot=snapshot) != manifest.original_validator
         or manifest.original_validator_digest != ORIGINAL_VALIDATOR_DIGEST
     ):
-        raise OperationError("VALIDATION_FAILED", "Original validation provenance mismatch")
+        raise OperationError(
+            code="VALIDATION_FAILED", message="Original validation provenance mismatch"
+        )
     return manifest

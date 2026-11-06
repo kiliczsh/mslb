@@ -36,37 +36,41 @@ async def submission(
     database: Database, root: Path, source: bytes | None = None, settings: RunSettings | None = None
 ) -> tuple[ManagedFiles, ManagedFiles, RunRecord]:
     servers, _, _ = await asyncio.to_thread(fixture_inputs)
-    catalog = Catalog(database)
-    await catalog.seed_once(servers)
-    inputs = await asyncio.to_thread(ManagedFiles, root / "inputs", StorageLimits(min_free_bytes=0))
-    outputs = await asyncio.to_thread(
-        ManagedFiles, root / "outputs", StorageLimits(min_free_bytes=0)
+    catalog = Catalog(database=database)
+    await catalog.seed_once(servers=servers)
+    inputs = await asyncio.to_thread(
+        ManagedFiles, root=root / "inputs", limits=StorageLimits(min_free_bytes=0)
     )
-    service = Submissions(catalog, inputs)
+    outputs = await asyncio.to_thread(
+        ManagedFiles, root=root / "outputs", limits=StorageLimits(min_free_bytes=0)
+    )
+    service = Submissions(catalog=catalog, files=inputs)
     payload = (
         source
         if source is not None
         else await asyncio.to_thread(Path("/fixtures/core/requests.csv").read_bytes)
     )
-    dataset = await service.upload(io.BytesIO(payload), "requests.csv")
-    run = await service.submit(dataset.id, settings or RunSettings())
+    dataset = await service.upload(
+        source=io.BytesIO(initial_bytes=payload), filename="requests.csv"
+    )
+    run = await service.submit(dataset_id=dataset.id, settings=settings or RunSettings())
     readonly = await asyncio.to_thread(
-        ManagedFiles, inputs.root, StorageLimits(min_free_bytes=0), True
+        ManagedFiles, root=inputs.root, limits=StorageLimits(min_free_bytes=0), read_only=True
     )
     return readonly, outputs, run
 
 
-@pytest.mark.parametrize("mode", ["concurrent", "sequential"])
-@pytest.mark.parametrize("strategy", STRATEGIES)
-@pytest.mark.parametrize("scaling", [False, True])
+@pytest.mark.parametrize(argnames="mode", argvalues=["concurrent", "sequential"])
+@pytest.mark.parametrize(argnames="strategy", argvalues=STRATEGIES)
+@pytest.mark.parametrize(argnames="scaling", argvalues=[False, True])
 def test_worker_executes_queued_run_and_matches_independent_cli_bundle(
     tmp_path: Path, mode: str, strategy: str, scaling: bool
 ) -> None:
     async def scenario() -> None:
         async with scratch() as database:
             settings = RunSettings.model_validate_json(
-                json.dumps(
-                    {
+                json_data=json.dumps(
+                    obj={
                         "mode": mode,
                         "strategy": strategy,
                         "autoscaling": {
@@ -86,25 +90,34 @@ def test_worker_executes_queued_run_and_matches_independent_cli_bundle(
                 if scaling
                 else None
             )
-            inputs, outputs, run = await submission(database, tmp_path, source, settings)
+            inputs, outputs, run = await submission(
+                database=database, root=tmp_path, source=source, settings=settings
+            )
             phases: list[str] = []
             worker = Worker(
-                database, inputs, outputs, observer=lambda phase, lease, tick: phases.append(phase)
+                database=database,
+                inputs=inputs,
+                outputs=outputs,
+                observer=lambda phase, lease, tick: phases.append(phase),
             )
             assert await worker.run_once()
-            state = await Jobs(database).get(run.id)
+            state = await Jobs(database=database).get(run_id=run.id)
             assert state.status == "completed", phases
-            pointer = await Durability(database).published(run.id)
-            manifest = await asyncio.to_thread(verify_bundle, outputs.path(pointer.key).parent)
-            saved = await asyncio.to_thread(
-                inputs.load_snapshot, run.snapshot_key, run.snapshot_digest
+            pointer = await Durability(database=database).published(run_id=run.id)
+            manifest = await asyncio.to_thread(
+                verify_bundle, directory=outputs.path(key=pointer.key).parent
             )
-            reference = await asyncio.to_thread(execute_bundle, saved, tmp_path / "reference")
+            saved = await asyncio.to_thread(
+                inputs.load_snapshot, key=run.snapshot_key, expected_digest=run.snapshot_digest
+            )
+            reference = await asyncio.to_thread(
+                execute_bundle, snapshot=saved, destination=tmp_path / "reference"
+            )
             assert manifest == reference
             assert phases == ["claimed", "terminal_committed", "candidate_published", "completed"]
             assert not await worker.run_once()
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 def test_worker_renews_persisted_lease_beyond_original_expiration_during_validation(
@@ -259,22 +272,30 @@ def test_cancellation_during_validation_never_publishes_completed_pointer(
     ) -> BundleManifest:
         entered.set()
         time.sleep(1)
-        return original(snapshot, directory, terminal_tick, event_count, decision_count)
+        return original(
+            snapshot=snapshot,
+            directory=directory,
+            terminal_tick=terminal_tick,
+            event_count=event_count,
+            decision_count=decision_count,
+        )
 
-    monkeypatch.setattr(journal, "validate_artifact_files", delayed)
+    monkeypatch.setattr(target=journal, name="validate_artifact_files", value=delayed)
 
     async def scenario() -> None:
         async with scratch() as database:
-            inputs, outputs, run = await submission(database, tmp_path)
-            task = asyncio.create_task(Worker(database, inputs, outputs).run_once())
-            assert await asyncio.to_thread(entered.wait, 5)
-            await Jobs(database).cancel(run.id)
+            inputs, outputs, run = await submission(database=database, root=tmp_path)
+            task = asyncio.create_task(
+                coro=Worker(database=database, inputs=inputs, outputs=outputs).run_once()
+            )
+            assert await asyncio.to_thread(entered.wait, timeout=5)
+            await Jobs(database=database).cancel(run_id=run.id)
             await task
-            assert (await Jobs(database).get(run.id)).status == "cancelled"
-            with pytest.raises(ValueError):
-                await Durability(database).published(run.id)
+            assert (await Jobs(database=database).get(run_id=run.id)).status == "cancelled"
+            with pytest.raises(expected_exception=ValueError):
+                await Durability(database=database).published(run_id=run.id)
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 def test_deadline_stops_execution_while_a_database_poll_is_still_cancelling(
@@ -290,14 +311,20 @@ def test_deadline_stops_execution_while_a_database_poll_is_still_cancelling(
         event_count: int,
         decision_count: int,
     ) -> BundleManifest:
-        assert release_validation.wait(5)
-        return original_validation(snapshot, directory, terminal_tick, event_count, decision_count)
+        assert release_validation.wait(timeout=5)
+        return original_validation(
+            snapshot=snapshot,
+            directory=directory,
+            terminal_tick=terminal_tick,
+            event_count=event_count,
+            decision_count=decision_count,
+        )
 
-    monkeypatch.setattr(journal, "validate_artifact_files", held_validation)
+    monkeypatch.setattr(target=journal, name="validate_artifact_files", value=held_validation)
 
     async def scenario() -> None:
         async with scratch() as database:
-            inputs, outputs, run = await submission(database, tmp_path)
+            inputs, outputs, run = await submission(database=database, root=tmp_path)
             cleanup_started, release_cleanup = asyncio.Event(), asyncio.Event()
 
             def observe(phase: str, lease: object, tick: int) -> None:
@@ -305,33 +332,38 @@ def test_deadline_stops_execution_while_a_database_poll_is_still_cancelling(
                     stopped.set()
 
             worker = Worker(
-                database, inputs, outputs, lease_seconds=2, renewal_seconds=0.3, observer=observe
+                database=database,
+                inputs=inputs,
+                outputs=outputs,
+                lease_seconds=2,
+                renewal_seconds=0.3,
+                observer=observe,
             )
             original_get = worker.jobs.get
 
             async def blocked_get(run_id: UUID) -> JobRecord:
                 try:
-                    await asyncio.sleep(10)
+                    await asyncio.sleep(delay=10)
                 except asyncio.CancelledError:
                     cleanup_started.set()
                     await release_cleanup.wait()
-                return await original_get(run_id)
+                return await original_get(run_id=run_id)
 
-            monkeypatch.setattr(worker.jobs, "get", blocked_get)
-            task = asyncio.create_task(worker.run_once())
+            monkeypatch.setattr(target=worker.jobs, name="get", value=blocked_get)
+            task = asyncio.create_task(coro=worker.run_once())
             try:
-                await asyncio.wait_for(cleanup_started.wait(), timeout=4)
+                await asyncio.wait_for(fut=cleanup_started.wait(), timeout=4)
                 release_validation.set()
-                assert await asyncio.to_thread(stopped.wait, 3)
+                assert await asyncio.to_thread(stopped.wait, timeout=3)
             finally:
                 release_validation.set()
                 release_cleanup.set()
                 await task
-            assert (await Jobs(database).get(run.id)).status == "running"
-            with pytest.raises(ValueError):
-                await Durability(database).published(run.id)
+            assert (await Jobs(database=database).get(run_id=run.id)).status == "running"
+            with pytest.raises(expected_exception=ValueError):
+                await Durability(database=database).published(run_id=run.id)
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 def wait_phase(process: subprocess.Popen[bytes], phase: str) -> None:
@@ -339,7 +371,7 @@ def wait_phase(process: subprocess.Popen[bytes], phase: str) -> None:
     buffer = b""
     deadline = time.monotonic() + 15
     with selectors.DefaultSelector() as selector:
-        selector.register(process.stdout, selectors.EVENT_READ)
+        selector.register(fileobj=process.stdout, events=selectors.EVENT_READ)
         while time.monotonic() < deadline:
             if not selector.select(timeout=0.25):
                 continue
@@ -349,8 +381,8 @@ def wait_phase(process: subprocess.Popen[bytes], phase: str) -> None:
             buffer += data
             assert len(buffer) <= 64 * 1024
             while b"\n" in buffer:
-                line, buffer = buffer.split(b"\n", 1)
-                if json.loads(line).get("event") == phase:
+                line, buffer = buffer.split(sep=b"\n", maxsplit=1)
+                if json.loads(s=line).get("event") == phase:
                     return
     raise AssertionError("Worker did not reach the requested durable phase")
 
@@ -359,7 +391,7 @@ def spawn_worker(
     code: str, schema: str, inputs: Path, outputs: Path, phase: str
 ) -> subprocess.Popen[bytes]:
     return subprocess.Popen(  # noqa: S603 -- fixed test-owned worker program and paths
-        [sys.executable, "-c", code, schema, str(inputs), str(outputs), phase],
+        args=[sys.executable, "-c", code, schema, str(object=inputs), str(object=outputs), phase],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
@@ -371,38 +403,50 @@ def test_graceful_shutdown_checkpoints_and_new_owner_resumes_identical_bytes(
     async def scenario() -> None:
         async with scratch() as database:
             source = b"t,request_id,work_units,mem_mb\n0,long,20000,1\n"
-            inputs, outputs, run = await submission(database, tmp_path, source)
+            inputs, outputs, run = await submission(database=database, root=tmp_path, source=source)
             shutdown = Event()
 
             def observe(phase: str, lease: object, tick: int) -> None:
                 if phase == "checkpoint_committed":
                     shutdown.set()
 
-            first = Worker(database, inputs, outputs, observer=observe)
-            await first.run_once(shutdown)
-            state = await Jobs(database).get(run.id)
+            first = Worker(database=database, inputs=inputs, outputs=outputs, observer=observe)
+            await first.run_once(shutdown=shutdown)
+            state = await Jobs(database=database).get(run_id=run.id)
             assert state.status == "queued" and state.attempts == 1
             phases: list[str] = []
             second = Worker(
-                database, inputs, outputs, observer=lambda phase, lease, tick: phases.append(phase)
+                database=database,
+                inputs=inputs,
+                outputs=outputs,
+                observer=lambda phase, lease, tick: phases.append(phase),
             )
             await second.run_once()
-            assert (await Jobs(database).get(run.id)).status == "completed"
+            assert (await Jobs(database=database).get(run_id=run.id)).status == "completed"
             assert "recovered_checkpoint" in phases
-            reference = await Durability(database).published(run.id)
-            actual = await asyncio.to_thread(verify_bundle, outputs.path(reference.key).parent)
-            saved = await asyncio.to_thread(
-                inputs.load_snapshot, run.snapshot_key, run.snapshot_digest
+            reference = await Durability(database=database).published(run_id=run.id)
+            actual = await asyncio.to_thread(
+                verify_bundle, directory=outputs.path(key=reference.key).parent
             )
-            expected = await asyncio.to_thread(execute_bundle, saved, tmp_path / "reference")
+            saved = await asyncio.to_thread(
+                inputs.load_snapshot, key=run.snapshot_key, expected_digest=run.snapshot_digest
+            )
+            expected = await asyncio.to_thread(
+                execute_bundle, snapshot=saved, destination=tmp_path / "reference"
+            )
             assert actual == expected
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 @pytest.mark.parametrize(
-    "phase",
-    ["checkpoint_committed", "terminal_committed", "candidate_published", "scaling_checkpoint"],
+    argnames="phase",
+    argvalues=[
+        "checkpoint_committed",
+        "terminal_committed",
+        "candidate_published",
+        "scaling_checkpoint",
+    ],
 )
 def test_killed_worker_recovers_committed_bytes_and_sealed_runs_do_not_execute_again(
     tmp_path: Path, phase: str, monkeypatch: pytest.MonkeyPatch
@@ -421,13 +465,19 @@ def test_killed_worker_recovers_committed_bytes_and_sealed_runs_do_not_execute_a
                     f"0,r-{n:04d},1,1000\n".encode() for n in range(1000)
                 )
                 settings = RunSettings.model_validate_json(
-                    await asyncio.to_thread(Path("data/examples/scaling-config.json").read_bytes)
+                    json_data=await asyncio.to_thread(
+                        Path("data/examples/scaling-config.json").read_bytes
+                    )
                 )
-            inputs, outputs, run = await submission(database, tmp_path, source, settings)
-            saved = await asyncio.to_thread(
-                inputs.load_snapshot, run.snapshot_key, run.snapshot_digest
+            inputs, outputs, run = await submission(
+                database=database, root=tmp_path, source=source, settings=settings
             )
-            expected = await asyncio.to_thread(execute_bundle, saved, tmp_path / "reference")
+            saved = await asyncio.to_thread(
+                inputs.load_snapshot, key=run.snapshot_key, expected_digest=run.snapshot_digest
+            )
+            expected = await asyncio.to_thread(
+                execute_bundle, snapshot=saved, destination=tmp_path / "reference"
+            )
             code = """
 import asyncio, json, os, sys, time
 from pathlib import Path
@@ -449,39 +499,49 @@ async def main():
 asyncio.run(main())
 """
             process = await asyncio.to_thread(
-                spawn_worker, code, database.schema, inputs.root, outputs.root, target
+                spawn_worker,
+                code=code,
+                schema=database.schema,
+                inputs=inputs.root,
+                outputs=outputs.root,
+                phase=target,
             )
             try:
-                await asyncio.to_thread(wait_phase, process, target)
+                await asyncio.to_thread(wait_phase, process=process, phase=target)
                 assert process.poll() is None
                 process.kill()
-                await asyncio.to_thread(process.wait, 5)
+                await asyncio.to_thread(process.wait, timeout=5)
                 assert process.returncode == -9
             finally:
                 if process.poll() is None:
                     process.kill()
                 await asyncio.to_thread(process.communicate, timeout=5)
-            with pytest.raises(ValueError):
-                await Durability(database).published(run.id)
-            await asyncio.sleep(2.2)
+            with pytest.raises(expected_exception=ValueError):
+                await Durability(database=database).published(run_id=run.id)
+            await asyncio.sleep(delay=2.2)
             if target != "checkpoint_committed":
 
                 def forbidden(self: Simulation) -> Iterator[TickFrame]:
                     raise AssertionError("A sealed run executed its simulation again")
 
-                monkeypatch.setattr(Simulation, "iter_ticks", forbidden)
+                monkeypatch.setattr(target=Simulation, name="iter_ticks", value=forbidden)
             phases: list[str] = []
             resumed = Worker(
-                database, inputs, outputs, observer=lambda event, lease, tick: phases.append(event)
+                database=database,
+                inputs=inputs,
+                outputs=outputs,
+                observer=lambda event, lease, tick: phases.append(event),
             )
             assert await resumed.run_once()
-            assert (await Jobs(database).get(run.id)).status == "completed", phases
+            assert (await Jobs(database=database).get(run_id=run.id)).status == "completed", phases
             expected_phase = (
                 "recovered_checkpoint" if target == "checkpoint_committed" else "recovered_terminal"
             )
             assert expected_phase in phases
-            reference = await Durability(database).published(run.id)
-            actual = await asyncio.to_thread(verify_bundle, outputs.path(reference.key).parent)
+            reference = await Durability(database=database).published(run_id=run.id)
+            actual = await asyncio.to_thread(
+                verify_bundle, directory=outputs.path(key=reference.key).parent
+            )
             assert actual == expected
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())

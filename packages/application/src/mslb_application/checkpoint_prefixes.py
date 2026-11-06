@@ -13,7 +13,7 @@ from mslb_application.errors import OperationError
 
 def _require(condition: bool, message: str) -> None:
     if not condition:
-        raise OperationError("CHECKPOINT_INVALID", message)
+        raise OperationError(code="CHECKPOINT_INVALID", message=message)
 
 
 def _scan_prefix(
@@ -32,9 +32,14 @@ def _scan_prefix(
         records += block.count(b"\n")
         last = block[-1:]
     if expected is None:
-        _require(not stream.read(1), "Checkpoint prefix exceeds its storage limit")
+        _require(
+            condition=not stream.read(1), message="Checkpoint prefix exceeds its storage limit"
+        )
         stream.seek(size)
-    _require(not size or last == b"\n", "Checkpoint prefix ends inside a record")
+    _require(condition=not size or last == b"\n", message="Checkpoint prefix ends inside a record")
     actual = ArtifactPrefix(name=name, size_bytes=size, records=records, sha256=digest.hexdigest())
-    _require(expected is None or actual == expected, "Checkpoint prefix length or digest mismatch")
+    _require(
+        condition=expected is None or actual == expected,
+        message="Checkpoint prefix length or digest mismatch",
+    )
     return actual

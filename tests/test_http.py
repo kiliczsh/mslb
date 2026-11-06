@@ -31,7 +31,7 @@ def test_guard_auth_origin_host_preflight_and_bounded_chunked_body() -> None:
                 message = await receive()
                 if not message.get("more_body", False):
                     break
-            await Response("ok")(scope, receive, send)
+            await Response(content="ok")(scope, receive, send)
 
         token = "synthetic-test-token-" * 3
         policy = Settings(
@@ -41,13 +41,13 @@ def test_guard_auth_origin_host_preflight_and_bounded_chunked_body() -> None:
             allowed_origins=("https://dashboard.test",),
         )
         async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=Guard(application, policy)),
+            transport=httpx.ASGITransport(app=Guard(app=application, settings=policy)),
             base_url="http://testserver",
         ) as client:
             assert (
-                await client.get("/api/v1/servers")
+                await client.get(url="/api/v1/servers")
             ).status_code == HTTPStatus.UNAUTHORIZED.value
-            assert (await client.get("/api/v1/health/live")).status_code == HTTPStatus.OK.value
+            assert (await client.get(url="/api/v1/health/live")).status_code == HTTPStatus.OK.value
             headers = {"Authorization": "Bearer " + token}
             for path in (
                 "/api/v1/servers",
@@ -56,7 +56,7 @@ def test_guard_auth_origin_host_preflight_and_bounded_chunked_body() -> None:
                 "/api/v1/openapi.json",
             ):
                 response = await client.get(
-                    path,
+                    url=path,
                     headers={"Authorization": "Bearer wrong", "Origin": "https://dashboard.test"},
                 )
                 assert (
@@ -65,12 +65,14 @@ def test_guard_auth_origin_host_preflight_and_bounded_chunked_body() -> None:
                 )
                 assert response.headers["access-control-allow-origin"] == "https://dashboard.test"
             assert (
-                await client.get("/", headers=headers | {"Host": "attacker.test"})
+                await client.get(url="/", headers=headers | {"Host": "attacker.test"})
             ).status_code == HTTPStatus.FORBIDDEN.value
             assert (
-                await client.get("/", headers=headers | {"Origin": "https://attacker.test"})
+                await client.get(url="/", headers=headers | {"Origin": "https://attacker.test"})
             ).status_code == HTTPStatus.FORBIDDEN.value
-            valid = await client.get("/", headers=headers | {"Origin": "https://dashboard.test"})
+            valid = await client.get(
+                url="/", headers=headers | {"Origin": "https://dashboard.test"}
+            )
             assert (
                 valid.status_code == HTTPStatus.OK.value
                 and valid.headers["access-control-allow-origin"] == "https://dashboard.test"
@@ -80,7 +82,7 @@ def test_guard_auth_origin_host_preflight_and_bounded_chunked_body() -> None:
                 and valid.headers["x-content-type-options"] == "nosniff"
             )
             preflight = await client.options(
-                "/api/v1/servers",
+                url="/api/v1/servers",
                 headers={
                     "Origin": "https://dashboard.test",
                     "Access-Control-Request-Method": "POST",
@@ -88,21 +90,21 @@ def test_guard_auth_origin_host_preflight_and_bounded_chunked_body() -> None:
             )
             assert preflight.status_code == HTTPStatus.NO_CONTENT.value
             assert (
-                await client.get("/?token=not-accepted", headers=headers)
+                await client.get(url="/?token=not-accepted", headers=headers)
             ).status_code == HTTPStatus.UNAUTHORIZED.value
             assert (
-                await client.get("/?%74oken=not-accepted", headers=headers)
+                await client.get(url="/?%74oken=not-accepted", headers=headers)
             ).status_code == HTTPStatus.UNAUTHORIZED.value
 
             async def body() -> AsyncGenerator[bytes]:
                 for _ in range(20):
                     yield b"x" * 4096
 
-            oversized = await client.post("/api/v1/servers", content=body(), headers=headers)
+            oversized = await client.post(url="/api/v1/servers", content=body(), headers=headers)
             assert oversized.status_code == HTTPStatus.CONTENT_TOO_LARGE.value
             assert oversized.json()["error"]["code"] == "PAYLOAD_TOO_LARGE"
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 def test_request_upload_and_stream_admission_leave_health_available() -> None:
@@ -113,12 +115,12 @@ def test_request_upload_and_stream_admission_leave_health_available() -> None:
             if scope["path"] != "/api/v1/health/live":
                 entered.set()
                 await release.wait()
-            await Response("ok")(scope, receive, send)
+            await Response(content="ok")(scope, receive, send)
 
         for path in ("/api/v1/datasets", "/api/v1/simulations/run/stream", "/api/v1/servers"):
             guard = Guard(
-                application,
-                Settings(
+                app=application,
+                settings=Settings(
                     allowed_hosts=("testserver",),
                     request_limit=1 if path.endswith("servers") else 2,
                     stream_limit=1,
@@ -127,17 +129,21 @@ def test_request_upload_and_stream_admission_leave_health_available() -> None:
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=guard), base_url="http://testserver"
             ) as client:
-                held = asyncio.create_task(client.post(path))
+                held = asyncio.create_task(coro=client.post(url=path))
                 await entered.wait()
-                assert (await client.post(path)).status_code == HTTPStatus.TOO_MANY_REQUESTS.value
-                assert (await client.get("/api/v1/health/live")).status_code == HTTPStatus.OK.value
+                assert (
+                    await client.post(url=path)
+                ).status_code == HTTPStatus.TOO_MANY_REQUESTS.value
+                assert (
+                    await client.get(url="/api/v1/health/live")
+                ).status_code == HTTPStatus.OK.value
                 release.set()
                 assert (await held).status_code == HTTPStatus.OK.value
                 assert guard.active == 0 and guard.streams == 0 and not guard.uploading
                 entered.clear()
                 release.clear()
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 def test_interrupted_multipart_closes_rolled_spools_before_returning() -> None:
@@ -149,37 +155,44 @@ def test_interrupted_multipart_closes_rolled_spools_before_returning() -> None:
             )
             for _ in range(32):
                 yield b"x" * 65536
-            raise OperationError("PAYLOAD_TOO_LARGE", "injected stream ceiling")
+            raise OperationError(code="PAYLOAD_TOO_LARGE", message="injected stream ceiling")
 
         parser = _Multipart(
-            Headers({"Content-Type": "multipart/form-data; boundary=boundary"}),
-            chunks(),
+            headers=Headers(headers={"Content-Type": "multipart/form-data; boundary=boundary"}),
+            stream=chunks(),
             max_files=1,
             max_fields=0,
         )
-        with pytest.raises(OperationError, match="stream ceiling"):
+        with pytest.raises(expected_exception=OperationError, match="stream ceiling"):
             await parser.parse()
         assert len(parser._files_to_close_on_error) == 1
         assert all(spool.closed for spool in parser._files_to_close_on_error)
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
-@pytest.mark.parametrize("host", [None, ipaddress.IPv4Address(0).compressed, "::", "192.0.2.10"])
+@pytest.mark.parametrize(
+    argnames="host",
+    argvalues=[None, ipaddress.IPv4Address(address=0).compressed, "::", "192.0.2.10"],
+)
 def test_effective_deployment_rejects_nonloopback_publishing(host: str | None) -> None:
-    with pytest.raises(ValueError, match="loopback"):
-        check(json.dumps({"services": {"api": {"ports": [{"host_ip": host}]}}}).encode())
-    check(b'{"services":{"api":{"ports":[{"host_ip":"127.0.0.1"}]}}}')
-    with pytest.raises(ValueError, match="Private"):
-        check(b'{"services":{"postgres":{"ports":[{"host_ip":"127.0.0.1"}]}}}')
+    with pytest.raises(expected_exception=ValueError, match="loopback"):
+        check(
+            payload=json.dumps(obj={"services": {"api": {"ports": [{"host_ip": host}]}}}).encode()
+        )
+    check(payload=b'{"services":{"api":{"ports":[{"host_ip":"127.0.0.1"}]}}}')
+    with pytest.raises(expected_exception=ValueError, match="Private"):
+        check(payload=b'{"services":{"postgres":{"ports":[{"host_ip":"127.0.0.1"}]}}}')
 
 
-@pytest.mark.parametrize("archive", [False, True])
+@pytest.mark.parametrize(argnames="archive", argvalues=[False, True])
 def test_disconnect_closes_verified_file_and_archive_resources(
     tmp_path: Path, archive: bool
 ) -> None:
-    files = ManagedFiles(tmp_path, StorageLimits(min_free_bytes=0))
-    reference = files.publish("datasets/disconnect.csv", (os.urandom(2 * 1024**2),), 3 * 1024**2)
+    files = ManagedFiles(root=tmp_path, limits=StorageLimits(min_free_bytes=0))
+    reference = files.publish(
+        key="datasets/disconnect.csv", chunks=(os.urandom(2 * 1024**2),), maximum=3 * 1024**2
+    )
     response = ArtifactResponse(
         downloads=(
             Download(
@@ -198,16 +211,16 @@ def test_disconnect_closes_verified_file_and_archive_resources(
                 raise ClientDisconnect
 
         await asyncio.wait_for(
-            response(
+            fut=response(
                 {"type": "http", "method": "GET", "asgi": {"spec_version": "2.4"}}, receive, send
             ),
             timeout=5,
         )
         assert response.files and all(stream.closed for stream in response.files)
-        with pytest.raises(StopAsyncIteration):
+        with pytest.raises(expected_exception=StopAsyncIteration):
             await anext(response.source)
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 def test_materialization_admission_rejects_overlap_until_cancelled_work_finishes() -> None:
@@ -221,21 +234,21 @@ def test_materialization_admission_rejects_overlap_until_cancelled_work_finishes
             settled.set()
             return 42
 
-        task = asyncio.create_task(admission.run(materialize))
+        task = asyncio.create_task(coro=admission.run(operation=materialize))
         await entered.wait()
         task.cancel()
-        await asyncio.sleep(0)
+        await asyncio.sleep(delay=0)
         task.cancel()
-        with pytest.raises(OperationError, match="capacity"):
-            await admission.run(materialize)
+        with pytest.raises(expected_exception=OperationError, match="capacity"):
+            await admission.run(operation=materialize)
         assert not settled.is_set()
         release.set()
-        with pytest.raises(asyncio.CancelledError):
+        with pytest.raises(expected_exception=asyncio.CancelledError):
             await task
         assert settled.is_set() and not admission.lock.locked()
-        assert await admission.run(materialize) == 42
+        assert await admission.run(operation=materialize) == 42
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 def test_invalid_access_configuration_fails_before_serving() -> None:
@@ -246,19 +259,19 @@ def test_invalid_access_configuration_fails_before_serving() -> None:
         lambda: Settings(allowed_origins=("https://dashboard.test/path",)),
         lambda: Settings(allowed_origins=("https://user:pass@dashboard.test",)),
     ):
-        with pytest.raises(OperationError, match="access policy"):
+        with pytest.raises(expected_exception=OperationError, match="access policy"):
             create()
 
 
 def test_signing_key_persists_and_rejects_unsafe_files(tmp_path: Path) -> None:
     state = tmp_path / "state"
-    value = cursor_secret(state)
-    assert len(value) == 32 and cursor_secret(state) == value
+    value = cursor_secret(root=state)
+    assert len(value) == 32 and cursor_secret(root=state) == value
     key = state / "cursor.key"
-    key.chmod(0o644)
-    with pytest.raises(OperationError, match="permissions"):
-        cursor_secret(state)
+    key.chmod(mode=0o644)
+    with pytest.raises(expected_exception=OperationError, match="permissions"):
+        cursor_secret(root=state)
     key.unlink()
-    key.symlink_to(tmp_path / "elsewhere")
-    with pytest.raises(OSError):
-        cursor_secret(state)
+    key.symlink_to(target=tmp_path / "elsewhere")
+    with pytest.raises(expected_exception=OSError):
+        cursor_secret(root=state)

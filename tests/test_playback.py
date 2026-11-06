@@ -38,36 +38,88 @@ def frame(tick: int, duration: int, terminal: bool = False) -> dict[str, object]
 
 
 def records(*values: Mapping[str, object]) -> io.BytesIO:
-    return io.BytesIO(b"".join((json.dumps(value) + "\n").encode() for value in values))
+    return io.BytesIO(
+        initial_bytes=b"".join((json.dumps(obj=value) + "\n").encode() for value in values)
+    )
 
 
 def test_playback_reads_idle_coverage_and_pages_all_requests_and_server_lanes() -> None:
     run_id = UUID(int=1)
-    timeline = records(frame(0, 100), frame(100, 0, True))
-    result = read_playback(timeline, records(), run_id, "a" * 64, 50, 32, "active", "s00", 500)
+    timeline = records(frame(tick=0, duration=100), frame(tick=100, duration=0, terminal=True))
+    result = read_playback(
+        timeline=timeline,
+        scaling=records(),
+        run_id=run_id,
+        bundle_digest="a" * 64,
+        tick=50,
+        server_offset=32,
+        request_kind="active",
+        server_id="s00",
+        request_offset=500,
+    )
     assert result.frame_tick == 0 and result.duration_ticks == 100 and result.tick == 50
     assert len(result.servers) == 32 and result.servers[0].id == "s32"
     assert result.active_count == 501 and result.queue_depth == 501
     assert result.request_count == 501 and result.request_ids == ("r0500",)
     timeline.seek(0)
-    pending = read_playback(timeline, records(), run_id, "a" * 64, 50, 0, "pending", None, 100)
+    pending = read_playback(
+        timeline=timeline,
+        scaling=records(),
+        run_id=run_id,
+        bundle_digest="a" * 64,
+        tick=50,
+        server_offset=0,
+        request_kind="pending",
+        server_id=None,
+        request_offset=100,
+    )
     assert pending.request_ids == tuple(f"q{i:04d}" for i in range(100, 200))
     assert pending.servers[0].consumed_cpu is not None
     assert pending.membership_added == () and pending.membership_removed == ()
     timeline.seek(0)
-    terminal = read_playback(timeline, records(), run_id, "a" * 64, 100, 0, "pending", None, 0)
+    terminal = read_playback(
+        timeline=timeline,
+        scaling=records(),
+        run_id=run_id,
+        bundle_digest="a" * 64,
+        tick=100,
+        server_offset=0,
+        request_kind="pending",
+        server_id=None,
+        request_offset=0,
+    )
     assert terminal.terminal and terminal.active_count == 0
     assert terminal.servers[0].consumed_cpu is None
     timeline.seek(0)
-    absent = read_playback(timeline, records(), run_id, "a" * 64, 50, 0, "active", "removed", 0)
+    absent = read_playback(
+        timeline=timeline,
+        scaling=records(),
+        run_id=run_id,
+        bundle_digest="a" * 64,
+        tick=50,
+        server_offset=0,
+        request_kind="active",
+        server_id="removed",
+        request_offset=0,
+    )
     assert not absent.server_present and absent.request_count == 0
     timeline.seek(0)
-    with pytest.raises(OperationError, match="outside"):
-        read_playback(timeline, records(), run_id, "a" * 64, 101, 0, "pending", None, 0)
+    with pytest.raises(expected_exception=OperationError, match="outside"):
+        read_playback(
+            timeline=timeline,
+            scaling=records(),
+            run_id=run_id,
+            bundle_digest="a" * 64,
+            tick=101,
+            server_offset=0,
+            request_kind="pending",
+            server_id=None,
+            request_offset=0,
+        )
 
 
 def test_playback_reports_membership_changes_and_decision_activation_without_reexecution() -> None:
-    first, second = frame(0, 1), frame(1, 1)
+    first, second = frame(tick=0, duration=1), frame(tick=1, duration=1)
     # Keep IDs canonical while changing the last member in the next interval.
     members = second["membership"]
     assert isinstance(members, list)
@@ -85,10 +137,28 @@ def test_playback_reports_membership_changes_and_decision_activation_without_ree
         "reason": None,
     }
     result = read_playback(
-        records(first, second), records(decision), UUID(int=1), "a" * 64, 1, 0, "pending", None, 0
+        timeline=records(first, second),
+        scaling=records(decision),
+        run_id=UUID(int=1),
+        bundle_digest="a" * 64,
+        tick=1,
+        server_offset=0,
+        request_kind="pending",
+        server_id=None,
+        request_offset=0,
     )
     assert result.membership_added == ("s64",) and result.membership_removed == ("s63",)
     assert result.decisions[0].applied_at == 1
-    invalid = frame(2, 1)
-    with pytest.raises(OperationError, match="interval"):
-        read_playback(records(invalid), records(), UUID(int=1), "a" * 64, 2, 0, "pending", None, 0)
+    invalid = frame(tick=2, duration=1)
+    with pytest.raises(expected_exception=OperationError, match="interval"):
+        read_playback(
+            timeline=records(invalid),
+            scaling=records(),
+            run_id=UUID(int=1),
+            bundle_digest="a" * 64,
+            tick=2,
+            server_offset=0,
+            request_kind="pending",
+            server_id=None,
+            request_offset=0,
+        )

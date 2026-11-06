@@ -30,7 +30,9 @@ class ScalingReplay:
         if policy.enabled:
             if stream is None:
                 raise ReplayError("Enabled scaling requires its decision sidecar")
-            if any(re.fullmatch(r"autoscale-[0-9]{6,}", sid) for sid in self.original):
+            if any(
+                re.fullmatch(pattern=r"autoscale-[0-9]{6,}", string=sid) for sid in self.original
+            ):
                 raise ReplayError("Original server collides with generated namespace")
         self.observations: deque[tuple[Fraction, Fraction, int]] = deque(maxlen=policy.window_ticks)
         self.available_at = 0
@@ -65,7 +67,10 @@ class ScalingReplay:
             if template is None or sid in members:
                 raise ReplayError("Invalid scale template or generated identity collision")
             members[sid] = Server(
-                sid, template.cpu_units_per_tick, template.mem_mb, template.rate_limit_per_sec
+                id=sid,
+                cpu_units_per_tick=template.cpu_units_per_tick,
+                mem_mb=template.mem_mb,
+                rate_limit_per_sec=template.rate_limit_per_sec,
             )
             running[sid], memory[sid] = {}, 0
         self.pending_added, self.pending_removed, self.pending_at = (), (), None
@@ -82,11 +87,11 @@ class ScalingReplay:
             return
         cpu_sum, error_sum = Fraction(), Fraction()
         for cpu, ratio, _ in self.observations:
-            cpu_sum = self._check_size(cpu_sum + cpu)
-            error_sum = self._check_size(error_sum + ratio)
+            cpu_sum = self._check_size(value=cpu_sum + cpu)
+            error_sum = self._check_size(value=error_sum + ratio)
         divisor = len(self.observations)
-        cpu = self._check_size(cpu_sum / divisor) if divisor else Fraction()
-        ratio = self._check_size(error_sum / divisor) if divisor else Fraction()
+        cpu = self._check_size(value=cpu_sum / divisor) if divisor else Fraction()
+        ratio = self._check_size(value=error_sum / divisor) if divisor else Fraction()
         causes = []
         if cpu >= self.policy.scale_out_cpu_threshold:
             causes.append("cpu_mean")
@@ -147,7 +152,7 @@ class ScalingReplay:
             raise ReplayError("Missing scaling sidecar")
         raw = self.stream.readline(16385)
         canonical = (
-            json.dumps(expected, ensure_ascii=False, separators=(",", ":")) + "\n"
+            json.dumps(obj=expected, ensure_ascii=False, separators=(",", ":")) + "\n"
         ).encode()
         if raw != canonical:
             raise ReplayError(
@@ -161,8 +166,8 @@ class ScalingReplay:
         if self.policy.enabled:
             self.observations.append(
                 (
-                    self._check_size(consumed / capacity),
-                    self._check_size(Fraction(drops, max(1, arrivals))),
+                    self._check_size(value=consumed / capacity),
+                    self._check_size(value=Fraction(numerator=drops, denominator=max(1, arrivals))),
                     drops,
                 )
             )

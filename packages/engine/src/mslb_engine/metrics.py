@@ -23,24 +23,26 @@ def chart_buckets(
 ) -> list[dict[str, JsonValue]]:
     """Stream exact time-weighted means/min/max without erasing observed peaks."""
     if not (0 <= start < end <= 1_000_000 and 1 <= max_points <= 2000):
-        raise SimulationError("VALIDATION_ERROR", "Invalid chart range or point bound")
+        raise SimulationError(code="VALIDATION_ERROR", message="Invalid chart range or point bound")
     width = (end - start + max_points - 1) // max_points
     buckets: dict[int, tuple[Fraction, int, Fraction, Fraction]] = {}
     previous_end = 0
-    for index, sample in enumerate(samples):
+    for index, sample in enumerate(iterable=samples):
         if index >= 1_000_000:
-            raise SimulationError("RESOURCE_LIMIT_EXCEEDED", "Too many chart samples")
+            raise SimulationError(code="RESOURCE_LIMIT_EXCEEDED", message="Too many chart samples")
         if sample.t < previous_end or sample.duration_ticks < 1:
-            raise SimulationError("VALIDATION_ERROR", "Chart samples must be ordered and disjoint")
+            raise SimulationError(
+                code="VALIDATION_ERROR", message="Chart samples must be ordered and disjoint"
+            )
         previous_end = sample.t + sample.duration_ticks
-        value = _bounded(sample.value)
+        value = _bounded(value=sample.value)
         cursor, stop = max(start, sample.t), min(end, previous_end)
         while cursor < stop:
             bucket = (cursor - start) // width
             duration = min(stop, start + (bucket + 1) * width) - cursor
             total, weight, minimum, maximum = buckets.get(bucket, (Fraction(), 0, value, value))
             buckets[bucket] = (
-                _bounded(total + value * duration),
+                _bounded(value=total + value * duration),
                 weight + duration,
                 min(minimum, value),
                 max(maximum, value),
@@ -51,9 +53,9 @@ def chart_buckets(
             "t": start + bucket * width,
             "end_tick": min(end, start + (bucket + 1) * width),
             "covered_ticks": weight,
-            "min": exact_value(minimum),
-            "max": exact_value(maximum),
-            "mean": exact_value(total / weight),
+            "min": exact_value(value=minimum),
+            "max": exact_value(value=maximum),
+            "mean": exact_value(value=total / weight),
         }
         for bucket, (total, weight, minimum, maximum) in sorted(buckets.items())
     ]
@@ -67,12 +69,14 @@ def compare_values(
 ) -> dict[str, JsonValue]:
     """Compare an explicit baseline only for compatible completed-run identities."""
     if baseline_identity != candidate_identity:
-        raise SimulationError("CONFLICT", "Run inputs, modes, versions or semantic bounds differ")
+        raise SimulationError(
+            code="CONFLICT", message="Run inputs, modes, versions or semantic bounds differ"
+        )
     return {
-        "baseline": exact_value(baseline),
-        "candidate": exact_value(candidate),
-        "difference": exact_value(candidate - baseline),
-        "percentage_difference": exact_value((candidate - baseline) * 100 / baseline)
+        "baseline": exact_value(value=baseline),
+        "candidate": exact_value(value=candidate),
+        "difference": exact_value(value=candidate - baseline),
+        "percentage_difference": exact_value(value=(candidate - baseline) * 100 / baseline)
         if baseline
         else None,
     }

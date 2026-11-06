@@ -31,8 +31,8 @@ from mslb_controller.resource_probe import ProbeEngine
 
 def reply(*, record: ResourceRecord, running: object = None) -> JSONResponse:
     return JSONResponse(
-        {
-            "id": str(record.id),
+        content={
+            "id": str(object=record.id),
             "state": record.state,
             "name": record.name,
             "container_id": record.container_id,
@@ -42,23 +42,25 @@ def reply(*, record: ResourceRecord, running: object = None) -> JSONResponse:
 
 
 async def body[T: BaseModel](*, request: Request, model: type[T]) -> T:
-    if request.headers.get("content-type", "").split(";")[0] != "application/json":
-        raise Refusal(HTTPStatus.UNSUPPORTED_MEDIA_TYPE.value, "JSON_REQUIRED")
+    if request.headers.get("content-type", "").split(sep=";")[0] != "application/json":
+        raise Refusal(status=HTTPStatus.UNSUPPORTED_MEDIA_TYPE.value, code="JSON_REQUIRED")
     if request.headers.get("content-encoding", "identity") != "identity":
-        raise Refusal(HTTPStatus.UNSUPPORTED_MEDIA_TYPE.value, "ENCODING_REJECTED")
+        raise Refusal(status=HTTPStatus.UNSUPPORTED_MEDIA_TYPE.value, code="ENCODING_REJECTED")
     raw = bytearray()
     try:
-        async with asyncio.timeout(2):
+        async with asyncio.timeout(delay=2):
             async for chunk in request.stream():
                 if len(raw) + len(chunk) > 4096:
-                    raise Refusal(HTTPStatus.CONTENT_TOO_LARGE.value, "BODY_LIMIT")
+                    raise Refusal(status=HTTPStatus.CONTENT_TOO_LARGE.value, code="BODY_LIMIT")
                 raw.extend(chunk)
     except (TimeoutError, ClientDisconnect):
-        raise Refusal(HTTPStatus.REQUEST_TIMEOUT.value, "BODY_TIMEOUT") from None
+        raise Refusal(status=HTTPStatus.REQUEST_TIMEOUT.value, code="BODY_TIMEOUT") from None
     try:
-        return model.model_validate_json(raw)
+        return model.model_validate_json(json_data=raw)
     except ValidationError:
-        raise Refusal(HTTPStatus.UNPROCESSABLE_CONTENT.value, "INVALID_CONTROL") from None
+        raise Refusal(
+            status=HTTPStatus.UNPROCESSABLE_CONTENT.value, code="INVALID_CONTROL"
+        ) from None
 
 
 def create_app(
@@ -91,7 +93,7 @@ def create_app(
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
-    @app.middleware("http")
+    @app.middleware(middleware_type="http")
     async def admission(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
@@ -99,14 +101,15 @@ def create_app(
         nonlocal active
         if request.headers.get("host") not in {"docker-proxy:8081", "127.0.0.1:8081"}:
             return JSONResponse(
-                {"error": "HOST_REJECTED"}, status_code=HTTPStatus.BAD_REQUEST.value
+                content={"error": "HOST_REJECTED"}, status_code=HTTPStatus.BAD_REQUEST.value
             )
         if "origin" in request.headers or request.url.query:
             return JSONResponse(
-                {"error": "ORIGIN_OR_QUERY_REJECTED"}, status_code=HTTPStatus.FORBIDDEN.value
+                content={"error": "ORIGIN_OR_QUERY_REJECTED"},
+                status_code=HTTPStatus.FORBIDDEN.value,
             )
         if request.url.path == "/health" and request.method == "GET":
-            return JSONResponse({"ready": True})
+            return JSONResponse(content={"ready": True})
         supplied = request.headers.get("authorization", "")
         expected = (
             guard_token if request.url.path == "/guard/probe" and request.method == "GET" else token
@@ -117,11 +120,11 @@ def create_app(
             or not secrets.compare_digest(supplied.encode(), ("Bearer " + expected).encode())
         ):
             return JSONResponse(
-                {"error": "UNAUTHORIZED"}, status_code=HTTPStatus.UNAUTHORIZED.value
+                content={"error": "UNAUTHORIZED"}, status_code=HTTPStatus.UNAUTHORIZED.value
             )
         if active >= 8:
             return JSONResponse(
-                {"error": "CONTROL_BUSY"}, status_code=HTTPStatus.TOO_MANY_REQUESTS.value
+                content={"error": "CONTROL_BUSY"}, status_code=HTTPStatus.TOO_MANY_REQUESTS.value
             )
         active += 1
         try:
@@ -129,19 +132,21 @@ def create_app(
         finally:
             active -= 1
 
-    @app.exception_handler(Refusal)
+    @app.exception_handler(exc_class_or_status_code=Refusal)
     async def refusal(_request: Request, error: Refusal) -> JSONResponse:
-        return JSONResponse({"error": error.code}, status_code=error.status)
+        return JSONResponse(content={"error": error.code}, status_code=error.status)
 
-    @app.exception_handler(RequestValidationError)
+    @app.exception_handler(exc_class_or_status_code=RequestValidationError)
     async def invalid(_request: Request, _error: RequestValidationError) -> JSONResponse:
         return JSONResponse(
-            {"error": "INVALID_CONTROL"}, status_code=HTTPStatus.UNPROCESSABLE_CONTENT.value
+            content={"error": "INVALID_CONTROL"}, status_code=HTTPStatus.UNPROCESSABLE_CONTENT.value
         )
 
-    @app.exception_handler(HTTPException)
+    @app.exception_handler(exc_class_or_status_code=HTTPException)
     async def missing(_request: Request, _error: HTTPException) -> JSONResponse:
-        return JSONResponse({"error": "CONTROL_NOT_FOUND"}, status_code=HTTPStatus.NOT_FOUND.value)
+        return JSONResponse(
+            content={"error": "CONTROL_NOT_FOUND"}, status_code=HTTPStatus.NOT_FOUND.value
+        )
 
     async def execute(
         *, operation: Callable[[], Awaitable[JSONResponse]], readonly: bool = False
@@ -151,7 +156,7 @@ def create_app(
         """Retain a sent control action until bounded settlement despite caller cancellation."""
         owning = probing if readonly else pending
         if owning:
-            raise Refusal(HTTPStatus.TOO_MANY_REQUESTS.value, "CONTROL_BUSY")
+            raise Refusal(status=HTTPStatus.TOO_MANY_REQUESTS.value, code="CONTROL_BUSY")
 
         async def bounded() -> JSONResponse:
             """Translate safe control failures while retaining the owned operation slot."""
@@ -166,17 +171,17 @@ def create_app(
                     if error.code == "RATE_LIMITED"
                     else HTTPStatus.CONFLICT.value
                 )
-                return JSONResponse({"error": error.code}, status_code=status)
+                return JSONResponse(content={"error": error.code}, status_code=status)
             except (EngineError, TrafficError) as error:
                 status = (
                     HTTPStatus.CONFLICT.value
                     if error.code in {"OWNERSHIP_CONFLICT", "INVALID_STATE"}
                     else HTTPStatus.BAD_GATEWAY.value
                 )
-                return JSONResponse({"error": error.code}, status_code=status)
+                return JSONResponse(content={"error": error.code}, status_code=status)
             except (SQLAlchemyError, TimeoutError):
                 return JSONResponse(
-                    {"error": "CONTROL_UNAVAILABLE"},
+                    content={"error": "CONTROL_UNAVAILABLE"},
                     status_code=HTTPStatus.SERVICE_UNAVAILABLE.value,
                 )
 
@@ -193,19 +198,22 @@ def create_app(
 
         return await execute(operation=operation, readonly=True)
 
-    @app.post("/control/enroll")
+    @app.post(path="/control/enroll")
     async def enroll(request: Request) -> JSONResponse:
         await body(request=request, model=Empty)
 
         async def operation() -> JSONResponse:
             value = await lifecycle.enroll()
             return JSONResponse(
-                {"id": str(value.id), "definition": value.definition.model_dump(mode="json")}
+                content={
+                    "id": str(object=value.id),
+                    "definition": value.definition.model_dump(mode="json"),
+                }
             )
 
         return await execute(operation=operation)
 
-    @app.post("/control/resources/{identifier}/{action}")
+    @app.post(path="/control/resources/{identifier}/{action}")
     async def resource(
         request: Request, identifier: UUID, action: Literal["create", "inspect", "start", "cleanup"]
     ) -> JSONResponse:

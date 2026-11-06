@@ -29,7 +29,7 @@ class BundleLimits:
             or type(self.total_bytes) is not int
             or not 1 <= self.total_bytes <= 512 * 1024 * 1024
         ):
-            raise OperationError("VALIDATION_ERROR", "Invalid artifact storage limits")
+            raise OperationError(code="VALIDATION_ERROR", message="Invalid artifact storage limits")
 
 
 class _Budget:
@@ -42,7 +42,7 @@ class _Artifact:
     """Stream one bounded artifact while accounting for the shared bundle byte budget."""
 
     def __init__(self, path: Path, budget: _Budget, stack: ExitStack) -> None:
-        self.stream = stack.enter_context(path.open("wb", buffering=256 * 1024))
+        self.stream = stack.enter_context(cm=path.open(mode="wb", buffering=256 * 1024))
         self.budget = budget
         self.size = 0
         self.digest = hashlib.sha256()
@@ -52,7 +52,9 @@ class _Artifact:
             self.size + len(data) > self.budget.limits.artifact_bytes
             or self.budget.total + len(data) > self.budget.limits.total_bytes
         ):
-            raise OperationError("STORAGE_LIMIT_EXCEEDED", "Artifact storage budget exceeded")
+            raise OperationError(
+                code="STORAGE_LIMIT_EXCEEDED", message="Artifact storage budget exceeded"
+            )
         if self.stream.write(data) != len(data):
             raise OSError("Short artifact write")
         self.size += len(data)
@@ -63,13 +65,13 @@ class _Artifact:
         encoder = json.JSONEncoder(
             ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
         )
-        for piece in encoder.iterencode(value):
-            self.write(piece.encode("utf-8"))
-        self.write(b"\n")
+        for piece in encoder.iterencode(o=value):
+            self.write(data=piece.encode(encoding="utf-8"))
+        self.write(data=b"\n")
 
     def sync(self) -> None:
         self.stream.flush()
-        os.fsync(self.stream.fileno())
+        os.fsync(fd=self.stream.fileno())
 
     def metadata(self) -> ArtifactMetadata:
         return ArtifactMetadata(size_bytes=self.size, sha256=self.digest.hexdigest())
@@ -80,7 +82,7 @@ def _rows(artifact: _Artifact, rows: Iterable[Iterable[str | int]]) -> None:
     writer = csv.writer(buffer, lineterminator="\n")
     for row in rows:
         writer.writerow(row)
-        artifact.write(buffer.getvalue().encode("utf-8"))
+        artifact.write(data=buffer.getvalue().encode(encoding="utf-8"))
         buffer.seek(0)
         buffer.truncate()
 
@@ -109,8 +111,8 @@ def timeline_record(frame: TickFrame) -> dict[str, object]:
                 "capacity": s.capacity,
                 "memory_capacity": s.memory_capacity,
                 "starts": s.starts,
-                "allocated_cpu": exact_value(s.allocated_cpu),
-                "consumed_cpu": exact_value(s.consumed_cpu),
+                "allocated_cpu": exact_value(value=s.allocated_cpu),
+                "consumed_cpu": exact_value(value=s.consumed_cpu),
             }
             for s in frame.samples
         ],

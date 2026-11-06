@@ -47,15 +47,17 @@ class Worker:
             or not 1 <= lease_seconds <= 300
             or not 0 < renewal_seconds < lease_seconds / 2
         ):
-            raise OperationError("VALIDATION_ERROR", "Invalid worker lease/renewal policy")
+            raise OperationError(
+                code="VALIDATION_ERROR", message="Invalid worker lease/renewal policy"
+            )
         self.database, self.inputs, self.outputs = database, inputs, outputs
         self.jobs, self.catalog, self.durable = (
-            Jobs(database),
-            Catalog(database),
-            Durability(database),
+            Jobs(database=database),
+            Catalog(database=database),
+            Durability(database=database),
         )
         self.owner, self.lease_seconds, self.renewal_seconds = (
-            owner or str(uuid4()),
+            owner or str(object=uuid4()),
             lease_seconds,
             renewal_seconds,
         )
@@ -73,20 +75,33 @@ class Worker:
 
     def _execute(self, lease: Lease, loop: asyncio.AbstractEventLoop, control: _Control) -> None:
         """Run or restore one immutable attempt outside the async supervision loop."""
-        run = on_loop(loop, self.catalog.get_run(lease.run_id))
-        snapshot = self.inputs.load_snapshot(run.snapshot_key, run.snapshot_digest)
-        recovery = on_loop(loop, self.durable.recovery(lease))
-        self._retired_spools(lease, loop, control)
+        run = on_loop(loop=loop, operation=self.catalog.get_run(run_id=lease.run_id))
+        snapshot = self.inputs.load_snapshot(
+            key=run.snapshot_key, expected_digest=run.snapshot_digest
+        )
+        recovery = on_loop(loop=loop, operation=self.durable.recovery(lease=lease))
+        self._retired_spools(lease=lease, loop=loop, control=control)
         with ExitStack() as stack:
             journal = Journal(
-                self.outputs, snapshot, lease, self.durable, loop, control.check, stack, recovery
+                files=self.outputs,
+                snapshot=snapshot,
+                lease=lease,
+                repository=self.durable,
+                loop=loop,
+                check=control.check,
+                stack=stack,
+                recovery=recovery,
             )
             if recovery is not None:
-                self.notify("recovered_" + recovery.kind, lease, recovery.next_tick)
+                self.notify(
+                    phase="recovered_" + recovery.kind, lease=lease, tick=recovery.next_tick
+                )
             if journal.seal is None:
                 simulation = journal.simulation
                 if simulation is None:
-                    raise OperationError("INVALID_STATE", "Recovered execution state is missing")
+                    raise OperationError(
+                        code="INVALID_STATE", message="Recovered execution state is missing"
+                    )
                 iterator = simulation.iter_ticks()
                 while not simulation.terminal:
                     control.check()
@@ -98,49 +113,61 @@ class Worker:
                         )
                         if simulation.checkpoint_ready and simulation.executed_intervals > previous:
                             journal.commit()
-                            self.notify("checkpoint_committed", lease, simulation.tick)
+                            self.notify(
+                                phase="checkpoint_committed", lease=lease, tick=simulation.tick
+                            )
                         raise ExecutionStopped("shutdown")
                     frame = next(iterator)
-                    journal.append(frame)
+                    journal.append(frame=frame)
                     if frame.terminal or journal.checkpoint_needed():
                         journal.commit()
                         self.notify(
-                            "terminal_committed" if frame.terminal else "checkpoint_committed",
-                            lease,
-                            simulation.tick,
+                            phase="terminal_committed"
+                            if frame.terminal
+                            else "checkpoint_committed",
+                            lease=lease,
+                            tick=simulation.tick,
                         )
             if control.reason == "shutdown":
                 raise ExecutionStopped("shutdown")
             reference, manifest = journal.finalize()
-            self.notify("candidate_published", lease, manifest.terminal_tick)
+            self.notify(phase="candidate_published", lease=lease, tick=manifest.terminal_tick)
             control.check()
             if control.reason == "shutdown":
                 raise ExecutionStopped("shutdown")
-            on_loop(loop, self.durable.complete(lease, reference, manifest))
-            self.notify("completed", lease, manifest.terminal_tick)
+            on_loop(
+                loop=loop,
+                operation=self.durable.complete(
+                    lease=lease, reference=reference, manifest=manifest
+                ),
+            )
+            self.notify(phase="completed", lease=lease, tick=manifest.terminal_tick)
 
     def _retired_spools(
         self, lease: Lease, loop: asyncio.AbstractEventLoop, control: _Control
     ) -> None:
         """Remove only unreferenced exact spools from retired attempts."""
-        directory = self.outputs.path(f"runs/{lease.run_id}")
+        directory = self.outputs.path(key=f"runs/{lease.run_id}")
         if not directory.is_dir():
             return
-        with os.scandir(directory) as entries:
-            for number, entry in enumerate(entries):
+        with os.scandir(path=directory) as entries:
+            for number, entry in enumerate(iterable=entries):
                 if number >= 16:
                     raise OperationError(
-                        "VALIDATION_FAILED", "Attempt namespace contains unexpected entries"
+                        code="VALIDATION_FAILED",
+                        message="Attempt namespace contains unexpected entries",
                     )
-                match = re.fullmatch(r"attempt-([0-9]{1,19})", entry.name)
+                match = re.fullmatch(pattern=r"attempt-([0-9]{1,19})", string=entry.name)
                 if match is None or int(match[1]) >= lease.fence:
                     continue
                 for name in PREFIX_NAMES:
                     control.check()
                     key = f"runs/{lease.run_id}/{entry.name}/work/{name}.part"
-                    path = self.outputs.path(key)
-                    if path.exists() and on_loop(loop, self.durable.removable(lease, key)):
-                        self.outputs.remove(key)
+                    path = self.outputs.path(key=key)
+                    if path.exists() and on_loop(
+                        loop=loop, operation=self.durable.removable(lease=lease, key=key)
+                    ):
+                        self.outputs.remove(key=key)
 
     async def _watch(
         self,
@@ -156,36 +183,39 @@ class Worker:
         control.deadline = deadline
         while not done.is_set():
             if shutdown.is_set():
-                control.stop("shutdown")
+                control.stop(reason="shutdown")
             now = time.monotonic()
             if now >= deadline:
-                control.stop("lease_lost")
+                control.stop(reason="lease_lost")
                 return
             try:
                 started = time.monotonic()
                 timeout = min(2, max(0.01, deadline - started))
                 if started >= next_renewal:
                     state = await asyncio.wait_for(
-                        self.jobs.renew(lease, self.lease_seconds), timeout
+                        fut=self.jobs.renew(lease=lease, lease_seconds=self.lease_seconds),
+                        timeout=timeout,
                     )
                     deadline = started + self.lease_seconds - min(1, self.lease_seconds / 4)
                     control.deadline = deadline
                     next_renewal = started + self.renewal_seconds
                 else:
-                    state = await asyncio.wait_for(self.jobs.get(lease.run_id), timeout)
+                    state = await asyncio.wait_for(
+                        fut=self.jobs.get(run_id=lease.run_id), timeout=timeout
+                    )
                 if state.fence != lease.fence or state.attempts != lease.attempt:
-                    control.stop("lease_lost")
+                    control.stop(reason="lease_lost")
                     return
                 if state.status == "cancel_requested":
-                    control.stop("cancel")
+                    control.stop(reason="cancel")
                 elif state.status not in {"running", "completed"}:
-                    control.stop("lease_lost")
+                    control.stop(reason="lease_lost")
                     return
             except (StoreError, DBAPIError, TimeoutError, OSError):
-                control.stop("lease_lost")
+                control.stop(reason="lease_lost")
                 return
             try:
-                await asyncio.wait_for(done.wait(), timeout=0.25)
+                await asyncio.wait_for(fut=done.wait(), timeout=0.25)
             except TimeoutError:
                 continue
 
@@ -193,22 +223,22 @@ class Worker:
         """Remain independent of a query waiting for network cancellation."""
         while not done.is_set():
             if shutdown.is_set():
-                control.stop("shutdown")
+                control.stop(reason="shutdown")
             if time.monotonic() >= control.deadline:
-                control.stop("lease_lost")
+                control.stop(reason="lease_lost")
                 return
             try:
-                await asyncio.wait_for(done.wait(), timeout=0.1)
+                await asyncio.wait_for(fut=done.wait(), timeout=0.1)
             except TimeoutError:
                 continue
 
     async def _failure(self, lease: Lease, code: str, retryable: bool = False) -> None:
         try:
-            await self.jobs.fail(lease, code, retryable)
+            await self.jobs.fail(lease=lease, error_code=code, retryable=retryable)
         except (StoreError, DBAPIError, OSError):
             # Unknown/lost ownership cannot authorize a substitute write. The
             # persisted lease and next claimant reconcile an unavailable DB.
-            self.notify("ownership_unavailable", lease)
+            self.notify(phase="ownership_unavailable", lease=lease)
 
     async def run_once(self, shutdown: Event | None = None) -> bool:
         """Claim one job, supervise execution and persist an honest terminal or retry outcome."""
@@ -216,31 +246,43 @@ class Worker:
         if shutdown.is_set():
             return False
         claim_started = time.monotonic()
-        lease = await self.jobs.claim(self.owner, self.lease_seconds)
+        lease = await self.jobs.claim(owner=self.owner, lease_seconds=self.lease_seconds)
         if lease is None:
             return False
-        self.notify("claimed", lease)
+        self.notify(phase="claimed", lease=lease)
         control, done = _Control(), asyncio.Event()
-        watcher = asyncio.create_task(self._watch(lease, control, done, shutdown, claim_started))
-        deadline = asyncio.create_task(self._deadline(control, done, shutdown))
+        watcher = asyncio.create_task(
+            coro=self._watch(
+                lease=lease,
+                control=control,
+                done=done,
+                shutdown=shutdown,
+                claim_started=claim_started,
+            )
+        )
+        deadline = asyncio.create_task(
+            coro=self._deadline(control=control, done=done, shutdown=shutdown)
+        )
         try:
-            await asyncio.to_thread(self._execute, lease, asyncio.get_running_loop(), control)
+            await asyncio.to_thread(
+                self._execute, lease=lease, loop=asyncio.get_running_loop(), control=control
+            )
         except ExecutionStopped as stopped:
-            reason = str(stopped)
+            reason = str(object=stopped)
             if reason == "cancel":
                 try:
-                    await self.jobs.acknowledge_cancel(lease)
+                    await self.jobs.acknowledge_cancel(lease=lease)
                 except (StoreError, DBAPIError, OSError):
-                    self.notify("ownership_unavailable", lease)
+                    self.notify(phase="ownership_unavailable", lease=lease)
             elif reason == "shutdown":
-                await self._failure(lease, "INFRASTRUCTURE_FAILURE", retryable=True)
-            self.notify("stopped_" + reason, lease)
+                await self._failure(lease=lease, code="INFRASTRUCTURE_FAILURE", retryable=True)
+            self.notify(phase="stopped_" + reason, lease=lease)
         except StoreError as error:
             if error.code == "INTERRUPTED":
-                await self._failure(lease, "INTERNAL_ERROR")
+                await self._failure(lease=lease, code="INTERNAL_ERROR")
             elif error.code != "FENCE_LOST":
-                await self._failure(lease, "VALIDATION_FAILED")
-            self.notify("stopped_" + error.code.lower(), lease)
+                await self._failure(lease=lease, code="VALIDATION_FAILED")
+            self.notify(phase="stopped_" + error.code.lower(), lease=lease)
         except (
             SimulationError,
             OperationError,
@@ -271,8 +313,8 @@ class Worker:
                     "VALIDATION_FAILED",
                 }:
                     code = "VALIDATION_FAILED"
-            await self._failure(lease, code, retryable)
-            self.notify("failed_" + code.lower(), lease)
+            await self._failure(lease=lease, code=code, retryable=retryable)
+            self.notify(phase="failed_" + code.lower(), lease=lease)
         finally:
             done.set()
             await watcher

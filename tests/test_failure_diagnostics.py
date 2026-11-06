@@ -17,7 +17,7 @@ from mslb_application.services import Services
 from mslb_contracts.inputs import InputError
 from sqlalchemy.exc import DBAPIError
 
-IDENTIFIER = str(UUID(int=1))
+IDENTIFIER = str(object=UUID(int=1))
 
 
 @pytest.mark.parametrize(

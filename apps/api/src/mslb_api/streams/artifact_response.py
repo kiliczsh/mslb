@@ -28,7 +28,7 @@ class ArtifactResponse(StreamingResponse):
         filename = "inputs.zip" if archive else downloads[0].filename
         headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
         if not archive:
-            headers["Content-Length"] = str(downloads[0].reference.size_bytes)
+            headers["Content-Length"] = str(object=downloads[0].reference.size_bytes)
             headers["ETag"] = '"' + downloads[0].reference.sha256 + '"'
         self.source = self.chunks()
         super().__init__(
@@ -61,7 +61,7 @@ class ArtifactResponse(StreamingResponse):
                         while block := source.read(64 * 1024):
                             target.write(block)
 
-        task = asyncio.create_task(asyncio.to_thread(write))
+        task = asyncio.create_task(coro=asyncio.to_thread(write))
         try:
             while not task.done() or not pending.empty():
                 try:
@@ -74,7 +74,7 @@ class ArtifactResponse(StreamingResponse):
             drained = asyncio.gather(task, return_exceptions=True)
             while not drained.done():
                 try:
-                    await asyncio.shield(drained)
+                    await asyncio.shield(arg=drained)
                 except asyncio.CancelledError:
                     continue
 

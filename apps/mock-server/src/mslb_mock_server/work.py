@@ -32,14 +32,16 @@ def execute(work_units: int, stopped: Event, deadline: float) -> CpuResult:
     value = 0x811C9DC5
     for offset in range(0, count, 256):
         if stopped.is_set():
-            raise WorkStopped("WORK_CANCELLED")
+            raise WorkStopped(code="WORK_CANCELLED")
         if time.monotonic() >= deadline:
-            raise WorkStopped("WORK_TIMEOUT")
+            raise WorkStopped(code="WORK_TIMEOUT")
         for index in range(offset, min(offset + 256, count)):
             value = ((value ^ index) * 16_777_619) & 0xFFFFFFFF
     ended = time.monotonic()
     if stopped.is_set():
-        raise WorkStopped("WORK_CANCELLED")
+        raise WorkStopped(code="WORK_CANCELLED")
     if ended >= deadline:
-        raise WorkStopped("WORK_TIMEOUT")
-    return CpuResult(count, f"{value:08x}", (ended - started) * 1000)
+        raise WorkStopped(code="WORK_TIMEOUT")
+    return CpuResult(
+        operations=count, checksum=f"{value:08x}", duration_ms=(ended - started) * 1000
+    )

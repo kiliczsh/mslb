@@ -9,12 +9,12 @@ from mslb_application.errors import OperationError
 async def settle[T](task: asyncio.Task[T]) -> T:
     """Await owned work without abandoning it during repeated cancellation."""
     try:
-        return await asyncio.shield(task)
+        return await asyncio.shield(arg=task)
     except asyncio.CancelledError:
         drained = asyncio.gather(task, return_exceptions=True)
         while not drained.done():
             try:
-                await asyncio.shield(drained)
+                await asyncio.shield(arg=drained)
             except asyncio.CancelledError:
                 continue
         raise
@@ -28,12 +28,14 @@ class MaterializationAdmission:
 
     async def run[T](self, operation: Callable[[], Awaitable[T]]) -> T:
         if self.lock.locked():
-            raise OperationError("RATE_LIMITED", "Input processing capacity is occupied")
+            raise OperationError(
+                code="RATE_LIMITED", message="Input processing capacity is occupied"
+            )
         async with self.lock:
 
             async def invoke() -> T:
                 return await operation()
 
-            task = asyncio.create_task(invoke())
+            task = asyncio.create_task(coro=invoke())
             # Threads cannot be cancelled safely; retain the slot through settlement.
-            return await settle(task)
+            return await settle(task=task)

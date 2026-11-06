@@ -37,7 +37,7 @@ class Backend:
             or self.inflight >= self.settings.max_inflight
             or self.reserved + payload.mem_mb > self.settings.logical_admission_mem_mb
         ):
-            raise WorkStopped("BACKEND_BUSY")
+            raise WorkStopped(code="BACKEND_BUSY")
         self.inflight += 1
         self.reserved += payload.mem_mb
         stopped = Event()
@@ -49,7 +49,7 @@ class Backend:
         except (RuntimeError, OSError):
             self.inflight -= 1
             self.reserved -= payload.mem_mb
-            raise WorkStopped("RESOURCE_PRESSURE") from None
+            raise WorkStopped(code="RESOURCE_PRESSURE") from None
         self.active[future] = stopped
 
         def release(done: asyncio.Future[CpuResult]) -> None:
@@ -63,7 +63,7 @@ class Backend:
 
         future.add_done_callback(release)
         try:
-            result = await asyncio.shield(future)
+            result = await asyncio.shield(arg=future)
             return WorkCompleted(
                 backend_id=self.settings.backend_id,
                 request_id=payload.request_id,
@@ -77,7 +77,7 @@ class Backend:
             raise
         finally:
             if future.done():
-                release(future)
+                release(done=future)
 
     async def close(self) -> None:
         self.closed = True

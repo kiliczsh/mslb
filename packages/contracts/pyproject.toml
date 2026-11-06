@@ -10,3 +10,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mslb_contracts"]
+
+# Source navigation is not a runtime wheel asset; Python/Alembic assets remain included.
+exclude = ["**/README.md"]

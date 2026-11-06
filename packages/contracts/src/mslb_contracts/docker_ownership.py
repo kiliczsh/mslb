@@ -47,10 +47,10 @@ class CreationIntent(DockerModel):
             "Labels": {
                 "com.mslb.component": "http-backend",
                 "com.mslb.backend-kind": "dynamic",
-                "com.mslb.deployment": str(self.deployment_id),
-                "com.mslb.run": str(self.run_id),
-                "com.mslb.intent": str(self.intent_id),
-                "com.mslb.fence": str(self.creator_fence),
+                "com.mslb.deployment": str(object=self.deployment_id),
+                "com.mslb.run": str(object=self.run_id),
+                "com.mslb.intent": str(object=self.intent_id),
+                "com.mslb.fence": str(object=self.creator_fence),
                 "com.mslb.definition": self.digest(),
             },
             "HostConfig": {

@@ -23,9 +23,9 @@ def generate(
     """Publish only a complete trace; discard a failed attempt's temporary file."""
     if config.autoscaling.enabled:
         raise SimulationError(
-            "VALIDATION_ERROR", "Single-file generation requires autoscaling disabled"
+            code="VALIDATION_ERROR", message="Single-file generation requires autoscaling disabled"
         )
-    with servers_path.open("rb") as source:
+    with servers_path.open(mode="rb") as source:
         servers = tuple(
             Server(
                 id=s.id,
@@ -35,7 +35,7 @@ def generate(
             )
             for s in read_servers(stream=source)
         )
-    with requests_path.open("rb") as source:
+    with requests_path.open(mode="rb") as source:
         requests = tuple(
             Request(t=r.t, request_id=r.request_id, work_units=r.work_units, mem_mb=r.mem_mb)
             for r in read_requests(stream=source)
@@ -56,17 +56,17 @@ def generate(
             temporary = Path(stream.name)
             cleanup.callback(temporary.unlink, missing_ok=True)
             for frame in simulation.iter_ticks():
-                metrics.observe(frame)
+                metrics.observe(frame=frame)
                 for event in frame.events:
                     stream.write(event.canonical_line())
             stream.flush()
-            os.fsync(stream.fileno())
-        with temporary.open("rb") as validation_source:
+            os.fsync(fd=stream.fileno())
+        with temporary.open(mode="rb") as validation_source:
             validate_trace(
                 stream=validation_source, servers=servers, requests=requests, config=config
             )
         report = metrics.summary()
-        os.replace(temporary, output)
+        os.replace(src=temporary, dst=output)
         return report
 
 
@@ -113,7 +113,7 @@ def main() -> None:
             max_simulation_ticks=args.max_simulation_ticks,
         ),
     )
-    print(json.dumps(report, sort_keys=True, ensure_ascii=False, separators=(",", ":")))
+    print(json.dumps(obj=report, sort_keys=True, ensure_ascii=False, separators=(",", ":")))
 
 
 if __name__ == "__main__":

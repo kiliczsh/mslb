@@ -44,7 +44,7 @@ class ScaleDecision:
         }
 
     def canonical_line(self) -> str:
-        return json.dumps(self.to_data(), ensure_ascii=False, separators=(",", ":")) + "\n"
+        return json.dumps(obj=self.to_data(), ensure_ascii=False, separators=(",", ":")) + "\n"
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,7 +66,7 @@ class Event:
         }
         if self.server_id is not None:
             value["server_id"] = self.server_id
-        return json.dumps(value, ensure_ascii=False, separators=(",", ":")) + "\n"
+        return json.dumps(obj=value, ensure_ascii=False, separators=(",", ":")) + "\n"
 
 
 @dataclass(frozen=True, slots=True)

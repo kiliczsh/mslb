@@ -11,7 +11,9 @@ type JsonValue = None | bool | int | str | list[JsonValue] | dict[str, JsonValue
 
 def _bounded(value: Fraction) -> Fraction:
     if max(value.numerator.bit_length(), value.denominator.bit_length()) > 4096:
-        raise SimulationError("RESOURCE_LIMIT_EXCEEDED", "Metric arithmetic exceeds 4096 bits")
+        raise SimulationError(
+            code="RESOURCE_LIMIT_EXCEEDED", message="Metric arithmetic exceeds 4096 bits"
+        )
     return value
 
 
@@ -19,10 +21,10 @@ def exact_value(value: Fraction | None) -> JsonValue:
     """Encode authoritative rational values with lossless decimal components."""
     if value is None:
         return None
-    _bounded(value)
+    _bounded(value=value)
     if value.denominator == 1 and abs(value.numerator) <= 2**53 - 1:
         return value.numerator
-    return {"numerator": str(value.numerator), "denominator": str(value.denominator)}
+    return {"numerator": str(object=value.numerator), "denominator": str(object=value.denominator)}
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,7 +41,7 @@ class Distribution:
     def to_data(self) -> dict[str, JsonValue]:
         return {
             "count": self.count,
-            "mean": exact_value(self.mean),
+            "mean": exact_value(value=self.mean),
             "min": self.minimum,
             "max": self.maximum,
             "p50": self.p50,
@@ -50,20 +52,22 @@ class Distribution:
 def distribution(values: Sequence[int]) -> Distribution:
     """Nearest-rank percentiles over at most the admitted request population."""
     if len(values) > 10_000:
-        raise SimulationError("RESOURCE_LIMIT_EXCEEDED", "Too many latency samples")
+        raise SimulationError(code="RESOURCE_LIMIT_EXCEEDED", message="Too many latency samples")
     if any(type(value) is not int or value < 0 for value in values):
-        raise SimulationError("VALIDATION_ERROR", "Latency samples must be nonnegative ticks")
+        raise SimulationError(
+            code="VALIDATION_ERROR", message="Latency samples must be nonnegative ticks"
+        )
     if not values:
-        return Distribution(0, None, None, None, None, None)
+        return Distribution(count=0, mean=None, minimum=None, maximum=None, p50=None, p95=None)
     ordered = sorted(values)
     count = len(ordered)
     return Distribution(
-        count,
-        Fraction(sum(ordered), count),
-        ordered[0],
-        ordered[-1],
-        ordered[((50 * count + 99) // 100) - 1],
-        ordered[((95 * count + 99) // 100) - 1],
+        count=count,
+        mean=Fraction(numerator=sum(ordered), denominator=count),
+        minimum=ordered[0],
+        maximum=ordered[-1],
+        p50=ordered[((50 * count + 99) // 100) - 1],
+        p95=ordered[((95 * count + 99) // 100) - 1],
     )
 
 
@@ -91,21 +95,28 @@ class ServerTotals:
             "mem_mb": self.mem_mb,
             "started": self.started,
             "finished": self.finished,
-            "waiting": distribution(self.waits).to_data(),
-            "response": distribution(self.responses).to_data(),
-            "execution": distribution(self.executions).to_data(),
-            "cpu_allocated": exact_value(self.cpu_allocated),
-            "cpu_consumed": exact_value(self.cpu_consumed),
-            "cpu_capacity_ticks": exact_value(Fraction(self.cpu_capacity_ticks)),
+            "waiting": distribution(values=self.waits).to_data(),
+            "response": distribution(values=self.responses).to_data(),
+            "execution": distribution(values=self.executions).to_data(),
+            "cpu_allocated": exact_value(value=self.cpu_allocated),
+            "cpu_consumed": exact_value(value=self.cpu_consumed),
+            "cpu_capacity_ticks": exact_value(value=Fraction(numerator=self.cpu_capacity_ticks)),
             "cpu_utilization": exact_value(
-                self.cpu_consumed / self.cpu_capacity_ticks
+                value=self.cpu_consumed / self.cpu_capacity_ticks
                 if self.cpu_capacity_ticks
                 else Fraction()
             ),
-            "memory_reserved_mb_ticks": exact_value(Fraction(self.memory_reserved_mb_ticks)),
-            "memory_capacity_mb_ticks": exact_value(Fraction(self.memory_capacity_mb_ticks)),
+            "memory_reserved_mb_ticks": exact_value(
+                value=Fraction(numerator=self.memory_reserved_mb_ticks)
+            ),
+            "memory_capacity_mb_ticks": exact_value(
+                value=Fraction(numerator=self.memory_capacity_mb_ticks)
+            ),
             "memory_utilization": exact_value(
-                Fraction(self.memory_reserved_mb_ticks, self.memory_capacity_mb_ticks)
+                value=Fraction(
+                    numerator=self.memory_reserved_mb_ticks,
+                    denominator=self.memory_capacity_mb_ticks,
+                )
                 if self.memory_capacity_mb_ticks
                 else Fraction()
             ),

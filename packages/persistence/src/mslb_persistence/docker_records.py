@@ -45,11 +45,11 @@ class ResourceRecord:
 
 def resource_record(row: DockerResource) -> ResourceRecord:
     """Decode trusted stored resource definitions into immutable application values."""
-    raw = canonical_bytes(row.definition)
+    raw = canonical_bytes(value=row.definition)
     definition = (
-        CreationIntent.model_validate_json(raw)
+        CreationIntent.model_validate_json(json_data=raw)
         if row.kind == "dynamic"
-        else StaticReservation.model_validate_json(raw)
+        else StaticReservation.model_validate_json(json_data=raw)
     )
     identifier = (
         definition.intent_id if isinstance(definition, CreationIntent) else definition.resource_id
@@ -62,7 +62,16 @@ def resource_record(row: DockerResource) -> ResourceRecord:
         or name != row.name
         or definition.digest() != row.definition_digest
     ):
-        raise StoreError("VALIDATION_FAILED", "Stored resource provenance is inconsistent")
+        raise StoreError(
+            code="VALIDATION_FAILED", message="Stored resource provenance is inconsistent"
+        )
     return ResourceRecord(
-        row.id, row.ordinal, row.slot, row.kind, row.state, row.name, row.container_id, definition
+        id=row.id,
+        ordinal=row.ordinal,
+        slot=row.slot,
+        kind=row.kind,
+        state=row.state,
+        name=row.name,
+        container_id=row.container_id,
+        definition=definition,
     )

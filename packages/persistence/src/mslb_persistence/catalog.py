@@ -20,9 +20,11 @@ from mslb_persistence.records import DatasetRecord, RunRecord, server_input, ser
 
 
 async def _installation(session: AsyncSession) -> Installation:
-    row = await session.scalar(select(Installation).where(Installation.id == 1).with_for_update())
+    row = await session.scalar(
+        statement=select(Installation).where(Installation.id == 1).with_for_update()
+    )
     if row is None:
-        raise StoreError("NOT_READY", "Database migration is required")
+        raise StoreError(code="NOT_READY", message="Database migration is required")
     row.revision += 1
     return row
 
@@ -40,7 +42,7 @@ def _history(row: ManagedServer, deleted: bool = False) -> ServerHistory:
 
 def _check_version(expected: int, actual: int) -> None:
     if type(expected) is not int or expected < 1 or expected != actual:
-        raise StoreError("CONFLICT", "Server version does not match")
+        raise StoreError(code="CONFLICT", message="Server version does not match")
 
 
 class Catalog:
@@ -52,94 +54,102 @@ class Catalog:
     async def seed_once(self, servers: tuple[ServerInput, ...]) -> None:
         """Initialize supplied servers once without reseeding an intentionally empty catalog."""
         if not 1 <= len(servers) <= 64 or len({s.id for s in servers}) != len(servers):
-            raise StoreError("VALIDATION_ERROR", "Invalid seed server population")
+            raise StoreError(code="VALIDATION_ERROR", message="Invalid seed server population")
 
         async def operation(session: AsyncSession) -> None:
-            marker = await _installation(session)
+            marker = await _installation(session=session)
             if marker.seeded:
                 return
-            if await session.scalar(select(func.count()).select_from(ManagedServer)) != 0:
-                raise StoreError("CONFLICT", "Uninitialized database contains server configuration")
+            if await session.scalar(statement=select(func.count()).select_from(ManagedServer)) != 0:
+                raise StoreError(
+                    code="CONFLICT", message="Uninitialized database contains server configuration"
+                )
             for server in servers:
                 row = ManagedServer(**server.model_dump(), version=1)
-                session.add(row)
-                session.add(_history(row))
+                session.add(instance=row)
+                session.add(instance=_history(row=row))
             marker.seeded = True
 
-        await self.database.transaction(operation)
+        await self.database.transaction(operation=operation)
 
     async def list_servers(self) -> tuple[ServerView, ...]:
         async def operation(session: AsyncSession) -> tuple[ServerView, ...]:
-            rows = await session.scalars(select(ManagedServer).order_by(ManagedServer.id).limit(64))
-            return tuple(server_view(row) for row in rows)
+            rows = await session.scalars(
+                statement=select(ManagedServer).order_by(ManagedServer.id).limit(limit=64)
+            )
+            return tuple(server_view(server=row) for row in rows)
 
-        return await self.database.transaction(operation)
+        return await self.database.transaction(operation=operation)
 
     async def create_server(self, server: ServerInput) -> ServerView:
         """Create a normalized server and immutable first history version atomically."""
 
         async def operation(session: AsyncSession) -> ServerView:
-            await _installation(session)
-            if await session.get(ManagedServer, server.id) is not None:
-                raise StoreError("CONFLICT", "Server already exists")
-            count = await session.scalar(select(func.count()).select_from(ManagedServer))
+            await _installation(session=session)
+            if await session.get(entity=ManagedServer, ident=server.id) is not None:
+                raise StoreError(code="CONFLICT", message="Server already exists")
+            count = await session.scalar(statement=select(func.count()).select_from(ManagedServer))
             if count is not None and count >= 64:
-                raise StoreError("RATE_LIMITED", "Logical server limit reached")
+                raise StoreError(code="RATE_LIMITED", message="Logical server limit reached")
             previous = await session.scalar(
-                select(func.max(ServerHistory.version)).where(ServerHistory.server_id == server.id)
+                statement=select(func.max(ServerHistory.version)).where(
+                    ServerHistory.server_id == server.id
+                )
             )
             row = ManagedServer(**server.model_dump(), version=(previous or 0) + 1)
-            session.add(row)
-            session.add(_history(row))
-            return server_view(row)
+            session.add(instance=row)
+            session.add(instance=_history(row=row))
+            return server_view(server=row)
 
-        return await self.database.transaction(operation)
+        return await self.database.transaction(operation=operation)
 
     async def update_server(self, server: ServerInput, expected_version: int) -> ServerView:
         """Require the expected version before recording changed future capacities."""
 
         async def operation(session: AsyncSession) -> ServerView:
-            await _installation(session)
-            row = await session.get(ManagedServer, server.id)
+            await _installation(session=session)
+            row = await session.get(entity=ManagedServer, ident=server.id)
             if row is None:
-                raise StoreError("NOT_FOUND", "Server does not exist")
-            _check_version(expected_version, row.version)
+                raise StoreError(code="NOT_FOUND", message="Server does not exist")
+            _check_version(expected=expected_version, actual=row.version)
             row.version += 1
             row.cpu_units_per_tick, row.mem_mb, row.rate_limit_per_sec = (
                 server.cpu_units_per_tick,
                 server.mem_mb,
                 server.rate_limit_per_sec,
             )
-            session.add(_history(row))
-            return server_view(row)
+            session.add(instance=_history(row=row))
+            return server_view(server=row)
 
-        return await self.database.transaction(operation)
+        return await self.database.transaction(operation=operation)
 
     async def delete_server(self, server_id: str, expected_version: int) -> None:
         """Record version-checked deletion without rewriting historical snapshots."""
 
         async def operation(session: AsyncSession) -> None:
-            await _installation(session)
-            row = await session.get(ManagedServer, server_id)
+            await _installation(session=session)
+            row = await session.get(entity=ManagedServer, ident=server_id)
             if row is None:
-                raise StoreError("NOT_FOUND", "Server does not exist")
-            _check_version(expected_version, row.version)
+                raise StoreError(code="NOT_FOUND", message="Server does not exist")
+            _check_version(expected=expected_version, actual=row.version)
             row.version += 1
-            session.add(_history(row, deleted=True))
-            await session.delete(row)
+            session.add(instance=_history(row=row, deleted=True))
+            await session.delete(instance=row)
 
-        await self.database.transaction(operation)
+        await self.database.transaction(operation=operation)
 
     async def register_dataset(self, data: DatasetRegistration) -> DatasetRecord:
         """Reuse normalized identity while preserving actual upload provenance."""
         if data.latest_arrival < data.earliest_arrival or (
             (data.original_digest is None) != (data.source_size_bytes is None)
         ):
-            raise StoreError("VALIDATION_ERROR", "Invalid dataset arrival range")
+            raise StoreError(code="VALIDATION_ERROR", message="Invalid dataset arrival range")
 
         async def operation(session: AsyncSession) -> DatasetRecord:
-            await _installation(session)
-            row = await session.scalar(select(Dataset).where(Dataset.digest == data.digest))
+            await _installation(session=session)
+            row = await session.scalar(
+                statement=select(Dataset).where(Dataset.digest == data.digest)
+            )
             if row is not None:
                 if (
                     row.request_count,
@@ -150,43 +160,47 @@ class Catalog:
                     data.earliest_arrival,
                     data.latest_arrival,
                 ):
-                    raise StoreError("CONFLICT", "Dataset identity has different metadata")
+                    raise StoreError(
+                        code="CONFLICT", message="Dataset identity has different metadata"
+                    )
                 if row.size_bytes != data.size_bytes:
                     if row.original_digest is None and data.original_digest is not None:
                         row.size_bytes = data.size_bytes
                     else:
-                        raise StoreError("CONFLICT", "Dataset identity has different byte metadata")
+                        raise StoreError(
+                            code="CONFLICT", message="Dataset identity has different byte metadata"
+                        )
                 if row.original_digest is None and data.original_digest is not None:
                     row.original_digest = data.original_digest
                     row.source_size_bytes = data.source_size_bytes
                     await session.flush()
-                return DatasetRecord.from_model(row)
+                return DatasetRecord.from_model(row=row)
             row = Dataset(
                 id=uuid4(), storage_key=f"datasets/{data.digest}.csv", **data.model_dump()
             )
-            session.add(row)
+            session.add(instance=row)
             await session.flush()
-            return DatasetRecord.from_model(row)
+            return DatasetRecord.from_model(row=row)
 
-        return await self.database.transaction(operation)
+        return await self.database.transaction(operation=operation)
 
     async def get_dataset(self, dataset_id: UUID) -> DatasetRecord:
         async def operation(session: AsyncSession) -> DatasetRecord:
-            row = await session.get(Dataset, dataset_id)
+            row = await session.get(entity=Dataset, ident=dataset_id)
             if row is None:
-                raise StoreError("NOT_FOUND", "Dataset does not exist")
-            return DatasetRecord.from_model(row)
+                raise StoreError(code="NOT_FOUND", message="Dataset does not exist")
+            return DatasetRecord.from_model(row=row)
 
-        return await self.database.transaction(operation)
+        return await self.database.transaction(operation=operation)
 
     async def get_run(self, run_id: UUID) -> RunRecord:
         async def operation(session: AsyncSession) -> RunRecord:
-            row = await session.get(Run, run_id)
+            row = await session.get(entity=Run, ident=run_id)
             if row is None:
-                raise StoreError("NOT_FOUND", "Run does not exist")
-            return RunRecord.from_model(row)
+                raise StoreError(code="NOT_FOUND", message="Run does not exist")
+            return RunRecord.from_model(row=row)
 
-        return await self.database.transaction(operation)
+        return await self.database.transaction(operation=operation)
 
     async def find_idempotent(
         self,
@@ -204,7 +218,7 @@ class Catalog:
             or not 1 <= len(scope.encode()) <= 128
             or not re.fullmatch(pattern=r"[0-9a-f]{64}", string=body_digest)
         ):
-            raise StoreError("VALIDATION_ERROR", "Invalid idempotency identity")
+            raise StoreError(code="VALIDATION_ERROR", message="Invalid idempotency identity")
         key_hash = hashlib.sha256(string=key.encode()).hexdigest()
 
         async def operation(session: AsyncSession) -> RunRecord | None:
@@ -245,69 +259,77 @@ class Catalog:
         scope: str = "local",
     ) -> RunRecord:
         """Freeze a coherent catalog/dataset view and create run, job, key and outbox atomically."""
-        verify_snapshot_identity(snapshot)
+        verify_snapshot_identity(snapshot=snapshot)
         if (
-            not re.fullmatch(r"[0-9a-f]{64}", body_digest)
+            not re.fullmatch(pattern=r"[0-9a-f]{64}", string=body_digest)
             or not 1 <= len(scope.encode()) <= 128
             or (key is not None and not 1 <= len(key.encode()) <= 128)
         ):
-            raise StoreError("VALIDATION_ERROR", "Invalid idempotency identity")
-        key_hash = hashlib.sha256(key.encode()).hexdigest() if key is not None else None
+            raise StoreError(code="VALIDATION_ERROR", message="Invalid idempotency identity")
+        key_hash = hashlib.sha256(data=key.encode()).hexdigest() if key is not None else None
 
         async def operation(session: AsyncSession) -> RunRecord:
-            await _installation(session)
-            now = await session.scalar(select(func.clock_timestamp()))
+            await _installation(session=session)
+            now = await session.scalar(statement=select(func.clock_timestamp()))
             if not isinstance(now, datetime):
-                raise StoreError("NOT_READY", "Database clock unavailable")
+                raise StoreError(code="NOT_READY", message="Database clock unavailable")
             expired = (
                 select(IdempotencyRecord.scope, IdempotencyRecord.key_hash)
                 .where(IdempotencyRecord.expires_at <= func.clock_timestamp())
-                .limit(500)
+                .limit(limit=500)
             )
             await session.execute(
-                delete(IdempotencyRecord).where(
-                    tuple_(IdempotencyRecord.scope, IdempotencyRecord.key_hash).in_(expired)
+                statement=delete(table=IdempotencyRecord).where(
+                    tuple_(IdempotencyRecord.scope, IdempotencyRecord.key_hash).in_(other=expired)
                 )
             )
             if key_hash is not None:
-                previous = await session.get(IdempotencyRecord, (scope, key_hash))
+                previous = await session.get(entity=IdempotencyRecord, ident=(scope, key_hash))
                 if previous is not None and previous.expires_at > now:
                     if previous.body_digest != body_digest:
                         raise StoreError(
-                            "CONFLICT", "Idempotency key belongs to a different request"
+                            code="CONFLICT",
+                            message="Idempotency key belongs to a different request",
                         )
-                    existing = await session.get(Run, previous.run_id)
+                    existing = await session.get(entity=Run, ident=previous.run_id)
                     if existing is None:
-                        raise StoreError("NOT_READY", "Idempotency record references missing run")
-                    job = await session.get(Job, previous.run_id)
+                        raise StoreError(
+                            code="NOT_READY", message="Idempotency record references missing run"
+                        )
+                    job = await session.get(entity=Job, ident=previous.run_id)
                     if job is None or job.kind != "logical":
                         raise StoreError(
-                            "CONFLICT", "Idempotency key belongs to a different run mode"
+                            code="CONFLICT",
+                            message="Idempotency key belongs to a different run mode",
                         )
-                    return RunRecord.from_model(existing)
+                    return RunRecord.from_model(row=existing)
                 if previous is not None:
-                    await session.delete(previous)
+                    await session.delete(instance=previous)
                     await session.flush()
-            dataset = await session.get(Dataset, dataset_id)
+            dataset = await session.get(entity=Dataset, ident=dataset_id)
             if dataset is None:
-                raise StoreError("NOT_FOUND", "Dataset does not exist")
+                raise StoreError(code="NOT_FOUND", message="Dataset does not exist")
             current = tuple(
-                await session.scalars(select(ManagedServer).order_by(ManagedServer.id).limit(64))
+                await session.scalars(
+                    statement=select(ManagedServer).order_by(ManagedServer.id).limit(limit=64)
+                )
             )
             if (
                 tuple((s.id, s.version) for s in current) != versions
-                or tuple(server_input(s) for s in current) != snapshot.servers
+                or tuple(server_input(server=s) for s in current) != snapshot.servers
             ):
-                raise StoreError("CONFLICT", "Server configuration changed before submission")
+                raise StoreError(
+                    code="CONFLICT", message="Server configuration changed before submission"
+                )
             if dataset.digest != snapshot.dataset_digest or dataset.request_count != len(
                 snapshot.requests
             ):
-                raise StoreError("CONFLICT", "Dataset differs from immutable snapshot")
+                raise StoreError(code="CONFLICT", message="Dataset differs from immutable snapshot")
             queued = await session.scalar(
-                select(func.count()).select_from(Job).where(Job.status == "queued")
+                statement=select(func.count()).select_from(Job).where(Job.status == "queued")
             )
             if queued is not None and queued >= 20:
-                raise StoreError("RATE_LIMITED", "Durable queue limit reached")
+                raise StoreError(code="RATE_LIMITED", message="Durable queue limit reached")
             run = Run(
                 id=uuid4(),
                 dataset_id=dataset.id,
@@ -319,14 +341,14 @@ class Catalog:
                 configuration=snapshot.configuration.model_dump(mode="json"),
                 server_versions=dict(versions),
             )
-            session.add(run)
+            session.add(instance=run)
             await session.flush()
-            session.add(Job(run_id=run.id))
+            session.add(instance=Job(run_id=run.id))
             await session.flush()
-            session.add(Outbox(id=uuid4(), run_id=run.id))
+            session.add(instance=Outbox(id=uuid4(), run_id=run.id))
             if key_hash is not None:
                 session.add(
-                    IdempotencyRecord(
+                    instance=IdempotencyRecord(
                         scope=scope,
                         key_hash=key_hash,
                         body_digest=body_digest,
@@ -335,6 +357,6 @@ class Catalog:
                     )
                 )
             await session.flush()
-            return RunRecord.from_model(run)
+            return RunRecord.from_model(row=run)
 
-        return await self.database.transaction(operation)
+        return await self.database.transaction(operation=operation)

@@ -19,4 +19,4 @@ class DockerModel(BaseModel):
     model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
 
     def digest(self) -> str:
-        return hashlib.sha256(canonical_bytes(self.model_dump(mode="json"))).hexdigest()
+        return hashlib.sha256(data=canonical_bytes(value=self.model_dump(mode="json"))).hexdigest()

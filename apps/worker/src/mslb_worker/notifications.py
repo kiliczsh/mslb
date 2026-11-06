@@ -22,7 +22,7 @@ class Notifications:
             self.messages.put_nowait(
                 item={
                     "event": phase,
-                    "run_id": str(lease.run_id),
+                    "run_id": str(object=lease.run_id),
                     "attempt": lease.attempt,
                     "fence": lease.fence,
                     "tick": tick,

@@ -52,8 +52,8 @@ from mslb_api.settings import Settings
 
 
 def seed() -> tuple[ServerInput, ...]:
-    with Path("/fixtures/core/servers.json").open("rb") as stream:
-        return read_servers(stream)
+    with Path("/fixtures/core/servers.json").open(mode="rb") as stream:
+        return read_servers(stream=stream)
 
 
 def create_app(
@@ -65,14 +65,17 @@ def create_app(
     close_database: bool = False,
 ) -> FastAPI:
     """Compose shared services, access/error boundaries, REST routes and MCP lifespan."""
-    catalog, jobs = Catalog(database), Jobs(database)
-    submissions, queries = Submissions(catalog, inputs), Queries(database, outputs, signing_key)
-    services = Services(catalog, jobs, submissions, queries)
+    catalog, jobs = Catalog(database=database), Jobs(database=database)
+    submissions, queries = (
+        Submissions(catalog=catalog, files=inputs),
+        Queries(database=database, outputs=outputs, cursor_secret=signing_key),
+    )
+    services = Services(catalog=catalog, jobs=jobs, submissions=submissions, queries=queries)
     mcp = McpAdapter(services=services, settings=settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
-        await catalog.seed_once(await asyncio.to_thread(seed))
+        await catalog.seed_once(servers=await asyncio.to_thread(seed))
         try:
             async with mcp.server.session_manager.run():
                 yield
@@ -88,7 +91,7 @@ def create_app(
         docs_url=None,
         redoc_url=None,
     )
-    app.add_middleware(Guard, settings=settings)
+    app.add_middleware(middleware_class=Guard, settings=settings)
     app.state.mcp = mcp
     responses: dict[int | str, dict[str, object]] = {
         status: {"model": ErrorEnvelope}
@@ -105,31 +108,36 @@ def create_app(
         )
     }
     router = APIRouter(
-        prefix="/api/v1", dependencies=[Security(HTTPBearer(auto_error=False))], responses=responses
+        prefix="/api/v1",
+        dependencies=[Security(dependency=HTTPBearer(auto_error=False))],
+        responses=responses,
     )
 
     async def failure(request: Request, error: Exception) -> Response:
         """Translate safe bounded errors while retaining the existing request ID."""
-        identifier = str(getattr(request.state, "request_id", "unavailable"))
+        identifier = str(object=getattr(request.state, "request_id", "unavailable"))
         if isinstance(error, (OperationError, StoreError, SimulationError)):
-            return error_response(error.code, str(error), identifier)
+            return error_response(code=error.code, message=str(object=error), request_id=identifier)
         if isinstance(error, InputError):
             return error_response(
-                "VALIDATION_ERROR",
-                "Input validation failed",
-                identifier,
-                (FieldError(field=error.field[:256], reason=error.reason[:128]),),
+                code="VALIDATION_ERROR",
+                message="Input validation failed",
+                request_id=identifier,
+                details=(FieldError(field=error.field[:256], reason=error.reason[:128]),),
             )
         if isinstance(error, (RequestValidationError, ValidationError)):
             details = tuple(
                 FieldError(
-                    field=".".join(str(part) for part in item["loc"])[:256],
+                    field=".".join(str(object=part) for part in item["loc"])[:256],
                     reason=item["type"][:128],
                 )
                 for item in error.errors()[:32]
             )
             return error_response(
-                "VALIDATION_ERROR", "Request validation failed", identifier, details
+                code="VALIDATION_ERROR",
+                message="Request validation failed",
+                request_id=identifier,
+                details=details,
             )
         if isinstance(error, HTTPException):
             code = (
@@ -138,23 +146,31 @@ def create_app(
                 else "VALIDATION_ERROR"
             )
             return error_response(
-                code,
-                "Route not found" if code == "NOT_FOUND" else "Malformed or unsupported request",
-                identifier,
+                code=code,
+                message="Route not found"
+                if code == "NOT_FOUND"
+                else "Malformed or unsupported request",
+                request_id=identifier,
             )
         if isinstance(error, (MultiPartException, MultipartParseError)):
-            return error_response("VALIDATION_ERROR", "Malformed multipart upload", identifier)
+            return error_response(
+                code="VALIDATION_ERROR", message="Malformed multipart upload", request_id=identifier
+            )
         if isinstance(error, (DBAPIError, OSError, TimeoutError)):
             report_failure(
                 error=error, code="RESOURCE_PRESSURE", source="rest", request_id=identifier
             )
             return error_response(
-                "RESOURCE_PRESSURE",
-                "A required dependency or managed file is unavailable",
-                identifier,
+                code="RESOURCE_PRESSURE",
+                message="A required dependency or managed file is unavailable",
+                request_id=identifier,
             )
         report_failure(error=error, code="INTERNAL_ERROR", source="rest", request_id=identifier)
-        return error_response("INTERNAL_ERROR", "The operation could not be completed", identifier)
+        return error_response(
+            code="INTERNAL_ERROR",
+            message="The operation could not be completed",
+            request_id=identifier,
+        )
 
     for exception in (
         OperationError,
@@ -171,7 +187,7 @@ def create_app(
         MultiPartException,
         MultipartParseError,
     ):
-        app.add_exception_handler(exception, failure)
+        app.add_exception_handler(exc_class_or_status_code=exception, handler=failure)
 
     register_health(app=app, database=database)
     register_servers(router=router, services=services)
@@ -179,13 +195,13 @@ def create_app(
     register_simulations(router=router, services=services, queries=queries)
     register_results(router=router, queries=queries, database=database)
     configure_routes(router=router, auth_enabled=settings.auth_enabled)
-    app.include_router(router)
-    app.router.routes.append(Route("/mcp", endpoint=mcp.app))
+    app.include_router(router=router)
+    app.router.routes.append(Route(path="/mcp", endpoint=mcp.app))
     return app
 
 
 def get_mcp(app: FastAPI) -> McpAdapter:
     value = app.state.mcp
     if not isinstance(value, McpAdapter):
-        raise OperationError("INVALID_STATE", "MCP adapter is not installed")
+        raise OperationError(code="INVALID_STATE", message="MCP adapter is not installed")
     return value

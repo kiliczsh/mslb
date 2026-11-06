@@ -41,7 +41,7 @@ def finish_ticks(events: list[Event]) -> dict[str, int]:
 
 def test_equal_fractional_sharing_and_consumption() -> None:
     requests = tuple(
-        Request(t=0, request_id=str(index), work_units=10, mem_mb=1) for index in range(3)
+        Request(t=0, request_id=str(object=index), work_units=10, mem_mb=1) for index in range(3)
     )
     frames = list(
         Simulation(
@@ -168,7 +168,7 @@ def test_idle_gap_is_bounded_but_counts_toward_horizon() -> None:
     assert [frame.t for frame in frames] == [0, 999, 1000]
     assert frames[0].duration_ticks == 999
     assert frames[-1].terminal
-    with pytest.raises(SimulationError, match="horizon"):
+    with pytest.raises(expected_exception=SimulationError, match="horizon"):
         events_for(
             requests=(Request(t=0, request_id="a", work_units=100, mem_mb=1),),
             config=RunConfig(max_simulation_ticks=1),
@@ -176,8 +176,8 @@ def test_idle_gap_is_bounded_but_counts_toward_horizon() -> None:
 
 
 @pytest.mark.parametrize(
-    ("strategy", "assignments", "finishes"),
-    [
+    argnames=("strategy", "assignments", "finishes"),
+    argvalues=[
         pytest.param("first_fit", ("a", "a", "b", "b"), (5, 2, 1, 2), id="first_fit"),
         pytest.param("round_robin", ("a", "b", "c", "a"), (5, 1, 1, 3), id="round_robin"),
         pytest.param(
@@ -314,7 +314,7 @@ def test_round_robin_keeps_anchor_on_failed_selection_addition_and_anchor_remova
 
 
 def test_limits_fail_instead_of_fabricating_success() -> None:
-    with pytest.raises(SimulationError) as samples:
+    with pytest.raises(expected_exception=SimulationError) as samples:
         list(
             Simulation(
                 servers=(Server(id="s", cpu_units_per_tick=1, mem_mb=10, rate_limit_per_sec=10),),
@@ -323,10 +323,10 @@ def test_limits_fail_instead_of_fabricating_success() -> None:
             ).iter_ticks()
         )
     assert samples.value.code == "RESOURCE_LIMIT_EXCEEDED"
-    with pytest.raises(SimulationError) as arithmetic:
+    with pytest.raises(expected_exception=SimulationError) as arithmetic:
         events_for(
             requests=tuple(
-                Request(t=0, request_id=str(i), work_units=10, mem_mb=1) for i in range(3)
+                Request(t=0, request_id=str(object=i), work_units=10, mem_mb=1) for i in range(3)
             ),
             config=RunConfig(mode="concurrent", max_fraction_bits=1),
         )
@@ -401,13 +401,13 @@ def test_generated_sequential_trace_passes_unchanged_original_validator(tmp_path
     subprocess.run(  # noqa: S603 -- fixed interpreter and trusted fixture paths
         args=[
             sys.executable,
-            str(root / "validate_run.py"),
+            str(object=root / "validate_run.py"),
             "--servers",
-            str(root / "servers.json"),
+            str(object=root / "servers.json"),
             "--requests",
-            str(root / "requests.csv"),
+            str(object=root / "requests.csv"),
             "--run",
-            str(output),
+            str(object=output),
         ],
         check=True,
         capture_output=True,
@@ -417,7 +417,7 @@ def test_generated_sequential_trace_passes_unchanged_original_validator(tmp_path
 def test_failed_run_does_not_replace_previous_output(tmp_path: Path) -> None:
     output = tmp_path / "run.jsonl"
     output.write_text(data="previous completed artifact\n")
-    with pytest.raises(SimulationError):
+    with pytest.raises(expected_exception=SimulationError):
         generate(
             servers_path=Path("/fixtures/core/servers.json"),
             requests_path=Path("/fixtures/core/requests.csv"),
@@ -428,9 +428,10 @@ def test_failed_run_does_not_replace_previous_output(tmp_path: Path) -> None:
     assert list(tmp_path.iterdir()) == [output]
 
 
-@pytest.mark.parametrize("mode", ["sequential", "concurrent"])
+@pytest.mark.parametrize(argnames="mode", argvalues=["sequential", "concurrent"])
 @pytest.mark.parametrize(
-    "strategy", ["first_fit", "round_robin", "least_connections", "most_available_memory"]
+    argnames="strategy",
+    argvalues=["first_fit", "round_robin", "least_connections", "most_available_memory"],
 )
 def test_shuffled_fixture_has_identical_canonical_trace(mode: Mode, strategy: Strategy) -> None:
     traces = []
@@ -485,7 +486,7 @@ def process_outputs(*, seed: str, reverse_inputs: bool) -> dict[str, dict[str, s
     )
     assert not result.stderr
     assert len(result.stdout) <= 512 * 1024, "Reproducibility helper exceeded its output budget"
-    return TypeAdapter(dict[str, dict[str, str]]).validate_json(result.stdout)
+    return TypeAdapter(type=dict[str, dict[str, str]]).validate_json(result.stdout)
 
 
 @pytest.fixture(scope="module")
@@ -493,8 +494,10 @@ def reference_process_outputs() -> dict[str, dict[str, str]]:
     return process_outputs(seed="0", reverse_inputs=False)
 
 
-@pytest.mark.parametrize("seed", ["0", "1", "19", "8675309"])
-@pytest.mark.parametrize("reverse_inputs", [False, True], ids=["original", "reordered"])
+@pytest.mark.parametrize(argnames="seed", argvalues=["0", "1", "19", "8675309"])
+@pytest.mark.parametrize(
+    argnames="reverse_inputs", argvalues=[False, True], ids=["original", "reordered"]
+)
 def test_cross_process_matrix_preserves_traces_exact_metrics_and_scaling_decisions(
     seed: str, reverse_inputs: bool, reference_process_outputs: dict[str, dict[str, str]]
 ) -> None:

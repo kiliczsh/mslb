@@ -30,7 +30,7 @@ class WorkFile:
             self.check()
         if self.position + len(data) > 256 * 1024**2:
             raise OperationError(
-                "STORAGE_LIMIT_EXCEEDED", "Attempt stream exceeds its byte ceiling"
+                code="STORAGE_LIMIT_EXCEEDED", message="Attempt stream exceeds its byte ceiling"
             )
         for offset in range(0, len(data), 64 * 1024):
             self.buffer.extend(data[offset : offset + 64 * 1024])
@@ -39,10 +39,12 @@ class WorkFile:
 
     def flush(self) -> None:
         if self.buffer:
-            with self.files._lock(".write-lock"):
+            with self.files._lock(name=".write-lock"):
                 if self.check is not None:
                     self.check()
-                self.files._admit(len(self.buffer), self.files.run_scope(self.key))
+                self.files._admit(
+                    additional=len(self.buffer), scope=self.files.run_scope(key=self.key)
+                )
                 self.stream.seek(self.size)
                 if self.stream.write(self.buffer) != len(self.buffer):
                     raise OSError("Short attempt spool write")
@@ -52,4 +54,4 @@ class WorkFile:
 
     def sync(self) -> None:
         self.flush()
-        os.fsync(self.stream.fileno())
+        os.fsync(fd=self.stream.fileno())

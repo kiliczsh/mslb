@@ -21,14 +21,14 @@ class Database:
     """Own bounded PostgreSQL connections and repeatable-read transaction retries."""
 
     def __init__(self, url: str, schema: str = "public") -> None:
-        if not re.fullmatch(r"[a-z][a-z0-9_]{0,62}", schema):
-            raise StoreError("VALIDATION_ERROR", "Invalid database schema")
-        parsed = make_url(url)
+        if not re.fullmatch(pattern=r"[a-z][a-z0-9_]{0,62}", string=schema):
+            raise StoreError(code="VALIDATION_ERROR", message="Invalid database schema")
+        parsed = make_url(name_or_url=url)
         if parsed.get_backend_name() != "postgresql":
-            raise StoreError("VALIDATION_ERROR", "PostgreSQL is required")
+            raise StoreError(code="VALIDATION_ERROR", message="PostgreSQL is required")
         self.schema = schema
         self.engine: AsyncEngine = create_async_engine(
-            parsed.set(drivername="postgresql+asyncpg"),
+            url=parsed.set(drivername="postgresql+asyncpg"),
             pool_size=3,
             max_overflow=0,
             pool_timeout=5,
@@ -46,7 +46,7 @@ class Database:
                 },
             },
         )
-        self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
+        self.sessions = async_sessionmaker(bind=self.engine, expire_on_commit=False)
 
     async def transaction[T](self, operation: Callable[[AsyncSession], Awaitable[T]]) -> T:
         """Retry only serialization/deadlock conflicts, with a fresh bounded transaction."""
@@ -58,12 +58,12 @@ class Database:
                 sqlstate = getattr(error.orig, "sqlstate", None)
                 if sqlstate not in {"40001", "40P01"} or attempt == 2:
                     raise
-                await asyncio.sleep(0.01 * (attempt + 1))
-        raise StoreError("INTERNAL_ERROR", "Transaction retry exhausted")
+                await asyncio.sleep(delay=0.01 * (attempt + 1))
+        raise StoreError(code="INTERNAL_ERROR", message="Transaction retry exhausted")
 
     async def ready(self) -> bool:
         async with self.engine.connect() as connection:
-            return await connection.scalar(select(literal(1))) == 1
+            return await connection.scalar(statement=select(literal(value=1))) == 1
 
     async def close(self) -> None:
         await self.engine.dispose()

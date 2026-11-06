@@ -27,7 +27,7 @@ class ControlClient:
             transport=transport,
             trust_env=False,
             follow_redirects=False,
-            timeout=httpx.Timeout(50, connect=1, pool=0.1),
+            timeout=httpx.Timeout(timeout=50, connect=1, pool=0.1),
             limits=httpx.Limits(max_connections=2, max_keepalive_connections=1),
             headers={
                 "Authorization": "Bearer " + (token or read_token()),
@@ -39,29 +39,32 @@ class ControlClient:
         """Send a bounded authenticated semantic operation without following redirects."""
         try:
             async with (
-                asyncio.timeout(52),
+                asyncio.timeout(delay=52),
                 self.client.stream(
-                    "POST", path, content=payload, headers={"Content-Type": "application/json"}
+                    method="POST",
+                    url=path,
+                    content=payload,
+                    headers={"Content-Type": "application/json"},
                 ) as response,
             ):
                 if response.status_code != HTTPStatus.OK.value:
-                    raise EngineError("CONTROL_REFUSED", response.status_code)
-                if response.headers.get("content-encoding", "identity") != "identity":
-                    raise EngineError("CONTROL_RESPONSE")
+                    raise EngineError(code="CONTROL_REFUSED", status=response.status_code)
+                if response.headers.get(key="content-encoding", default="identity") != "identity":
+                    raise EngineError(code="CONTROL_RESPONSE")
                 raw = bytearray()
-                async for chunk in response.aiter_raw(4096):
+                async for chunk in response.aiter_raw(chunk_size=4096):
                     if len(raw) + len(chunk) > 16384:
-                        raise EngineError("CONTROL_RESPONSE")
+                        raise EngineError(code="CONTROL_RESPONSE")
                     raw.extend(chunk)
-                return model.model_validate_json(raw)
+                return model.model_validate_json(json_data=raw)
         except (httpx.HTTPError, TimeoutError):
-            raise EngineError("CONTROL_UNAVAILABLE") from None
+            raise EngineError(code="CONTROL_UNAVAILABLE") from None
         except ValidationError:
-            raise EngineError("CONTROL_RESPONSE") from None
+            raise EngineError(code="CONTROL_RESPONSE") from None
 
     async def enroll(self) -> DeploymentRecord:
-        value = await self._post("/control/enroll", "{}", EnrollmentReply)
-        return DeploymentRecord(value.id, value.definition)
+        value = await self._post(path="/control/enroll", payload="{}", model=EnrollmentReply)
+        return DeploymentRecord(id=value.id, definition=value.definition)
 
     async def resource(
         self,
@@ -74,10 +77,12 @@ class ControlClient:
             run_id=lease.run_id, fence=lease.fence, owner=lease.owner, phase=lease.phase
         )
         value = await self._post(
-            f"/control/resources/{identifier}/{action}", reference.model_dump_json(), ResourceReply
+            path=f"/control/resources/{identifier}/{action}",
+            payload=reference.model_dump_json(),
+            model=ResourceReply,
         )
         if value.id != identifier:
-            raise EngineError("CONTROL_RESPONSE")
+            raise EngineError(code="CONTROL_RESPONSE")
         return value
 
     async def close(self) -> None:

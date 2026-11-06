@@ -32,7 +32,7 @@ def healthy() -> bool:
     try:
         descriptor = os.open(path=HEALTH, flags=os.O_RDONLY | os.O_NOFOLLOW)
         with os.fdopen(fd=descriptor, mode="rb") as stream:
-            metadata = os.fstat(stream.fileno())
+            metadata = os.fstat(fd=stream.fileno())
             if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid():
                 return False
             raw = stream.read(1025)

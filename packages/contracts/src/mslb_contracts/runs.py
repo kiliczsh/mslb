@@ -109,7 +109,7 @@ class ArtifactMetadata(BaseModel):
 def verify_snapshot_identity(snapshot: RunSnapshot) -> None:
     """Verify normalized structural identity without depending on engine execution."""
     expected = hashlib.sha256(
-        canonical_bytes(value=snapshot.model_dump(mode="json", exclude={"snapshot_digest"}))
+        data=canonical_bytes(value=snapshot.model_dump(mode="json", exclude={"snapshot_digest"}))
     ).hexdigest()
     if (
         snapshot.snapshot_digest != expected
@@ -121,7 +121,7 @@ def verify_snapshot_identity(snapshot: RunSnapshot) -> None:
         or len({server.id for server in snapshot.servers}) != len(snapshot.servers)
         or len({request.request_id for request in snapshot.requests}) != len(snapshot.requests)
     ):
-        raise InputError("snapshot", "identity_or_normalization_mismatch")
+        raise InputError(field="snapshot", reason="identity_or_normalization_mismatch")
 
 
 class BundleManifest(BaseModel):

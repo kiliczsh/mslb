@@ -54,7 +54,7 @@ def test_one_fenced_publisher_records_actual_payload_then_fails_closed_on_age() 
             assert (await store.read()).revision == saved.revision
             async with database.engine.begin() as connection:
                 await connection.execute(
-                    statement=update(ResourceEvidence).values(
+                    statement=update(table=ResourceEvidence).values(
                         received_at=func.clock_timestamp() - timedelta(seconds=4)
                     )
                 )
@@ -76,7 +76,7 @@ def test_expired_publisher_cannot_overwrite_new_owner_or_reuse_a_client_expiry()
             )
             async with database.engine.begin() as connection:
                 await connection.execute(
-                    statement=update(ResourceEvidence).values(
+                    statement=update(table=ResourceEvidence).values(
                         lease_expires_at=func.clock_timestamp() - timedelta(seconds=1)
                     )
                 )
@@ -124,7 +124,9 @@ def test_unsafe_budget_forged_admission_and_corrupted_payload_are_rejected() -> 
                 lease=lease, expected_revision=lease.revision, probe=probe, decision=decision
             )
             async with database.engine.begin() as connection:
-                await connection.execute(statement=update(ResourceEvidence).values(digest="f" * 64))
+                await connection.execute(
+                    statement=update(table=ResourceEvidence).values(digest="f" * 64)
+                )
             with pytest.raises(expected_exception=StoreError, match="integrity differs"):
                 await store.read()
 
@@ -144,7 +146,9 @@ def test_failure_frame_is_explicit_and_partial_sql_report_is_forbidden() -> None
             assert saved.probe is None and saved.decision.reason == "MEASUREMENTS_UNAVAILABLE"
             with pytest.raises(expected_exception=IntegrityError):
                 async with database.engine.begin() as connection:
-                    await connection.execute(statement=update(ResourceEvidence).values(digest=None))
+                    await connection.execute(
+                        statement=update(table=ResourceEvidence).values(digest=None)
+                    )
 
     asyncio.run(main=run())
 
@@ -188,7 +192,7 @@ def test_real_database_expiry_during_publication_rolls_back_report(
             probe, decision = healthy_evidence()
             async with database.engine.begin() as connection:
                 await connection.execute(
-                    statement=update(ResourceEvidence).values(
+                    statement=update(table=ResourceEvidence).values(
                         lease_expires_at=func.clock_timestamp() + timedelta(seconds=0.03)
                     )
                 )

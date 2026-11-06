@@ -28,13 +28,13 @@ class _ZipSink(io.RawIOBase):
             deadline = time.monotonic() + 5
             while not self.stopped.is_set():
                 try:
-                    self.pending.put(bytes(value[offset : offset + 64 * 1024]), timeout=0.1)
+                    self.pending.put(item=bytes(value[offset : offset + 64 * 1024]), timeout=0.1)
                     break
                 except queue.Full:
                     if time.monotonic() > deadline:
                         raise OperationError(
-                            "INTERRUPTED", "Archive consumer stopped reading"
+                            code="INTERRUPTED", message="Archive consumer stopped reading"
                         ) from None
             else:
-                raise OperationError("INTERRUPTED", "Archive stream closed")
+                raise OperationError(code="INTERRUPTED", message="Archive stream closed")
         return len(value)

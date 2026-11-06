@@ -28,29 +28,29 @@ class Arguments(argparse.Namespace):
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    run = commands.add_parser("run")
+    run = commands.add_parser(name="run")
     for name in ("servers", "requests", "output"):
         run.add_argument("--" + name, type=Path, required=True)
     run.add_argument("--config", type=Path)
-    verify = commands.add_parser("verify")
+    verify = commands.add_parser(name="verify")
     verify.add_argument("directory", type=Path)
     args = parser.parse_args(namespace=Arguments())
     if args.command == "verify":
-        manifest = verify_bundle(args.directory)
+        manifest = verify_bundle(directory=args.directory)
     else:
         settings = RunSettings()
         if args.config is not None:
-            with args.config.open("rb") as stream:
+            with args.config.open(mode="rb") as stream:
                 payload = stream.read(256 * 1024 + 1)
             if len(payload) > 256 * 1024:
-                raise InputError("config", "payload_too_large")
-            settings = RunSettings.model_validate_json(payload)
-        with args.servers.open("rb") as stream:
-            servers = read_servers(stream)
-        with args.requests.open("rb") as stream:
-            requests = read_requests(stream)
-        snapshot = make_snapshot(servers, requests, settings)
-        manifest = execute_bundle(snapshot, args.output)
+                raise InputError(field="config", reason="payload_too_large")
+            settings = RunSettings.model_validate_json(json_data=payload)
+        with args.servers.open(mode="rb") as stream:
+            servers = read_servers(stream=stream)
+        with args.requests.open(mode="rb") as stream:
+            requests = read_requests(stream=stream)
+        snapshot = make_snapshot(servers=servers, requests=requests, settings=settings)
+        manifest = execute_bundle(snapshot=snapshot, destination=args.output)
     print(manifest.model_dump_json())
 
 
@@ -68,10 +68,10 @@ if __name__ == "__main__":
         code = "VALIDATION_FAILED"
         message = "Invalid run configuration or artifact data"
         if isinstance(error, (OperationError, SimulationError)):
-            code, message = error.code, str(error)
+            code, message = error.code, str(object=error)
         elif isinstance(error, InputError):
-            code, message = "VALIDATION_ERROR", str(error)
+            code, message = "VALIDATION_ERROR", str(object=error)
         elif isinstance(error, OSError):
             code, message = "IO_ERROR", "Unable to access the requested local files"
-        print(json.dumps({"error": {"code": code, "message": message}}), file=sys.stderr)
+        print(json.dumps(obj={"error": {"code": code, "message": message}}), file=sys.stderr)
         sys.exit(2)

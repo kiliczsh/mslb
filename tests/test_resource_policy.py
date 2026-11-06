@@ -35,7 +35,7 @@ def probe(*, second: int = 0, percent: int = 10) -> ResourceProbe:
                 oom_killed=False,
                 restart_count=0,
             )
-            for index, (name, limit) in enumerate(SERVICE_LIMITS_MB.items())
+            for index, (name, limit) in enumerate(iterable=SERVICE_LIMITS_MB.items())
         ),
     )
 

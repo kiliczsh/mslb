@@ -25,17 +25,19 @@ class OutputProgress(Base):
 
     __tablename__ = "output_progress"
     __table_args__ = (
-        CheckConstraint("kind IN ('checkpoint','terminal') AND revision > 0", name="kind_revision"),
         CheckConstraint(
-            "next_tick BETWEEN 0 AND 1000000 AND executed_intervals BETWEEN 0 AND 1000000",
+            sqltext="kind IN ('checkpoint','terminal') AND revision > 0", name="kind_revision"
+        ),
+        CheckConstraint(
+            sqltext="next_tick BETWEEN 0 AND 1000000 AND executed_intervals BETWEEN 0 AND 1000000",
             name="bounded_progress",
         ),
     )
     run_id: Mapped[UUID] = MappedColumn[UUID](
-        ForeignKey("jobs.run_id", ondelete="RESTRICT"), primary_key=True
+        ForeignKey(column="jobs.run_id", ondelete="RESTRICT"), primary_key=True
     )
     revision: Mapped[int] = MappedColumn[int](Integer)
-    kind: Mapped[str] = MappedColumn[str](String(16))
+    kind: Mapped[str] = MappedColumn[str](String(length=16))
     reference: Mapped[dict[str, object]] = MappedColumn[dict[str, object]](JSONB)
     next_tick: Mapped[int] = MappedColumn[int](Integer)
     executed_intervals: Mapped[int] = MappedColumn[int](Integer)
@@ -50,7 +52,7 @@ class SavedCheckpoint(Base):
 
     __tablename__ = "saved_checkpoints"
     run_id: Mapped[UUID] = MappedColumn[UUID](
-        ForeignKey("jobs.run_id", ondelete="RESTRICT"), primary_key=True
+        ForeignKey(column="jobs.run_id", ondelete="RESTRICT"), primary_key=True
     )
     revision: Mapped[int] = MappedColumn[int](Integer, primary_key=True)
     attempt: Mapped[int] = MappedColumn[int](Integer)
@@ -68,14 +70,14 @@ class CommittedChunk(Base):
     __tablename__ = "committed_chunks"
     __table_args__ = (
         CheckConstraint(
-            "first_sequence > 0 AND last_sequence >= first_sequence AND byte_offset >= 0",
+            sqltext="first_sequence > 0 AND last_sequence >= first_sequence AND byte_offset >= 0",
             name="contiguous_range",
         ),
     )
     run_id: Mapped[UUID] = MappedColumn[UUID](
-        ForeignKey("jobs.run_id", ondelete="RESTRICT"), primary_key=True
+        ForeignKey(column="jobs.run_id", ondelete="RESTRICT"), primary_key=True
     )
-    name: Mapped[str] = MappedColumn[str](String(40), primary_key=True)
+    name: Mapped[str] = MappedColumn[str](String(length=40), primary_key=True)
     first_sequence: Mapped[int] = MappedColumn[int](Integer, primary_key=True)
     last_sequence: Mapped[int] = MappedColumn[int](Integer)
     byte_offset: Mapped[int] = MappedColumn[int](Integer)
@@ -95,14 +97,14 @@ class IndexedEvent(Base):
         UniqueConstraint("run_id", "event", "request_id", name="uq_indexed_event_lifecycle"),
     )
     run_id: Mapped[UUID] = MappedColumn[UUID](
-        ForeignKey("jobs.run_id", ondelete="RESTRICT"), primary_key=True
+        ForeignKey(column="jobs.run_id", ondelete="RESTRICT"), primary_key=True
     )
     sequence: Mapped[int] = MappedColumn[int](Integer, primary_key=True)
     t: Mapped[int] = MappedColumn[int](Integer)
-    event: Mapped[str] = MappedColumn[str](String(32))
-    request_id: Mapped[str] = MappedColumn[str](String(128))
-    server_id: Mapped[str | None] = MappedColumn[str | None](String(128))
-    reason: Mapped[str | None] = MappedColumn[str | None](String(32))
+    event: Mapped[str] = MappedColumn[str](String(length=32))
+    request_id: Mapped[str] = MappedColumn[str](String(length=128))
+    server_id: Mapped[str | None] = MappedColumn[str | None](String(length=128))
+    reason: Mapped[str | None] = MappedColumn[str | None](String(length=32))
 
 
 class PublishedArtifact(Base):
@@ -110,10 +112,10 @@ class PublishedArtifact(Base):
 
     __tablename__ = "published_artifacts"
     run_id: Mapped[UUID] = MappedColumn[UUID](
-        ForeignKey("jobs.run_id", ondelete="RESTRICT"), primary_key=True
+        ForeignKey(column="jobs.run_id", ondelete="RESTRICT"), primary_key=True
     )
     manifest: Mapped[dict[str, object]] = MappedColumn[dict[str, object]](JSONB)
-    bundle_digest: Mapped[str] = MappedColumn[str](String(64))
+    bundle_digest: Mapped[str] = MappedColumn[str](String(length=64))
     created_at: Mapped[datetime] = MappedColumn[datetime](
         DateTime(timezone=True), server_default=func.clock_timestamp()
     )

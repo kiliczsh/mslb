@@ -23,7 +23,7 @@ from mslb_api.streams import ArtifactResponse, EventResponse
 def register_results(*, router: APIRouter, queries: Queries, database: Database) -> None:
     """Register the results endpoints on the composed application router."""
 
-    @router.get("/simulations/{run_id}/events", response_model=Page[PersistedEvent])
+    @router.get(path="/simulations/{run_id}/events", response_model=Page[PersistedEvent])
     async def events(
         run_id: UUID,
         limit: Limit = 100,
@@ -32,9 +32,13 @@ def register_results(*, router: APIRouter, queries: Queries, database: Database)
         end_tick: Tick = 1_000_000,
     ) -> Response:
         """Page committed events within inclusive logical tick bounds."""
-        return json_response(await queries.events(run_id, limit, cursor, start_tick, end_tick))
+        return json_response(
+            model=await queries.events(
+                run_id=run_id, limit=limit, cursor=cursor, start_tick=start_tick, end_tick=end_tick
+            )
+        )
 
-    @router.get("/simulations/{run_id}/metrics", response_model=MetricsView | ChartView)
+    @router.get(path="/simulations/{run_id}/metrics", response_model=MetricsView | ChartView)
     async def metrics(
         run_id: UUID,
         metric: ChartMetric | None = None,
@@ -46,18 +50,29 @@ def register_results(*, router: APIRouter, queries: Queries, database: Database)
         """Read exact saved summaries or bounded chart buckets without execution."""
         if metric is not None:
             return json_response(
-                await queries.chart(run_id, metric, start_tick, end_tick, max_points, server_id)
+                model=await queries.chart(
+                    run_id=run_id,
+                    metric=metric,
+                    start_tick=start_tick,
+                    end_tick=end_tick,
+                    max_points=max_points,
+                    server_id=server_id,
+                )
             )
         return json_response(
-            await queries.metrics(run_id, (server_id,) if server_id is not None else ())
+            model=await queries.metrics(
+                run_id=run_id, server_ids=(server_id,) if server_id is not None else ()
+            )
         )
 
-    @router.get("/simulations/{run_id}/metrics/servers", response_model=Page[ServerMetricView])
+    @router.get(path="/simulations/{run_id}/metrics/servers", response_model=Page[ServerMetricView])
     async def server_metrics(run_id: UUID, limit: Limit = 100, cursor: Cursor = None) -> Response:
         """Page exact persisted server metrics without loading all histories."""
-        return json_response(await queries.server_metrics(run_id, limit, cursor))
+        return json_response(
+            model=await queries.server_metrics(run_id=run_id, limit=limit, cursor=cursor)
+        )
 
-    @router.get("/simulations/{run_id}/playback", response_model=PlaybackView)
+    @router.get(path="/simulations/{run_id}/playback", response_model=PlaybackView)
     async def playback(
         run_id: UUID,
         tick: Tick = 0,
@@ -68,18 +83,18 @@ def register_results(*, router: APIRouter, queries: Queries, database: Database)
     ) -> Response:
         """Read bounded saved membership and request slices at a logical tick."""
         return json_response(
-            await queries.playback(
-                run_id,
-                tick,
-                server_offset,
-                request_kind,
-                server_id,
-                request_offset,
+            model=await queries.playback(
+                run_id=run_id,
+                tick=tick,
+                server_offset=server_offset,
+                request_kind=request_kind,
+                server_id=server_id,
+                request_offset=request_offset,
             )
         )
 
     @router.get(
-        "/simulations/{run_id}/artifact",
+        path="/simulations/{run_id}/artifact",
         response_class=Response,
         responses={
             HTTPStatus.OK.value: {
@@ -96,7 +111,7 @@ def register_results(*, router: APIRouter, queries: Queries, database: Database)
         return ArtifactResponse(downloads=(await queries.download(run_id=run_id, name=name),))
 
     @router.get(
-        "/simulations/{run_id}/inputs",
+        path="/simulations/{run_id}/inputs",
         response_class=Response,
         responses={
             HTTPStatus.OK.value: {
@@ -115,7 +130,7 @@ def register_results(*, router: APIRouter, queries: Queries, database: Database)
         return ArtifactResponse(downloads=downloads, archive=True)
 
     @router.get(
-        "/simulations/{run_id}/stream",
+        path="/simulations/{run_id}/stream",
         response_class=Response,
         responses={
             HTTPStatus.OK.value: {"content": {"text/event-stream": {"schema": {"type": "string"}}}}
@@ -125,9 +140,9 @@ def register_results(*, router: APIRouter, queries: Queries, database: Database)
         """Replay committed IDs and bounded ephemeral progress through SSE."""
         last = request.headers.get("last-event-id", "0")
         if not last.isascii() or not last.isdecimal() or len(last) > 5:
-            raise OperationError("VALIDATION_ERROR", "Invalid Last-Event-ID")
-        feed = EventFeed(database, run_id, int(last))
-        initial = await queries.run(run_id)
+            raise OperationError(code="VALIDATION_ERROR", message="Invalid Last-Event-ID")
+        feed = EventFeed(database=database, run_id=run_id, after_sequence=int(last))
+        initial = await queries.run(run_id=run_id)
         return EventResponse(
             source=feed.stream(initial=initial),
             media_type="text/event-stream",

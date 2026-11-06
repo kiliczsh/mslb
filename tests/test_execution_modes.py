@@ -100,7 +100,7 @@ def test_legacy_history_projects_current_mode_without_mutating_storage() -> None
     assert canonical_bytes(value=row.configuration) == before
 
 
-@pytest.mark.parametrize("mode", [None, "sequential", "concurrent"])
+@pytest.mark.parametrize(argnames="mode", argvalues=[None, "sequential", "concurrent"])
 def test_cli_defaults_and_explicit_modes_generate_and_replay(
     tmp_path: Path, mode: str | None
 ) -> None:
@@ -118,7 +118,7 @@ def test_cli_defaults_and_explicit_modes_generate_and_replay(
             "scripts/generate_example.py",
             *arguments,
             "--output",
-            str(output),
+            str(object=output),
             *mode_arguments,
         ],
         capture_output=True,
@@ -132,7 +132,7 @@ def test_cli_defaults_and_explicit_modes_generate_and_replay(
             "scripts/validate_concurrent.py",
             *arguments,
             "--run",
-            str(output),
+            str(object=output),
             *mode_arguments,
         ],
         capture_output=True,
@@ -155,7 +155,7 @@ def test_bundle_cli_without_configuration_uses_sequential(tmp_path: Path) -> Non
             "--requests",
             "/fixtures/core/requests.csv",
             "--output",
-            str(destination),
+            str(object=destination),
         ],
         capture_output=True,
         text=True,

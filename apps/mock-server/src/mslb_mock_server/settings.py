@@ -16,7 +16,7 @@ class Settings:
 
     def __post_init__(self) -> None:
         """Reject inconsistent service access or execution bounds at construction."""
-        if not re.fullmatch(r"[a-z][a-z0-9-]{0,127}", self.backend_id):
+        if not re.fullmatch(pattern=r"[a-z][a-z0-9-]{0,127}", string=self.backend_id):
             raise ValueError("Invalid backend identity")
         if (
             type(self.logical_admission_mem_mb) is not int
@@ -31,6 +31,8 @@ class Settings:
         """Load and validate the service's explicit environment policy."""
         return cls(
             backend_id=os.environ["BACKEND_ID"],
-            logical_admission_mem_mb=int(os.environ.get("LOGICAL_ADMISSION_MEM_MB", "1024")),
-            max_inflight=int(os.environ.get("MAX_INFLIGHT", "4")),
+            logical_admission_mem_mb=int(
+                os.environ.get(key="LOGICAL_ADMISSION_MEM_MB", default="1024")
+            ),
+            max_inflight=int(os.environ.get(key="MAX_INFLIGHT", default="4")),
         )

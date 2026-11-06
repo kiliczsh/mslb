@@ -93,7 +93,7 @@ class RunWaiter:
     @staticmethod
     def message(*, statuses: tuple[RunStatus, ...]) -> str:
         return "Persisted runs: " + "; ".join(
-            f"{str(row.run_id)[:8]} {row.status}, attempt {row.attempts}"
+            f"{str(object=row.run_id)[:8]} {row.status}, attempt {row.attempts}"
             + (
                 f", tick {row.progress.next_tick}, {row.progress.committed_events} committed events"
                 if row.progress is not None

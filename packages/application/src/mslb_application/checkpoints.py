@@ -57,19 +57,19 @@ def write_checkpoint(
     """Fsync a content-addressed file; callers still must commit its DB reference."""
     if sys.platform != "linux":
         raise RuntimeError("Durable checkpoint storage requires Linux containers")
-    verify_snapshot(snapshot)
-    _preflight(simulation, metrics, max_bytes)
-    servers, requests = domain_inputs(snapshot)
+    verify_snapshot(snapshot=snapshot)
+    _preflight(simulation=simulation, metrics=metrics, maximum=max_bytes)
+    servers, requests = domain_inputs(snapshot=snapshot)
     _require(
-        simulation.initial_servers == servers
+        condition=simulation.initial_servers == servers
         and simulation.requests == requests
-        and simulation.config == domain_config(snapshot.configuration)
+        and simulation.config == domain_config(settings=snapshot.configuration)
         and metrics.requests == simulation.by_id
         and metrics.max_series == simulation.config.max_metric_series,
-        "Execution differs from its immutable snapshot",
+        message="Execution differs from its immutable snapshot",
     )
-    state = _capture(snapshot, simulation, metrics, prefixes)
-    _restore(snapshot, state)
+    state = _capture(snapshot=snapshot, simulation=simulation, metrics=metrics, streams=prefixes)
+    _restore(snapshot=snapshot, state=state)
     directory.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(dir=directory, prefix=".checkpoint-", delete=False) as stream:
         temporary = Path(stream.name)
@@ -78,42 +78,46 @@ def write_checkpoint(
             encoder = json.JSONEncoder(
                 ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
             )
-            for piece in chain(encoder.iterencode(state.model_dump(mode="json")), ("\n",)):
-                data = piece.encode("utf-8")
+            for piece in chain(encoder.iterencode(o=state.model_dump(mode="json")), ("\n",)):
+                data = piece.encode(encoding="utf-8")
                 size += len(data)
                 if size > max_bytes:
                     raise OperationError(
-                        "RESOURCE_LIMIT_EXCEEDED", "Checkpoint bytes exceed the budget"
+                        code="RESOURCE_LIMIT_EXCEEDED", message="Checkpoint bytes exceed the budget"
                     )
                 if stream.write(data) != len(data):
                     raise OSError("Short checkpoint write")
                 digest.update(data)
             stream.flush()
-            os.fsync(stream.fileno())
+            os.fsync(fd=stream.fileno())
             checksum = digest.hexdigest()
             path = directory / f"checkpoint-{checksum}.json"
             try:
-                os.link(temporary, path)
+                os.link(src=temporary, dst=path)
             except FileExistsError:
-                _require(not path.is_symlink() and path.is_file(), "Unsafe existing checkpoint")
-                with path.open("rb") as existing:
+                _require(
+                    condition=not path.is_symlink() and path.is_file(),
+                    message="Unsafe existing checkpoint",
+                )
+                with path.open(mode="rb") as existing:
                     _require(
-                        hashlib.sha256(existing.read(max_bytes + 1)).hexdigest() == checksum,
-                        "Existing checkpoint identity mismatch",
+                        condition=hashlib.sha256(data=existing.read(max_bytes + 1)).hexdigest()
+                        == checksum,
+                        message="Existing checkpoint identity mismatch",
                     )
-            directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+            directory_fd = os.open(path=directory, flags=os.O_RDONLY | os.O_DIRECTORY)
             try:
-                os.fsync(directory_fd)
+                os.fsync(fd=directory_fd)
             finally:
-                os.close(directory_fd)
+                os.close(fd=directory_fd)
             return CheckpointArtifact(
-                path,
-                checksum,
-                size,
-                state.next_tick,
-                state.executed_intervals,
-                state.event_count,
-                state.prefixes,
+                path=path,
+                sha256=checksum,
+                size_bytes=size,
+                next_tick=state.next_tick,
+                executed_intervals=state.executed_intervals,
+                event_count=state.event_count,
+                prefixes=state.prefixes,
             )
         finally:
             stream.close()
@@ -131,17 +135,28 @@ def read_checkpoint(
     Prefix streams may contain an uncommitted suffix; only the sealed byte range
     is read. On return each stream is positioned at its verified append offset.
     """
-    verify_snapshot(snapshot)
-    _require(bool(re.fullmatch(r"[0-9a-f]{64}", expected_digest)), "Invalid checkpoint digest")
+    verify_snapshot(snapshot=snapshot)
+    _require(
+        condition=bool(re.fullmatch(pattern=r"[0-9a-f]{64}", string=expected_digest)),
+        message="Invalid checkpoint digest",
+    )
     payload = stream.read(MAX_CHECKPOINT_BYTES + 1)
-    _require(len(payload) <= MAX_CHECKPOINT_BYTES, "Checkpoint payload too large")
-    _require(hashlib.sha256(payload).hexdigest() == expected_digest, "Checkpoint digest mismatch")
+    _require(condition=len(payload) <= MAX_CHECKPOINT_BYTES, message="Checkpoint payload too large")
+    _require(
+        condition=hashlib.sha256(data=payload).hexdigest() == expected_digest,
+        message="Checkpoint digest mismatch",
+    )
     try:
-        state = IntervalCheckpoint.model_validate_json(payload)
+        state = IntervalCheckpoint.model_validate_json(json_data=payload)
     except ValidationError:
-        raise OperationError("CHECKPOINT_INVALID", "Invalid checkpoint schema") from None
-    _require(set(prefixes) == set(PREFIX_NAMES), "All four checkpoint prefixes are required")
-    restored = _restore(snapshot, state)
+        raise OperationError(
+            code="CHECKPOINT_INVALID", message="Invalid checkpoint schema"
+        ) from None
+    _require(
+        condition=set(prefixes) == set(PREFIX_NAMES),
+        message="All four checkpoint prefixes are required",
+    )
+    restored = _restore(snapshot=snapshot, state=state)
     for prefix in state.prefixes:
-        _scan_prefix(prefix.name, prefixes[prefix.name], prefix)
+        _scan_prefix(name=prefix.name, stream=prefixes[prefix.name], expected=prefix)
     return restored

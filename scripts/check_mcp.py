@@ -20,13 +20,13 @@ async def result(
     reply = await client.call_tool(name=name, arguments=arguments)
     if reply.is_error:
         raise RuntimeError("MCP smoke tool did not succeed: " + name)
-    return TypeAdapter(dict[str, JsonValue]).validate_python(reply.structured_content)
+    return TypeAdapter(type=dict[str, JsonValue]).validate_python(reply.structured_content)
 
 
 async def main() -> None:
     headers = (
         {"Authorization": "Bearer " + os.environ["AUTH_TOKEN"]}
-        if os.environ.get("AUTH_ENABLED") == "true"
+        if os.environ.get(key="AUTH_ENABLED") == "true"
         else {}
     )
     source = await asyncio.to_thread(Path("/fixtures/core/requests.csv").read_bytes)
@@ -77,7 +77,9 @@ async def main() -> None:
         await client.read_resource(uri=f"mslb://runs/{run_id}/events")
         if len((await client.list_prompts()).prompts) != 3:
             raise RuntimeError("MCP prompt catalog is incomplete")
-        await client.get_prompt(name="analyze_performance", arguments={"run_id": str(run_id)})
+        await client.get_prompt(
+            name="analyze_performance", arguments={"run_id": str(object=run_id)}
+        )
         print(
             json.dumps(
                 obj={

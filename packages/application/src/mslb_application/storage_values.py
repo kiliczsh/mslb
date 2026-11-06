@@ -20,7 +20,7 @@ class StorageLimits:
             type(value) is not int or value < 0
             for value in (self.quota_bytes, self.min_free_bytes, self.max_entries)
         ) or not (1 <= self.quota_bytes <= 5 * 1024**3 and 1 <= self.max_entries <= 100_000):
-            raise OperationError("VALIDATION_ERROR", "Invalid managed storage limits")
+            raise OperationError(code="VALIDATION_ERROR", message="Invalid managed storage limits")
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,11 +33,11 @@ class FileReference:
 
     def __post_init__(self) -> None:
         if (
-            not re.fullmatch(r"[0-9a-f]{64}", self.sha256)
+            not re.fullmatch(pattern=r"[0-9a-f]{64}", string=self.sha256)
             or type(self.size_bytes) is not int
             or not 0 <= self.size_bytes <= 256 * 1024**2
         ):
-            raise OperationError("VALIDATION_ERROR", "Invalid managed file reference")
+            raise OperationError(code="VALIDATION_ERROR", message="Invalid managed file reference")
 
 
 @dataclass(frozen=True, slots=True)

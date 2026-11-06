@@ -24,7 +24,7 @@ class Guard:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        request_id = str(uuid4())
+        request_id = str(object=uuid4())
         scope.setdefault("state", {})["request_id"] = request_id
         headers = Headers(scope=scope)
         path, method = scope["path"], scope["method"]
@@ -38,7 +38,9 @@ class Guard:
                 or sum(len(k) + len(v) for k, v in scope["headers"]) > 16384
                 or len(path) + len(scope.get("query_string", b"")) > 4096
             ):
-                raise OperationError("PAYLOAD_TOO_LARGE", "Request headers or URL exceed limits")
+                raise OperationError(
+                    code="PAYLOAD_TOO_LARGE", message="Request headers or URL exceed limits"
+                )
             for name in (
                 "host",
                 "origin",
@@ -53,23 +55,28 @@ class Guard:
                 "mcp-method",
                 "mcp-name",
             ):
-                if len(headers.getlist(name)) > 1:
-                    raise OperationError("VALIDATION_ERROR", "Duplicate singleton request header")
+                if len(headers.getlist(key=name)) > 1:
+                    raise OperationError(
+                        code="VALIDATION_ERROR", message="Duplicate singleton request header"
+                    )
             if headers.get("host", "").lower() not in self.settings.allowed_hosts:
-                raise OperationError("FORBIDDEN", "Unexpected request Host")
+                raise OperationError(code="FORBIDDEN", message="Unexpected request Host")
             origin = headers.get("origin")
             if origin is not None and origin not in self.settings.allowed_origins:
-                raise OperationError("FORBIDDEN", "Unexpected request Origin")
+                raise OperationError(code="FORBIDDEN", message="Unexpected request Origin")
             if any(
                 key.lower() in {"token", "access_token", "authorization"}
                 for key in QueryParams(scope.get("query_string", b""))
             ):
                 raise OperationError(
-                    "UNAUTHORIZED", "Bearer credentials belong in the Authorization header"
+                    code="UNAUTHORIZED",
+                    message="Bearer credentials belong in the Authorization header",
                 )
             if method == "OPTIONS":
                 response = error_response(
-                    "FORBIDDEN", "Cross-origin preflight is not enabled", request_id
+                    code="FORBIDDEN",
+                    message="Cross-origin preflight is not enabled",
+                    request_id=request_id,
                 )
                 if origin is not None and origin in self.settings.allowed_origins:
                     response.status_code = HTTPStatus.NO_CONTENT.value
@@ -87,17 +94,21 @@ class Guard:
                 await response(scope, receive, send)
                 return
             if not health and self.settings.auth_enabled:
-                supplied = headers.get("authorization", "").encode("utf-8")
+                supplied = headers.get("authorization", "").encode(encoding="utf-8")
                 expected = ("Bearer " + self.settings.token).encode()
                 if not hmac.compare_digest(supplied, expected):
-                    raise OperationError("UNAUTHORIZED", "A valid bearer credential is required")
+                    raise OperationError(
+                        code="UNAUTHORIZED", message="A valid bearer credential is required"
+                    )
             if not health:
                 if (
                     self.active >= self.settings.request_limit
                     or (streaming and self.streams >= self.settings.stream_limit)
                     or (upload and self.uploading)
                 ):
-                    raise OperationError("RATE_LIMITED", "API request capacity is occupied")
+                    raise OperationError(
+                        code="RATE_LIMITED", message="API request capacity is occupied"
+                    )
                 self.active += 1
                 self.streams += int(streaming)
                 self.uploading = self.uploading or upload
@@ -107,9 +118,11 @@ class Guard:
             if length is not None and (
                 not length.isascii() or not length.isdecimal() or len(length) > 10
             ):
-                raise OperationError("VALIDATION_ERROR", "Invalid Content-Length")
+                raise OperationError(code="VALIDATION_ERROR", message="Invalid Content-Length")
             if length is not None and int(length) > maximum:
-                raise OperationError("PAYLOAD_TOO_LARGE", "Request body exceeds its byte limit")
+                raise OperationError(
+                    code="PAYLOAD_TOO_LARGE", message="Request body exceeds its byte limit"
+                )
             received = 0
 
             async def bounded_receive() -> Message:
@@ -119,7 +132,7 @@ class Guard:
                     received += len(message.get("body", b""))
                     if received > maximum:
                         raise OperationError(
-                            "PAYLOAD_TOO_LARGE", "Request body exceeds its byte limit"
+                            code="PAYLOAD_TOO_LARGE", message="Request body exceeds its byte limit"
                         )
                 return message
 
@@ -161,7 +174,9 @@ class Guard:
         except OperationError as error:
             if started:
                 raise
-            response = error_response(error.code, str(error), request_id)
+            response = error_response(
+                code=error.code, message=str(object=error), request_id=request_id
+            )
             allowed_origin = headers.get("origin")
             if allowed_origin is not None and allowed_origin in self.settings.allowed_origins:
                 response.headers["Access-Control-Allow-Origin"] = allowed_origin

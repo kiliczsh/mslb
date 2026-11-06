@@ -35,7 +35,7 @@ def error_response(
         error=ErrorInfo(code=code, message=message, details=details), request_id=request_id
     )
     return Response(
-        envelope.model_dump_json(),
+        content=envelope.model_dump_json(),
         status_code=STATUS.get(code, HTTPStatus.INTERNAL_SERVER_ERROR.value),
         media_type="application/json",
         headers=headers,

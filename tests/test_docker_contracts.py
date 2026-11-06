@@ -34,8 +34,8 @@ def test_docker_settings_are_distinct_strict_and_bounded() -> None:
         ("autoscaling", {"enabled": True}),
         ("image", "attacker/image"),
     ):
-        with pytest.raises(ValidationError):
-            DockerSettings.model_validate({field: value})
+        with pytest.raises(expected_exception=ValidationError):
+            DockerSettings.model_validate(obj={field: value})
 
 
 def test_snapshot_rejects_arrivals_outside_real_runtime_and_changes_identity_with_provenance() -> (
@@ -50,15 +50,16 @@ def test_snapshot_rejects_arrivals_outside_real_runtime_and_changes_identity_wit
         "deployment_digest": "b" * 64,
         "configuration": DockerSettings(duration_seconds=2),
     }
-    snapshot = DockerSnapshot.model_validate(body)
+    snapshot = DockerSnapshot.model_validate(obj=body)
     assert (
-        DockerSnapshot.model_validate_json(snapshot.model_dump_json()).digest() == snapshot.digest()
+        DockerSnapshot.model_validate_json(json_data=snapshot.model_dump_json()).digest()
+        == snapshot.digest()
     )
-    with pytest.raises(ValidationError):
-        DockerSnapshot.model_validate({**body, "latest_arrival": 2})
+    with pytest.raises(expected_exception=ValidationError):
+        DockerSnapshot.model_validate(obj={**body, "latest_arrival": 2})
     for invalid in (True, 1.0, "1"):
-        with pytest.raises(ValidationError):
-            DockerSnapshot.model_validate(snapshot.model_dump() | {"schema_version": invalid})
+        with pytest.raises(expected_exception=ValidationError):
+            DockerSnapshot.model_validate(obj=snapshot.model_dump() | {"schema_version": invalid})
     assert snapshot.model_copy(update={"deployment_id": uuid4()}).digest() != snapshot.digest()
 
 
@@ -105,8 +106,8 @@ def test_creation_body_has_only_approved_security_resources_network_and_identity
     assert intent.name == f"mslb-{intent.intent_id.hex}-2"
     raw = intent.model_dump(mode="json")
     for field in ("command", "host_mount", "privileged", "labels", "devices"):
-        with pytest.raises(ValidationError):
-            CreationIntent.model_validate_json(json.dumps(raw | {field: "arbitrary"}))
+        with pytest.raises(expected_exception=ValidationError):
+            CreationIntent.model_validate_json(json_data=json.dumps(obj=raw | {field: "arbitrary"}))
 
 
 def test_deployment_and_artifact_namespaces_cannot_alias_logical_output() -> None:
@@ -124,7 +125,7 @@ def test_deployment_and_artifact_namespaces_cannot_alias_logical_output() -> Non
                 "static": [a.model_dump(), b.model_dump()],
             }
         )
-    with pytest.raises(ValidationError):
+    with pytest.raises(expected_exception=ValidationError):
         DeploymentSpec(image_id="sha256:" + "c" * 64, network_id="d" * 64, static=(b, a))
     identifier = uuid4()
     files = {
@@ -132,7 +133,7 @@ def test_deployment_and_artifact_namespaces_cannot_alias_logical_output() -> Non
         for name in ("http_events.jsonl", "runtime_summary.json", "container_lifecycle.jsonl")
     }
     data = {
-        "run_id": str(identifier),
+        "run_id": str(object=identifier),
         "publication_fence": 3,
         "snapshot_digest": "f" * 64,
         "total": 2,
@@ -142,22 +143,26 @@ def test_deployment_and_artifact_namespaces_cannot_alias_logical_output() -> Non
         "unexecuted": 0,
         "artifacts": files,
     }
-    valid = DockerManifest.model_validate_json(json.dumps(data))
+    valid = DockerManifest.model_validate_json(json_data=json.dumps(obj=data))
     assert valid.total == 2
     for invalid in (True, 1.0, "1"):
-        with pytest.raises(ValidationError):
-            DockerManifest.model_validate_json(json.dumps(data | {"schema_version": invalid}))
+        with pytest.raises(expected_exception=ValidationError):
+            DockerManifest.model_validate_json(
+                json_data=json.dumps(obj=data | {"schema_version": invalid})
+            )
     for filename in ("run.jsonl", "metrics.json", "../runtime_summary.json"):
         invalid = {name: value for name, value in files.items() if name != "runtime_summary.json"}
         invalid[filename] = {
             **files["runtime_summary.json"],
             "key": f"docker/{identifier.hex}/3/{filename}",
         }
-        with pytest.raises(ValidationError):
-            DockerManifest.model_validate_json(json.dumps(data | {"artifacts": invalid}))
+        with pytest.raises(expected_exception=ValidationError):
+            DockerManifest.model_validate_json(
+                json_data=json.dumps(obj=data | {"artifacts": invalid})
+            )
     files["http_events.jsonl"]["key"] = "runs/logical/run.jsonl"
-    with pytest.raises(ValidationError):
-        DockerManifest.model_validate_json(json.dumps(data))
+    with pytest.raises(expected_exception=ValidationError):
+        DockerManifest.model_validate_json(json_data=json.dumps(obj=data))
 
 
 def test_fixed_numeric_fields_reject_literal_equality_coercion() -> None:
@@ -178,9 +183,9 @@ def test_fixed_numeric_fields_reject_literal_equality_coercion() -> None:
         ("max_operations", 2_000_000),
         ("work_timeout_ms", 2000),
     ):
-        for invalid in (float(expected), str(expected), True):
-            with pytest.raises(ValidationError):
-                BackendHealth.model_validate(base.model_dump() | {field: invalid})
+        for invalid in (float(expected), str(object=expected), True):
+            with pytest.raises(expected_exception=ValidationError):
+                BackendHealth.model_validate(obj=base.model_dump() | {field: invalid})
     for invalid in (True, 1.0, "1"):
-        with pytest.raises(ValidationError):
-            PhysicalScaling.model_validate({"evaluation_seconds": invalid})
+        with pytest.raises(expected_exception=ValidationError):
+            PhysicalScaling.model_validate(obj={"evaluation_seconds": invalid})

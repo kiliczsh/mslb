@@ -38,7 +38,7 @@ FAILURES = {
 
 def _duration(seconds: int) -> None:
     if type(seconds) is not int or not 1 <= seconds <= 300:
-        raise StoreError("VALIDATION_ERROR", "Invalid control lease duration")
+        raise StoreError(code="VALIDATION_ERROR", message="Invalid control lease duration")
 
 
 async def current(
@@ -46,7 +46,7 @@ async def current(
 ) -> tuple[DockerControlSlot, Job, DockerRunState]:
     """Require the exact current control owner, phase and unexpired database lease."""
     slot = await session.scalar(
-        select(DockerControlSlot)
+        statement=select(DockerControlSlot)
         .where(
             DockerControlSlot.id == 1,
             DockerControlSlot.run_id == lease.run_id,
@@ -58,15 +58,17 @@ async def current(
         .with_for_update()
     )
     if slot is None:
-        raise StoreError("FENCE_LOST", "Docker control lease is no longer current")
+        raise StoreError(code="FENCE_LOST", message="Docker control lease is no longer current")
     job = await session.scalar(
-        select(Job).where(Job.run_id == lease.run_id, Job.kind == "docker").with_for_update()
+        statement=select(Job)
+        .where(Job.run_id == lease.run_id, Job.kind == "docker")
+        .with_for_update()
     )
-    state = await session.get(DockerRunState, lease.run_id)
+    state = await session.get(entity=DockerRunState, ident=lease.run_id)
     if job is None or state is None:
-        raise StoreError("NOT_READY", "Docker control references missing state")
+        raise StoreError(code="NOT_READY", message="Docker control references missing state")
     if job.status not in TERMINAL and (job.fence != lease.fence or job.owner != lease.owner):
-        raise StoreError("FENCE_LOST", "Docker execution ownership changed")
+        raise StoreError(code="FENCE_LOST", message="Docker execution ownership changed")
     return slot, job, state
 
 
@@ -75,7 +77,7 @@ async def guard(
 ) -> DockerControlSlot:
     """Recheck server-time ownership in the final mutation; roll back earlier changes on expiry."""
     statement = (
-        update(DockerControlSlot)
+        update(table=DockerControlSlot)
         .where(
             DockerControlSlot.id == 1,
             DockerControlSlot.run_id == lease.run_id,
@@ -94,15 +96,17 @@ async def guard(
             fence=DockerControlSlot.fence + 1,
             cleanup_attempts=0,
         )
-    row = await session.scalar(statement.returning(DockerControlSlot))
+    row = await session.scalar(statement=statement.returning(DockerControlSlot))
     if row is None:
-        raise StoreError("FENCE_LOST", "Docker control expired before commit")
+        raise StoreError(code="FENCE_LOST", message="Docker control expired before commit")
     return row
 
 
 def execution(lease: ControlLease, job: Job) -> None:
     if lease.phase != "running" or job.status != "running":
-        raise StoreError("INVALID_STATE", "Only active execution can increase Docker work")
+        raise StoreError(
+            code="INVALID_STATE", message="Only active execution can increase Docker work"
+        )
 
 
 class DockerControl:
@@ -112,40 +116,44 @@ class DockerControl:
         self.database = database
 
     async def cancel(self, run_id: UUID) -> JobRecord:
-        return await Jobs(self.database).cancel(run_id, kind="docker")
+        return await Jobs(database=self.database).cancel(run_id=run_id, kind="docker")
 
     async def claim(self, owner: str, lease_seconds: int = 30) -> ControlLease | None:
         """Obtain exclusive ownership or claim expired work for cleanup, never blind replay."""
-        _duration(lease_seconds)
+        _duration(seconds=lease_seconds)
         if not 1 <= len(owner.encode()) <= 128:
-            raise StoreError("VALIDATION_ERROR", "Invalid controller identity")
+            raise StoreError(code="VALIDATION_ERROR", message="Invalid controller identity")
 
         async def operation(session: AsyncSession) -> ControlLease | None:
             slot = await session.scalar(
-                select(DockerControlSlot)
+                statement=select(DockerControlSlot)
                 .where(DockerControlSlot.id == 1)
                 .with_for_update(skip_locked=True)
             )
             if slot is None:
                 return None
-            now = await _clock(session)
+            now = await _clock(session=session)
             if slot.run_id is not None:
                 if slot.lease_expires_at is not None and slot.lease_expires_at > now:
                     return None
                 job = await session.scalar(
-                    select(Job)
+                    statement=select(Job)
                     .where(Job.run_id == slot.run_id, Job.kind == "docker")
                     .with_for_update()
                 )
-                state = await session.get(DockerRunState, slot.run_id)
+                state = await session.get(entity=DockerRunState, ident=slot.run_id)
                 if job is None or state is None:
-                    raise StoreError("NOT_READY", "Docker slot references missing state")
+                    raise StoreError(
+                        code="NOT_READY", message="Docker slot references missing state"
+                    )
                 if job.status not in TERMINAL:
                     job.status = "cancelled" if job.status == "cancel_requested" else "failed"
                     job.error_code, job.completed_at = "INTERRUPTED", now
                     job.fence, job.owner, job.lease_expires_at = slot.fence + 1, None, None
                     state.desired_status, state.desired_error = job.status, "INTERRUPTED"
-                    await _end_attempt(session, job, "controller_interrupted", now)
+                    await _end_attempt(
+                        session=session, job=job, outcome="controller_interrupted", now=now
+                    )
                 if slot.phase != "cleanup":
                     slot.cleanup_attempts = 0
                 slot.phase = "cleanup"
@@ -155,10 +163,10 @@ class DockerControl:
                 slot.cleanup_attempts += 1
             else:
                 job = await session.scalar(
-                    select(Job)
+                    statement=select(Job)
                     .where(Job.kind == "docker", Job.status == "queued", Job.attempts == 0)
                     .order_by(Job.created_at, Job.run_id)
-                    .limit(1)
+                    .limit(limit=1)
                     .with_for_update(skip_locked=True)
                 )
                 if job is None:
@@ -174,7 +182,9 @@ class DockerControl:
                     slot.fence,
                     slot.lease_expires_at,
                 )
-                session.add(Attempt(run_id=job.run_id, number=1, fence=slot.fence, owner=owner))
+                session.add(
+                    instance=Attempt(run_id=job.run_id, number=1, fence=slot.fence, owner=owner)
+                )
             await session.flush()
             expires_at = slot.lease_expires_at
             if (
@@ -182,7 +192,9 @@ class DockerControl:
                 or expires_at is None
                 or slot.phase not in {"running", "cleanup"}
             ):
-                raise StoreError("NOT_READY", "Claim did not establish Docker ownership")
+                raise StoreError(
+                    code="NOT_READY", message="Claim did not establish Docker ownership"
+                )
             return ControlLease(
                 run_id=slot.run_id,
                 fence=slot.fence,
@@ -191,21 +203,21 @@ class DockerControl:
                 phase="running" if slot.phase == "running" else "cleanup",
             )
 
-        return await self.database.transaction(operation)
+        return await self.database.transaction(operation=operation)
 
     async def renew(self, lease: ControlLease, lease_seconds: int = 30) -> ControlLease:
         """Renew the exact active controller fence using authoritative database time."""
-        _duration(lease_seconds)
+        _duration(seconds=lease_seconds)
 
         async def operation(session: AsyncSession) -> ControlLease:
-            slot, job, _state = await current(session, lease)
-            expires = await _clock(session) + timedelta(seconds=lease_seconds)
+            slot, job, _state = await current(session=session, lease=lease)
+            expires = await _clock(session=session) + timedelta(seconds=lease_seconds)
             if job.status not in TERMINAL:
                 job.lease_expires_at = expires
-            await guard(session, lease)
+            await guard(session=session, lease=lease)
             # The final lease-extension statement still tests the old slot expiry.
             updated = await session.scalar(
-                update(DockerControlSlot)
+                statement=update(table=DockerControlSlot)
                 .where(
                     DockerControlSlot.id == 1,
                     DockerControlSlot.run_id == lease.run_id,
@@ -217,10 +229,16 @@ class DockerControl:
                 .returning(DockerControlSlot.id)
             )
             if updated is None:
-                raise StoreError("FENCE_LOST", "Docker lease expired before renewal")
-            return ControlLease(lease.run_id, slot.fence, lease.owner, expires, lease.phase)
+                raise StoreError(code="FENCE_LOST", message="Docker lease expired before renewal")
+            return ControlLease(
+                run_id=lease.run_id,
+                fence=slot.fence,
+                owner=lease.owner,
+                expires_at=expires,
+                phase=lease.phase,
+            )
 
-        return await self.database.transaction(operation)
+        return await self.database.transaction(operation=operation)
 
     async def begin_cleanup(
         self,
@@ -234,36 +252,36 @@ class DockerControl:
             or (outcome == "failed" and error_code not in FAILURES)
             or (outcome != "failed" and error_code is not None)
         ):
-            raise StoreError("VALIDATION_ERROR", "Invalid Docker terminal outcome")
+            raise StoreError(code="VALIDATION_ERROR", message="Invalid Docker terminal outcome")
 
         async def operation(session: AsyncSession) -> ControlLease:
-            slot, job, state = await current(session, lease)
+            slot, job, state = await current(session=session, lease=lease)
             if lease.phase != "running" or job.status in TERMINAL:
-                raise StoreError("INVALID_STATE", "Docker execution is not active")
+                raise StoreError(code="INVALID_STATE", message="Docker execution is not active")
             if outcome == "cancelled" and job.status != "cancel_requested":
-                raise StoreError("INVALID_STATE", "Cancellation was not requested")
+                raise StoreError(code="INVALID_STATE", message="Cancellation was not requested")
             state.desired_status = "cancelled" if job.status == "cancel_requested" else outcome
             state.desired_error = (
                 "INTERRUPTED" if state.desired_status == "cancelled" else error_code
             )
             slot.phase, slot.cleanup_attempts = "cleanup", 1
-            await guard(session, lease)
+            await guard(session=session, lease=lease)
             return ControlLease(
-                lease.run_id,
-                lease.fence,
-                lease.owner,
-                slot.lease_expires_at or lease.expires_at,
-                "cleanup",
+                run_id=lease.run_id,
+                fence=lease.fence,
+                owner=lease.owner,
+                expires_at=slot.lease_expires_at or lease.expires_at,
+                phase="cleanup",
             )
 
-        return await self.database.transaction(operation)
+        return await self.database.transaction(operation=operation)
 
     async def retry_cleanup(self, run_id: UUID) -> None:
         """Explicit operator retry; automatic cleanup never exceeds three ownership attempts."""
 
         async def operation(session: AsyncSession) -> None:
             slot = await session.scalar(
-                select(DockerControlSlot)
+                statement=select(DockerControlSlot)
                 .where(
                     DockerControlSlot.id == 1,
                     DockerControlSlot.run_id == run_id,
@@ -272,12 +290,14 @@ class DockerControl:
                 )
                 .with_for_update()
             )
-            job = await session.get(Job, run_id)
+            job = await session.get(entity=Job, ident=run_id)
             if slot is None or job is None or job.status not in TERMINAL:
-                raise StoreError("INVALID_STATE", "Cleanup is not stalled after interruption")
+                raise StoreError(
+                    code="INVALID_STATE", message="Cleanup is not stalled after interruption"
+                )
             slot.cleanup_attempts, slot.fence, slot.revision = 0, slot.fence + 1, slot.revision + 1
 
-        await self.database.transaction(operation)
+        await self.database.transaction(operation=operation)
 
     async def finish_cleanup(
         self, lease: ControlLease, manifest: DockerManifest | None = None
@@ -285,23 +305,29 @@ class DockerControl:
         """Release the slot only after bounded cleanup and definitive resource resolution."""
         if manifest is not None:
             manifest = DockerManifest.model_validate_json(
-                canonical_bytes(manifest.model_dump(mode="json"))
+                json_data=canonical_bytes(value=manifest.model_dump(mode="json"))
             )
 
         async def operation(session: AsyncSession) -> JobRecord:
-            _slot, job, state = await current(session, lease)
+            _slot, job, state = await current(session=session, lease=lease)
             if lease.phase != "cleanup":
-                raise StoreError("INVALID_STATE", "Cleanup must precede Docker finalization")
+                raise StoreError(
+                    code="INVALID_STATE", message="Cleanup must precede Docker finalization"
+                )
             unresolved = await session.scalar(
-                select(func.count())
+                statement=select(func.count())
                 .select_from(DockerResource)
-                .where(DockerResource.run_id == lease.run_id, DockerResource.state.not_in(RESOLVED))
+                .where(
+                    DockerResource.run_id == lease.run_id,
+                    DockerResource.state.not_in(other=RESOLVED),
+                )
             )
             if unresolved is None:
-                raise StoreError("NOT_READY", "Resource accounting is unavailable")
+                raise StoreError(code="NOT_READY", message="Resource accounting is unavailable")
             if unresolved > 0:
                 raise StoreError(
-                    "INVALID_STATE", "Unresolved Docker resources still reserve capacity"
+                    code="INVALID_STATE",
+                    message="Unresolved Docker resources still reserve capacity",
                 )
             status = (
                 job.status
@@ -311,10 +337,14 @@ class DockerControl:
                 else state.desired_status
             )
             if status not in TERMINAL:
-                raise StoreError("INVALID_STATE", "Docker outcome has not been selected")
+                raise StoreError(
+                    code="INVALID_STATE", message="Docker outcome has not been selected"
+                )
             if status == "completed":
-                run = await session.get(Run, lease.run_id)
-                snapshot = DockerSnapshot.model_validate_json(canonical_bytes(state.snapshot))
+                run = await session.get(entity=Run, ident=lease.run_id)
+                snapshot = DockerSnapshot.model_validate_json(
+                    json_data=canonical_bytes(value=state.snapshot)
+                )
                 if (
                     manifest is None
                     or run is None
@@ -324,21 +354,23 @@ class DockerControl:
                     or snapshot.digest() != run.snapshot_digest
                     or manifest.total != snapshot.request_count
                 ):
-                    raise StoreError("VALIDATION_FAILED", "Docker publication identity is invalid")
+                    raise StoreError(
+                        code="VALIDATION_FAILED", message="Docker publication identity is invalid"
+                    )
                 session.add(
-                    DockerPublication(
+                    instance=DockerPublication(
                         run_id=lease.run_id,
                         manifest=manifest.model_dump(mode="json"),
                         digest=manifest.digest(),
                     )
                 )
             if job.status not in TERMINAL:
-                now = await _clock(session)
+                now = await _clock(session=session)
                 job.status, job.completed_at = status, now
                 job.error_code = "INTERRUPTED" if status == "cancelled" else state.desired_error
                 job.fence, job.owner, job.lease_expires_at = job.fence + 1, None, None
-                await _end_attempt(session, job, status, now)
-            await guard(session, lease, release=True)
-            return JobRecord.from_model(job)
+                await _end_attempt(session=session, job=job, outcome=status, now=now)
+            await guard(session=session, lease=lease, release=True)
+            return JobRecord.from_model(row=job)
 
-        return await self.database.transaction(operation)
+        return await self.database.transaction(operation=operation)

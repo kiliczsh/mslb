@@ -182,7 +182,7 @@ class ResourceEvidenceStore:
                     code="VALIDATION_ERROR", message="Admission requires current host evidence"
                 )
             statement = (
-                update(ResourceEvidence)
+                update(table=ResourceEvidence)
                 .where(
                     ResourceEvidence.id == 1,
                     ResourceEvidence.owner == lease.owner,
@@ -203,7 +203,7 @@ class ResourceEvidenceStore:
             if probe is not None:
                 statement = statement.where(
                     or_(
-                        ResourceEvidence.probe.is_(None),
+                        ResourceEvidence.probe.is_(other=None),
                         ResourceEvidence.probe["measured_at"].astext.cast(
                             type_=DateTime(timezone=True)
                         )

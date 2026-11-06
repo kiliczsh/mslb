@@ -58,7 +58,7 @@ class PersistedEvent(CheckpointModel):
         }
         if self.server_id is not None:
             value["server_id"] = self.server_id
-        return (json.dumps(value, ensure_ascii=False, separators=(",", ":")) + "\n").encode()
+        return (json.dumps(obj=value, ensure_ascii=False, separators=(",", ":")) + "\n").encode()
 
 
 class ProgressCommit(CheckpointModel):

@@ -33,8 +33,8 @@ def saved_run(
 ) -> RunSnapshot:
     settings_type = LegacyRunSettings if mode == "sequential_compat" else RunSettings
     settings = settings_type.model_validate_json(
-        json.dumps(
-            {
+        json_data=json.dumps(
+            obj={
                 "mode": mode,
                 "strategy": strategy,
                 "queue_timeout_ticks": 7,
@@ -53,11 +53,11 @@ def saved_run(
         )
     )
     return make_snapshot(
-        (
+        servers=(
             ServerInput(id="s1", cpu_units_per_tick=1, mem_mb=4, rate_limit_per_sec=1),
             ServerInput(id="s2", cpu_units_per_tick=2, mem_mb=3, rate_limit_per_sec=1),
         ),
-        tuple(
+        requests=tuple(
             RequestInput(t=t, request_id=rid, work_units=work, mem_mb=mem)
             for t, rid, work, mem in (
                 (0, "r0", 7, 3),
@@ -68,30 +68,34 @@ def saved_run(
                 (40, "late", 3, 1),
             )
         ),
-        settings,
+        settings=settings,
     )
 
 
 def execution(snapshot: RunSnapshot) -> tuple[Simulation, MetricAccumulator, dict[str, BinaryIO]]:
-    servers, requests = domain_inputs(snapshot)
+    servers, requests = domain_inputs(snapshot=snapshot)
     return (
-        Simulation(servers, requests, domain_config(snapshot.configuration)),
-        MetricAccumulator(requests, servers),
+        Simulation(
+            servers=servers,
+            requests=requests,
+            config=domain_config(settings=snapshot.configuration),
+        ),
+        MetricAccumulator(requests=requests, servers=servers),
         {name: io.BytesIO() for name in PREFIX_NAMES},
     )
 
 
 def append(frame: TickFrame, metrics: MetricAccumulator, streams: dict[str, BinaryIO]) -> None:
-    metrics.observe(frame)
+    metrics.observe(frame=frame)
     for event in frame.events:
         streams["run.jsonl"].write(event.canonical_line().encode())
         if event.reason is not None:
             streams["drop_reasons.jsonl"].write(
                 canonical_bytes(
-                    {"t": event.t, "request_id": event.request_id, "reason": event.reason}
+                    value={"t": event.t, "request_id": event.request_id, "reason": event.reason}
                 )
             )
-    streams["timeline.jsonl"].write(canonical_bytes(timeline_record(frame)))
+    streams["timeline.jsonl"].write(canonical_bytes(value=timeline_record(frame=frame)))
     if frame.scale_decision is not None:
         streams["autoscaling_decisions.jsonl"].write(frame.scale_decision.canonical_line().encode())
 
@@ -105,63 +109,83 @@ def contents(streams: dict[str, BinaryIO]) -> dict[str, bytes]:
     return result
 
 
-@pytest.mark.parametrize("mode", ["concurrent", "sequential", "sequential_compat"])
-@pytest.mark.parametrize("strategy", STRATEGIES)
-@pytest.mark.parametrize("scaling", [False, True])
+@pytest.mark.parametrize(
+    argnames="mode", argvalues=["concurrent", "sequential", "sequential_compat"]
+)
+@pytest.mark.parametrize(argnames="strategy", argvalues=STRATEGIES)
+@pytest.mark.parametrize(argnames="scaling", argvalues=[False, True])
 def test_restore_at_every_completed_interval_matches_uninterrupted_bytes_and_metrics(
     tmp_path: Path, mode: str, strategy: str, scaling: bool
 ) -> None:
-    saved = saved_run(mode, strategy, scaling)
-    simulation, metrics, streams = execution(saved)
+    saved = saved_run(mode=mode, strategy=strategy, scaling=scaling)
+    simulation, metrics, streams = execution(snapshot=saved)
     reference = list(simulation.iter_ticks())
     for frame in reference:
-        append(frame, metrics, streams)
-    expected_bytes, expected_metrics = contents(streams), metrics.summary()
-    simulation, metrics, streams = execution(saved)
-    for index, frame in enumerate(simulation.iter_ticks()):
-        append(frame, metrics, streams)
+        append(frame=frame, metrics=metrics, streams=streams)
+    expected_bytes, expected_metrics = contents(streams=streams), metrics.summary()
+    simulation, metrics, streams = execution(snapshot=saved)
+    for index, frame in enumerate(iterable=simulation.iter_ticks()):
+        append(frame=frame, metrics=metrics, streams=streams)
         if frame.terminal:
             break
-        artifact = write_checkpoint(tmp_path, saved, simulation, metrics, streams)
+        artifact = write_checkpoint(
+            directory=tmp_path,
+            snapshot=saved,
+            simulation=simulation,
+            metrics=metrics,
+            prefixes=streams,
+        )
         # A crash may leave uncommitted bytes beyond each durable offset.
         cloned: dict[str, BinaryIO] = {
-            name: io.BytesIO(data + b"uncommitted corrupt suffix")
-            for name, data in contents(streams).items()
+            name: io.BytesIO(initial_bytes=data + b"uncommitted corrupt suffix")
+            for name, data in contents(streams=streams).items()
         }
-        with artifact.path.open("rb") as source:
-            restored = read_checkpoint(source, artifact.sha256, saved, cloned)
+        with artifact.path.open(mode="rb") as source:
+            restored = read_checkpoint(
+                stream=source, expected_digest=artifact.sha256, snapshot=saved, prefixes=cloned
+            )
         for prefix in restored.prefixes:
             assert cloned[prefix.name].tell() == prefix.size_bytes
             cloned[prefix.name].truncate()
         continuation = list(restored.simulation.iter_ticks())
         assert continuation == reference[index + 1 :]
         for next_frame in continuation:
-            append(next_frame, restored.metrics, cloned)
-        assert contents(cloned) == expected_bytes
+            append(frame=next_frame, metrics=restored.metrics, streams=cloned)
+        assert contents(streams=cloned) == expected_bytes
         assert restored.metrics.summary() == expected_metrics
-    servers, requests = domain_inputs(saved)
+    servers, requests = domain_inputs(snapshot=saved)
     summary = validate_trace(
-        io.BytesIO(expected_bytes["run.jsonl"]),
-        servers,
-        requests,
-        domain_config(saved.configuration),
-        io.BytesIO(expected_bytes["autoscaling_decisions.jsonl"]),
+        stream=io.BytesIO(initial_bytes=expected_bytes["run.jsonl"]),
+        servers=servers,
+        requests=requests,
+        config=domain_config(settings=saved.configuration),
+        scale_stream=io.BytesIO(initial_bytes=expected_bytes["autoscaling_decisions.jsonl"]),
     )
     assert summary.finished + summary.dropped == len(requests)
 
 
 def test_pending_completion_and_pending_scale_activation_are_preserved(tmp_path: Path) -> None:
     saved = saved_run()
-    simulation, metrics, streams = execution(saved)
+    simulation, metrics, streams = execution(snapshot=saved)
     iterator = simulation.iter_ticks()
     first = next(iterator)
-    append(first, metrics, streams)
+    append(frame=first, metrics=metrics, streams=streams)
     assert simulation.autoscaler.pending is not None
-    artifact = write_checkpoint(tmp_path, saved, simulation, metrics, streams)
-    with artifact.path.open("rb") as source:
-        restored = read_checkpoint(source, artifact.sha256, saved, streams)
+    artifact = write_checkpoint(
+        directory=tmp_path, snapshot=saved, simulation=simulation, metrics=metrics, prefixes=streams
+    )
+    with artifact.path.open(mode="rb") as source:
+        restored = read_checkpoint(
+            stream=source, expected_digest=artifact.sha256, snapshot=saved, prefixes=streams
+        )
     assert (
-        write_checkpoint(tmp_path, saved, restored.simulation, restored.metrics, streams)
+        write_checkpoint(
+            directory=tmp_path,
+            snapshot=saved,
+            simulation=restored.simulation,
+            metrics=restored.metrics,
+            prefixes=streams,
+        )
         == artifact
     )
     assert next(restored.simulation.iter_ticks()) == next(iterator)
@@ -173,21 +197,43 @@ def test_initial_terminal_and_failed_boundaries_are_not_resumable_checkpoints(
     tmp_path: Path,
 ) -> None:
     saved = saved_run(scaling=False)
-    simulation, metrics, streams = execution(saved)
-    with pytest.raises(OperationError, match="completed"):
-        write_checkpoint(tmp_path, saved, simulation, metrics, streams)
+    simulation, metrics, streams = execution(snapshot=saved)
+    with pytest.raises(expected_exception=OperationError, match="completed"):
+        write_checkpoint(
+            directory=tmp_path,
+            snapshot=saved,
+            simulation=simulation,
+            metrics=metrics,
+            prefixes=streams,
+        )
     for frame in simulation.iter_ticks():
-        append(frame, metrics, streams)
-    with pytest.raises(OperationError, match="nonterminal"):
-        write_checkpoint(tmp_path, saved, simulation, metrics, streams)
-    failed = make_snapshot(saved.servers, (saved.requests[0],), RunSettings(max_simulation_ticks=1))
-    simulation, metrics, streams = execution(failed)
+        append(frame=frame, metrics=metrics, streams=streams)
+    with pytest.raises(expected_exception=OperationError, match="nonterminal"):
+        write_checkpoint(
+            directory=tmp_path,
+            snapshot=saved,
+            simulation=simulation,
+            metrics=metrics,
+            prefixes=streams,
+        )
+    failed = make_snapshot(
+        servers=saved.servers,
+        requests=(saved.requests[0],),
+        settings=RunSettings(max_simulation_ticks=1),
+    )
+    simulation, metrics, streams = execution(snapshot=failed)
     iterator = simulation.iter_ticks()
-    append(next(iterator), metrics, streams)
-    with pytest.raises(SimulationError):
+    append(frame=next(iterator), metrics=metrics, streams=streams)
+    with pytest.raises(expected_exception=SimulationError):
         next(iterator)
-    with pytest.raises(OperationError, match="completed"):
-        write_checkpoint(tmp_path, failed, simulation, metrics, streams)
+    with pytest.raises(expected_exception=OperationError, match="completed"):
+        write_checkpoint(
+            directory=tmp_path,
+            snapshot=failed,
+            simulation=simulation,
+            metrics=metrics,
+            prefixes=streams,
+        )
     assert list(tmp_path.iterdir()) == []
 
 
@@ -195,61 +241,87 @@ def test_all_dropped_tick_zero_requires_a_terminal_seal_instead_of_checkpoint(
     tmp_path: Path,
 ) -> None:
     saved = make_snapshot(
-        (ServerInput(id="small", cpu_units_per_tick=1, mem_mb=1, rate_limit_per_sec=1),),
-        (RequestInput(t=0, request_id="large", work_units=1, mem_mb=2),),
-        RunSettings(),
+        servers=(ServerInput(id="small", cpu_units_per_tick=1, mem_mb=1, rate_limit_per_sec=1),),
+        requests=(RequestInput(t=0, request_id="large", work_units=1, mem_mb=2),),
+        settings=RunSettings(),
     )
-    simulation, metrics, streams = execution(saved)
+    simulation, metrics, streams = execution(snapshot=saved)
     frames = list(simulation.iter_ticks())
     assert len(frames) == 1 and frames[0].terminal and frames[0].t == 0
-    append(frames[0], metrics, streams)
-    assert simulation.executed_intervals == 0 and not checkpoint_due(simulation)
-    with pytest.raises(OperationError):
-        write_checkpoint(tmp_path, saved, simulation, metrics, streams)
+    append(frame=frames[0], metrics=metrics, streams=streams)
+    assert simulation.executed_intervals == 0 and not checkpoint_due(simulation=simulation)
+    with pytest.raises(expected_exception=OperationError):
+        write_checkpoint(
+            directory=tmp_path,
+            snapshot=saved,
+            simulation=simulation,
+            metrics=metrics,
+            prefixes=streams,
+        )
     assert not list(tmp_path.iterdir())
 
 
 def test_checkpoint_cadence_counts_executed_intervals_and_new_events(tmp_path: Path) -> None:
     server = ServerInput(id="cpu", cpu_units_per_tick=1, mem_mb=1000, rate_limit_per_sec=1000)
     saved = make_snapshot(
-        (server,),
-        (RequestInput(t=9999, request_id="late", work_units=1000, mem_mb=1),),
-        RunSettings(),
+        servers=(server,),
+        requests=(RequestInput(t=9999, request_id="late", work_units=1000, mem_mb=1),),
+        settings=RunSettings(),
     )
-    simulation, metrics, streams = execution(saved)
+    simulation, metrics, streams = execution(snapshot=saved)
     iterator = simulation.iter_ticks()
-    append(next(iterator), metrics, streams)
+    append(frame=next(iterator), metrics=metrics, streams=streams)
     assert simulation.tick == 9999 and simulation.executed_intervals == 1
-    assert not checkpoint_due(simulation)
+    assert not checkpoint_due(simulation=simulation)
     for _ in range(99):
-        append(next(iterator), metrics, streams)
-    assert checkpoint_due(simulation)
-    artifact = write_checkpoint(tmp_path, saved, simulation, metrics, streams)
-    assert not checkpoint_due(simulation, artifact)
+        append(frame=next(iterator), metrics=metrics, streams=streams)
+    assert checkpoint_due(simulation=simulation)
+    artifact = write_checkpoint(
+        directory=tmp_path, snapshot=saved, simulation=simulation, metrics=metrics, prefixes=streams
+    )
+    assert not checkpoint_due(simulation=simulation, previous=artifact)
     burst = make_snapshot(
-        (server,),
-        tuple(
+        servers=(server,),
+        requests=tuple(
             RequestInput(t=0, request_id=f"burst-{n}", work_units=2, mem_mb=1) for n in range(500)
         ),
-        RunSettings(mode="concurrent"),
+        settings=RunSettings(mode="concurrent"),
     )
-    simulation, metrics, streams = execution(burst)
-    append(next(simulation.iter_ticks()), metrics, streams)
+    simulation, metrics, streams = execution(snapshot=burst)
+    append(frame=next(simulation.iter_ticks()), metrics=metrics, streams=streams)
     assert simulation.executed_intervals == 1 and simulation.event_count == 1000
-    assert checkpoint_due(simulation)
+    assert checkpoint_due(simulation=simulation)
 
 
 def test_budget_failure_preserves_previous_checkpoint_and_leaves_no_staging_file(
     tmp_path: Path,
 ) -> None:
     saved = saved_run()
-    simulation, metrics, streams = execution(saved)
-    append(next(simulation.iter_ticks()), metrics, streams)
-    artifact = write_checkpoint(tmp_path, saved, simulation, metrics, streams)
+    simulation, metrics, streams = execution(snapshot=saved)
+    append(frame=next(simulation.iter_ticks()), metrics=metrics, streams=streams)
+    artifact = write_checkpoint(
+        directory=tmp_path, snapshot=saved, simulation=simulation, metrics=metrics, prefixes=streams
+    )
     before = artifact.path.read_bytes()
-    assert write_checkpoint(tmp_path, saved, simulation, metrics, streams) == artifact
-    with pytest.raises(OperationError, match="budget") as failure:
-        write_checkpoint(tmp_path, saved, simulation, metrics, streams, max_bytes=1)
+    assert (
+        write_checkpoint(
+            directory=tmp_path,
+            snapshot=saved,
+            simulation=simulation,
+            metrics=metrics,
+            prefixes=streams,
+        )
+        == artifact
+    )
+    with pytest.raises(expected_exception=OperationError, match="budget") as failure:
+        write_checkpoint(
+            directory=tmp_path,
+            snapshot=saved,
+            simulation=simulation,
+            metrics=metrics,
+            prefixes=streams,
+            max_bytes=1,
+        )
     assert failure.value.code == "RESOURCE_LIMIT_EXCEEDED"
     assert list(tmp_path.iterdir()) == [artifact.path] and artifact.path.read_bytes() == before
 
@@ -258,27 +330,37 @@ def test_prefix_truncation_corruption_missing_names_and_wrong_checkpoint_hash_fa
     tmp_path: Path,
 ) -> None:
     saved = saved_run()
-    simulation, metrics, streams = execution(saved)
-    append(next(simulation.iter_ticks()), metrics, streams)
-    artifact = write_checkpoint(tmp_path, saved, simulation, metrics, streams)
-    original = contents(streams)
+    simulation, metrics, streams = execution(snapshot=saved)
+    append(frame=next(simulation.iter_ticks()), metrics=metrics, streams=streams)
+    artifact = write_checkpoint(
+        directory=tmp_path, snapshot=saved, simulation=simulation, metrics=metrics, prefixes=streams
+    )
+    original = contents(streams=streams)
     for corrupt in ("truncated", "changed", "missing", "checkpoint"):
-        cloned: dict[str, BinaryIO] = {name: io.BytesIO(data) for name, data in original.items()}
+        cloned: dict[str, BinaryIO] = {
+            name: io.BytesIO(initial_bytes=data) for name, data in original.items()
+        }
         if corrupt == "truncated":
-            cloned["run.jsonl"] = io.BytesIO(original["run.jsonl"][:-1])
+            cloned["run.jsonl"] = io.BytesIO(initial_bytes=original["run.jsonl"][:-1])
         elif corrupt == "changed":
-            cloned["run.jsonl"] = io.BytesIO(b"X" + original["run.jsonl"][1:])
+            cloned["run.jsonl"] = io.BytesIO(initial_bytes=b"X" + original["run.jsonl"][1:])
         elif corrupt == "missing":
             cloned.pop("timeline.jsonl")
-        with artifact.path.open("rb") as source, pytest.raises(OperationError):
+        with (
+            artifact.path.open(mode="rb") as source,
+            pytest.raises(expected_exception=OperationError),
+        ):
             read_checkpoint(
-                source, "0" * 64 if corrupt == "checkpoint" else artifact.sha256, saved, cloned
+                stream=source,
+                expected_digest="0" * 64 if corrupt == "checkpoint" else artifact.sha256,
+                snapshot=saved,
+                prefixes=cloned,
             )
 
 
 @pytest.mark.parametrize(
-    "corruption",
-    [
+    argnames="corruption",
+    argvalues=[
         "version",
         "boolean",
         "float",
@@ -300,10 +382,12 @@ def test_malformed_or_inconsistent_state_is_rejected_before_execution(
     tmp_path: Path, corruption: str
 ) -> None:
     saved = saved_run()
-    simulation, metrics, streams = execution(saved)
-    append(next(simulation.iter_ticks()), metrics, streams)
-    artifact = write_checkpoint(tmp_path, saved, simulation, metrics, streams)
-    state = json.loads(artifact.path.read_bytes())
+    simulation, metrics, streams = execution(snapshot=saved)
+    append(frame=next(simulation.iter_ticks()), metrics=metrics, streams=streams)
+    artifact = write_checkpoint(
+        directory=tmp_path, snapshot=saved, simulation=simulation, metrics=metrics, prefixes=streams
+    )
+    state = json.loads(s=artifact.path.read_bytes())
     if corruption == "version":
         state["schema_version"] = 2
     elif corruption == "boolean":
@@ -334,36 +418,47 @@ def test_malformed_or_inconsistent_state_is_rejected_before_execution(
         state["event_count"] += 1
     else:
         state["metrics"]["servers"][0]["cpu_consumed"]["numerator"] = "0"
-    payload = canonical_bytes(state)
-    with pytest.raises(OperationError):
-        read_checkpoint(io.BytesIO(payload), hashlib.sha256(payload).hexdigest(), saved, streams)
+    payload = canonical_bytes(value=state)
+    with pytest.raises(expected_exception=OperationError):
+        read_checkpoint(
+            stream=io.BytesIO(initial_bytes=payload),
+            expected_digest=hashlib.sha256(data=payload).hexdigest(),
+            snapshot=saved,
+            prefixes=streams,
+        )
 
 
 def test_actual_high_precision_remaining_work_round_trips_without_float_conversion(
     tmp_path: Path,
 ) -> None:
     saved = make_snapshot(
-        (ServerInput(id="cpu", cpu_units_per_tick=1, mem_mb=1000, rate_limit_per_sec=1000),),
-        (
+        servers=(
+            ServerInput(id="cpu", cpu_units_per_tick=1, mem_mb=1000, rate_limit_per_sec=1000),
+        ),
+        requests=(
             RequestInput(t=0, request_id="short", work_units=5, mem_mb=1),
             *(
                 RequestInput(t=t, request_id=f"long-{t:03d}", work_units=1000, mem_mb=1)
                 for t in range(83)
             ),
         ),
-        RunSettings(mode="concurrent"),
+        settings=RunSettings(mode="concurrent"),
     )
-    simulation, metrics, streams = execution(saved)
+    simulation, metrics, streams = execution(snapshot=saved)
     iterator = simulation.iter_ticks()
     for _ in range(83):
-        append(next(iterator), metrics, streams)
-    artifact = write_checkpoint(tmp_path, saved, simulation, metrics, streams)
+        append(frame=next(iterator), metrics=metrics, streams=streams)
+    artifact = write_checkpoint(
+        directory=tmp_path, snapshot=saved, simulation=simulation, metrics=metrics, prefixes=streams
+    )
     assert max(value.numerator.bit_length() for value in simulation.active["cpu"].values()) > 100
-    with artifact.path.open("rb") as source:
-        restored = read_checkpoint(source, artifact.sha256, saved, streams)
+    with artifact.path.open(mode="rb") as source:
+        restored = read_checkpoint(
+            stream=source, expected_digest=artifact.sha256, snapshot=saved, prefixes=streams
+        )
     assert restored.simulation.active == simulation.active
     assert next(restored.simulation.iter_ticks()) == next(iterator)
-    state = IntervalCheckpoint.model_validate_json(artifact.path.read_bytes())
+    state = IntervalCheckpoint.model_validate_json(json_data=artifact.path.read_bytes())
     assert all(
         isinstance(work.remaining.numerator, str)
         for server in state.servers
@@ -373,16 +468,20 @@ def test_actual_high_precision_remaining_work_round_trips_without_float_conversi
 
 def test_restore_in_a_fresh_process_matches_the_original_continuation(tmp_path: Path) -> None:
     saved = saved_run(strategy="round_robin")
-    simulation, metrics, streams = execution(saved)
+    simulation, metrics, streams = execution(snapshot=saved)
     iterator = simulation.iter_ticks()
     for _ in range(4):
-        append(next(iterator), metrics, streams)
-    artifact = write_checkpoint(tmp_path, saved, simulation, metrics, streams)
-    (tmp_path / "snapshot.json").write_bytes(canonical_bytes(saved.model_dump(mode="json")))
-    for name, data in contents(streams).items():
-        (tmp_path / name).write_bytes(data)
+        append(frame=next(iterator), metrics=metrics, streams=streams)
+    artifact = write_checkpoint(
+        directory=tmp_path, snapshot=saved, simulation=simulation, metrics=metrics, prefixes=streams
+    )
+    (tmp_path / "snapshot.json").write_bytes(
+        data=canonical_bytes(value=saved.model_dump(mode="json"))
+    )
+    for name, data in contents(streams=streams).items():
+        (tmp_path / name).write_bytes(data=data)
     for frame in iterator:
-        append(frame, metrics, streams)
+        append(frame=frame, metrics=metrics, streams=streams)
     code = """
 import sys
 from contextlib import ExitStack
@@ -404,47 +503,69 @@ with ExitStack() as stack:
     (root / "metrics.json").write_bytes(canonical_bytes(restored.metrics.summary()))
 """
     subprocess.run(  # noqa: S603 -- fixed restore program and bounded test-owned paths
-        [sys.executable, "-c", code, str(tmp_path), str(artifact.path), artifact.sha256],
+        args=[
+            sys.executable,
+            "-c",
+            code,
+            str(object=tmp_path),
+            str(object=artifact.path),
+            artifact.sha256,
+        ],
         check=True,
         capture_output=True,
     )
-    expected = contents(streams)
+    expected = contents(streams=streams)
     assert (tmp_path / "run.jsonl").read_bytes() == expected["run.jsonl"]
     assert (tmp_path / "autoscaling_decisions.jsonl").read_bytes() == expected[
         "autoscaling_decisions.jsonl"
     ]
-    assert json.loads((tmp_path / "metrics.json").read_bytes()) == metrics.summary()
+    assert json.loads(s=(tmp_path / "metrics.json").read_bytes()) == metrics.summary()
 
 
-@pytest.mark.parametrize("drop_at_zero", [False, True])
+@pytest.mark.parametrize(argnames="drop_at_zero", argvalues=[False, True])
 def test_terminal_seal_round_trip_does_not_require_or_replay_an_interval(
     drop_at_zero: bool,
 ) -> None:
     saved = make_snapshot(
-        (ServerInput(id="s", cpu_units_per_tick=2, mem_mb=1, rate_limit_per_sec=1),),
-        (RequestInput(t=0, request_id="r", work_units=2, mem_mb=2 if drop_at_zero else 1),),
-        RunSettings(),
+        servers=(ServerInput(id="s", cpu_units_per_tick=2, mem_mb=1, rate_limit_per_sec=1),),
+        requests=(
+            RequestInput(t=0, request_id="r", work_units=2, mem_mb=2 if drop_at_zero else 1),
+        ),
+        settings=RunSettings(),
     )
-    simulation, metrics, streams = execution(saved)
+    simulation, metrics, streams = execution(snapshot=saved)
     for frame in simulation.iter_ticks():
-        append(frame, metrics, streams)
-    report_bytes = canonical_bytes(metrics.summary())
+        append(frame=frame, metrics=metrics, streams=streams)
+    report_bytes = canonical_bytes(value=metrics.summary())
     report = StoredFile(
         key="reports/metrics.json",
-        sha256=hashlib.sha256(report_bytes).hexdigest(),
+        sha256=hashlib.sha256(data=report_bytes).hexdigest(),
         size_bytes=len(report_bytes),
     )
-    seal = capture_terminal_seal(saved, simulation, metrics, streams, report)
-    payload = canonical_bytes(seal.model_dump(mode="json"))
+    seal = capture_terminal_seal(
+        snapshot=saved, simulation=simulation, metrics=metrics, streams=streams, report=report
+    )
+    payload = canonical_bytes(value=seal.model_dump(mode="json"))
     assert (
-        read_terminal_seal(io.BytesIO(payload), hashlib.sha256(payload).hexdigest(), saved) == seal
+        read_terminal_seal(
+            stream=io.BytesIO(initial_bytes=payload),
+            expected_digest=hashlib.sha256(data=payload).hexdigest(),
+            snapshot=saved,
+        )
+        == seal
     )
     if drop_at_zero:
         assert seal.terminal_tick == seal.executed_intervals == 0
-    with pytest.raises(OperationError):
-        read_terminal_seal(io.BytesIO(payload), "0" * 64, saved)
+    with pytest.raises(expected_exception=OperationError):
+        read_terminal_seal(
+            stream=io.BytesIO(initial_bytes=payload), expected_digest="0" * 64, snapshot=saved
+        )
     raw = seal.model_dump(mode="json")
     raw["schema_version"] = 2
-    changed = canonical_bytes(raw)
-    with pytest.raises(OperationError):
-        read_terminal_seal(io.BytesIO(changed), hashlib.sha256(changed).hexdigest(), saved)
+    changed = canonical_bytes(value=raw)
+    with pytest.raises(expected_exception=OperationError):
+        read_terminal_seal(
+            stream=io.BytesIO(initial_bytes=changed),
+            expected_digest=hashlib.sha256(data=changed).hexdigest(),
+            snapshot=saved,
+        )

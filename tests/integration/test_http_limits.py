@@ -29,17 +29,17 @@ def test_invalid_and_chunked_oversized_uploads_leave_no_dataset_or_staging(tmp_p
     async def scenario() -> None:
         async with scratch() as database:
             inputs = await asyncio.to_thread(
-                ManagedFiles, tmp_path / "inputs", StorageLimits(min_free_bytes=0)
+                ManagedFiles, root=tmp_path / "inputs", limits=StorageLimits(min_free_bytes=0)
             )
             outputs = await asyncio.to_thread(
-                ManagedFiles, tmp_path / "outputs", StorageLimits(min_free_bytes=0)
+                ManagedFiles, root=tmp_path / "outputs", limits=StorageLimits(min_free_bytes=0)
             )
             app = create_app(
-                Settings(allowed_hosts=("testserver",)),
-                database,
-                inputs,
-                outputs,
-                b"limit-check-signing-key" * 2,
+                settings=Settings(allowed_hosts=("testserver",)),
+                database=database,
+                inputs=inputs,
+                outputs=outputs,
+                signing_key=b"limit-check-signing-key" * 2,
             )
             async with (
                 app.router.lifespan_context(app),
@@ -52,13 +52,13 @@ def test_invalid_and_chunked_oversized_uploads_leave_no_dataset_or_staging(tmp_p
                     {"other": ("bad.csv", b"invalid", "text/csv")},
                     [("file", ("a.csv", b"invalid")), ("file", ("b.csv", b"invalid"))],
                 ):
-                    response = await client.post("datasets", files=files)
+                    response = await client.post(url="datasets", files=files)
                     assert response.status_code == HTTPStatus.UNPROCESSABLE_CONTENT.value, (
                         response.text
                     )
                     assert "private-input-must-not-be-echoed" not in response.text
                 malformed = await client.post(
-                    "datasets",
+                    url="datasets",
                     content=b"broken",
                     headers={"Content-Type": "multipart/form-data"},
                 )
@@ -74,18 +74,18 @@ def test_invalid_and_chunked_oversized_uploads_leave_no_dataset_or_staging(tmp_p
                     yield b"\r\n--b--\r\n"
 
                 response = await client.post(
-                    "datasets",
+                    url="datasets",
                     content=oversized(),
                     headers={"Content-Type": "multipart/form-data; boundary=b"},
                 )
                 assert response.status_code == HTTPStatus.CONTENT_TOO_LARGE.value, response.text
-                assert (await client.get("datasets")).json()["items"] == []
+                assert (await client.get(url="datasets")).json()["items"] == []
                 assert (
                     await asyncio.to_thread(lambda: list((inputs.root / ".staging").iterdir()))
                     == []
                 )
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 def test_dependency_error_envelope_redacts_sql_and_private_values(
@@ -94,29 +94,34 @@ def test_dependency_error_envelope_redacts_sql_and_private_values(
     async def broken(
         self: Reads, after: tuple[datetime, UUID] | None = None, limit: int = 100
     ) -> tuple[RunView, ...]:
-        raise DBAPIError("private-query-text", {}, OSError("private-database-error"), False)
+        raise DBAPIError(
+            statement="private-query-text",
+            params={},
+            orig=OSError("private-database-error"),
+            hide_parameters=False,
+        )
 
     async def scenario() -> None:
         async with scratch() as database:
             inputs = await asyncio.to_thread(
-                ManagedFiles, tmp_path / "inputs", StorageLimits(min_free_bytes=0)
+                ManagedFiles, root=tmp_path / "inputs", limits=StorageLimits(min_free_bytes=0)
             )
             outputs = await asyncio.to_thread(
-                ManagedFiles, tmp_path / "outputs", StorageLimits(min_free_bytes=0)
+                ManagedFiles, root=tmp_path / "outputs", limits=StorageLimits(min_free_bytes=0)
             )
             app = create_app(
-                Settings(allowed_hosts=("testserver",)),
-                database,
-                inputs,
-                outputs,
-                b"safe-error-signing-key" * 2,
+                settings=Settings(allowed_hosts=("testserver",)),
+                database=database,
+                inputs=inputs,
+                outputs=outputs,
+                signing_key=b"safe-error-signing-key" * 2,
             )
             async with app.router.lifespan_context(app):
-                monkeypatch.setattr(Reads, "runs", broken)
+                monkeypatch.setattr(target=Reads, name="runs", value=broken)
                 async with httpx.AsyncClient(
                     transport=httpx.ASGITransport(app=app), base_url="http://testserver/api/v1/"
                 ) as client:
-                    response = await client.get("simulations")
+                    response = await client.get(url="simulations")
                     assert (
                         response.status_code == HTTPStatus.SERVICE_UNAVAILABLE.value
                         and response.headers["retry-after"] == "1"
@@ -137,7 +142,7 @@ def test_dependency_error_envelope_redacts_sql_and_private_values(
                         in records[0].getMessage()
                     )
 
-    asyncio.run(scenario())
+    asyncio.run(main=scenario())
 
 
 def test_identical_http_retries_share_materialization_and_survive_owner_cancellation(
@@ -147,27 +152,27 @@ def test_identical_http_retries_share_materialization_and_survive_owner_cancella
     entered, release = Event(), Event()
     calls = 0
 
-    def blocked(self: ManagedFiles, digest: str, size: int) -> tuple[RequestInput, ...]:
+    def blocked(self: ManagedFiles, digest: str, size_bytes: int) -> tuple[RequestInput, ...]:
         nonlocal calls
         calls += 1
         entered.set()
-        assert release.wait(10)
-        return original(self, digest, size)
+        assert release.wait(timeout=10)
+        return original(self=self, digest=digest, size_bytes=size_bytes)
 
     async def scenario() -> None:
         async with scratch() as database:
             inputs = await asyncio.to_thread(
-                ManagedFiles, tmp_path / "inputs", StorageLimits(min_free_bytes=0)
+                ManagedFiles, root=tmp_path / "inputs", limits=StorageLimits(min_free_bytes=0)
             )
             outputs = await asyncio.to_thread(
-                ManagedFiles, tmp_path / "outputs", StorageLimits(min_free_bytes=0)
+                ManagedFiles, root=tmp_path / "outputs", limits=StorageLimits(min_free_bytes=0)
             )
             app = create_app(
-                Settings(allowed_hosts=("testserver",)),
-                database,
-                inputs,
-                outputs,
-                b"retry-check-signing-key" * 2,
+                settings=Settings(allowed_hosts=("testserver",)),
+                database=database,
+                inputs=inputs,
+                outputs=outputs,
+                signing_key=b"retry-check-signing-key" * 2,
             )
             async with (
                 app.router.lifespan_context(app),
@@ -176,7 +181,7 @@ def test_identical_http_retries_share_materialization_and_survive_owner_cancella
                 ) as client,
             ):
                 dataset = await client.post(
-                    "datasets",
+                    url="datasets",
                     files={
                         "file": (
                             "requests.csv",
@@ -186,44 +191,48 @@ def test_identical_http_retries_share_materialization_and_survive_owner_cancella
                     },
                 )
                 body = {"dataset_id": dataset.json()["id"]}
-                monkeypatch.setattr(ManagedFiles, "load_requests", blocked)
+                monkeypatch.setattr(target=ManagedFiles, name="load_requests", value=blocked)
                 first = asyncio.create_task(
-                    client.post("simulations", json=body, headers={"Idempotency-Key": "same"})
+                    coro=client.post(
+                        url="simulations", json=body, headers={"Idempotency-Key": "same"}
+                    )
                 )
-                assert await asyncio.to_thread(entered.wait, 5)
+                assert await asyncio.to_thread(entered.wait, timeout=5)
                 second = asyncio.create_task(
-                    client.post("simulations", json=body, headers={"Idempotency-Key": "same"})
+                    coro=client.post(
+                        url="simulations", json=body, headers={"Idempotency-Key": "same"}
+                    )
                 )
-                await asyncio.sleep(0.03)
+                await asyncio.sleep(delay=0.03)
                 conflict = await client.post(
-                    "simulations",
+                    url="simulations",
                     json=body | {"strategy": "round_robin"},
                     headers={"Idempotency-Key": "same"},
                 )
                 assert conflict.status_code == HTTPStatus.CONFLICT.value
                 rejected = await client.post(
-                    "simulations", json=body, headers={"Idempotency-Key": "different"}
+                    url="simulations", json=body, headers={"Idempotency-Key": "different"}
                 )
                 assert rejected.status_code == HTTPStatus.TOO_MANY_REQUESTS.value
                 first.cancel()
-                await asyncio.sleep(0.03)
+                await asyncio.sleep(delay=0.03)
                 assert not first.done() and calls == 1
                 release.set()
-                with pytest.raises(asyncio.CancelledError):
+                with pytest.raises(expected_exception=asyncio.CancelledError):
                     await first
                 duplicate = await second
                 assert duplicate.status_code == HTTPStatus.ACCEPTED.value, duplicate.text
-                assert len(await Reads(database).runs()) == 1 and calls == 1
+                assert len(await Reads(database=database).runs()) == 1 and calls == 1
 
     try:
-        asyncio.run(scenario())
+        asyncio.run(main=scenario())
     finally:
         release.set()
 
 
 @pytest.mark.parametrize(
-    ("close_kind", "identifier_padding"),
-    [
+    argnames=("close_kind", "identifier_padding"),
+    argvalues=[
         pytest.param("send_deadline", 0, id="send_deadline-frame_budget"),
         pytest.param("client_disconnect", 0, id="client_disconnect-frame_budget"),
         pytest.param("send_deadline", 90, id="send_deadline-byte_budget"),
@@ -388,7 +397,7 @@ def test_blocked_http_sse_consumer_releases_admission_and_replays_complete_durab
 
                 replay = await client.get(
                     url=f"simulations/{run_id}/stream",
-                    headers={"Last-Event-ID": str(last_received_id)},
+                    headers={"Last-Event-ID": str(object=last_received_id)},
                 )
                 assert replay.status_code == HTTPStatus.OK.value, (
                     "Stream admission was not released after cleanup"

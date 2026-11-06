@@ -16,31 +16,31 @@ from sqlalchemy.schema import CreateSchema, DropSchema
 async def scratch(*, retain_on_failure: bool = False) -> AsyncGenerator[Database]:
     url = os.environ["TEST_DATABASE_URL"]
     schema = "mslb_test_" + uuid4().hex
-    admin, database = Database(url), Database(url, schema)
+    admin, database = Database(url=url), Database(url=url, schema=schema)
     async with admin.engine.begin() as connection:
-        await connection.execute(CreateSchema(schema))
+        await connection.execute(statement=CreateSchema(name=schema))
     try:
-        await migrate(database)
+        await migrate(database=database)
         yield database
     except BaseException:
         await database.close()
         if not retain_on_failure:
             async with admin.engine.begin() as connection:
-                await connection.execute(DropSchema(schema, cascade=True))
+                await connection.execute(statement=DropSchema(name=schema, cascade=True))
         else:
             print("Retained lifecycle failure ownership schema:", schema)
         raise
     else:
         await database.close()
         async with admin.engine.begin() as connection:
-            await connection.execute(DropSchema(schema, cascade=True))
+            await connection.execute(statement=DropSchema(name=schema, cascade=True))
     finally:
         await admin.close()
 
 
 def fixture_inputs() -> tuple[tuple[ServerInput, ...], tuple[RequestInput, ...], int]:
-    with Path("/fixtures/core/servers.json").open("rb") as stream:
-        servers = read_servers(stream)
-    with Path("/fixtures/core/requests.csv").open("rb") as stream:
-        requests = read_requests(stream)
+    with Path("/fixtures/core/servers.json").open(mode="rb") as stream:
+        servers = read_servers(stream=stream)
+    with Path("/fixtures/core/requests.csv").open(mode="rb") as stream:
+        requests = read_requests(stream=stream)
     return servers, requests, Path("/fixtures/core/requests.csv").stat().st_size

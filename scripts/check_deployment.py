@@ -30,7 +30,7 @@ class Compose(BaseModel):
 def check(payload: bytes) -> None:
     if len(payload) > 1024**2:
         raise ValueError("Compose configuration exceeds preflight size limit")
-    config = Compose.model_validate_json(payload)
+    config = Compose.model_validate_json(json_data=payload)
     for name, service in config.services.items():
         for mount in service.volumes:
             if mount.type == "bind" and not (
@@ -77,7 +77,7 @@ def check(payload: bytes) -> None:
                 "host-memory-writer",
             }:
                 raise ValueError("Private data/control/work services must not publish host ports")
-            if port.host_ip is None or not ipaddress.ip_address(port.host_ip).is_loopback:
+            if port.host_ip is None or not ipaddress.ip_address(address=port.host_ip).is_loopback:
                 # Remote exposure also needs the planned HTTPS gateway. Until that
                 # gateway is implemented, direct API public publishing is rejected
                 # even if someone sets an authentication environment flag.
@@ -89,7 +89,7 @@ def check(payload: bytes) -> None:
 
 if __name__ == "__main__":
     try:
-        check(sys.stdin.buffer.read(1024**2 + 1))
+        check(payload=sys.stdin.buffer.read(1024**2 + 1))
     except (ValueError, ValidationError):
         print(
             "Deployment rejected: require loopback published ports "

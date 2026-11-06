@@ -24,34 +24,40 @@ from mslb_worker.redis_notifications import RedisHints
 async def main(*, once: bool) -> None:
     """Run supervised durable polling with bounded Redis hints and coordinated shutdown."""
     database = Database(
-        url=os.environ["DATABASE_URL"], schema=os.environ.get("DATABASE_SCHEMA", "public")
+        url=os.environ["DATABASE_URL"],
+        schema=os.environ.get(key="DATABASE_SCHEMA", default="public"),
     )
     limits = StorageLimits(
-        min_free_bytes=int(os.environ.get("STORAGE_MIN_FREE_BYTES", str(2 * 1024**3)))
+        min_free_bytes=int(
+            os.environ.get(key="STORAGE_MIN_FREE_BYTES", default=str(object=2 * 1024**3))
+        )
     )
     inputs = await asyncio.to_thread(
         ManagedFiles,
-        root=Path(os.environ.get("INPUT_ROOT", "/data/inputs")),
+        root=Path(os.environ.get(key="INPUT_ROOT", default="/data/inputs")),
         limits=limits,
         read_only=True,
     )
     outputs = await asyncio.to_thread(
-        ManagedFiles, root=Path(os.environ.get("OUTPUT_ROOT", "/data/outputs")), limits=limits
+        ManagedFiles,
+        root=Path(os.environ.get(key="OUTPUT_ROOT", default="/data/outputs")),
+        limits=limits,
     )
     notifications, shutdown, health_done = Notifications(), Event(), asyncio.Event()
     loop = asyncio.get_running_loop()
     for code in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(code, shutdown.set)
+        loop.add_signal_handler(sig=code, callback=shutdown.set)
     worker = Worker(
         database=database,
         inputs=inputs,
         outputs=outputs,
-        lease_seconds=int(os.environ.get("WORKER_LEASE_SECONDS", "30")),
-        renewal_seconds=float(os.environ.get("WORKER_RENEW_SECONDS", "5")),
+        lease_seconds=int(os.environ.get(key="WORKER_LEASE_SECONDS", default="30")),
+        renewal_seconds=float(os.environ.get(key="WORKER_RENEW_SECONDS", default="5")),
         observer=notifications.observe,
     )
     hints = RedisHints(
-        url=os.environ.get("REDIS_URL", "redis://redis:6379/0"), namespace=database.schema
+        url=os.environ.get(key="REDIS_URL", default="redis://redis:6379/0"),
+        namespace=database.schema,
     )
     outbox = OutboxNotifications(jobs=Jobs(database=database), hints=hints)
 

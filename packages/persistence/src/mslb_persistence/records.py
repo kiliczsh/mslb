@@ -50,17 +50,17 @@ class DatasetRecord:
     @classmethod
     def from_model(cls, row: Dataset) -> Self:
         return cls(
-            row.id,
-            row.digest,
-            row.storage_key,
-            row.source_filename,
-            row.request_count,
-            row.earliest_arrival,
-            row.latest_arrival,
-            row.size_bytes,
-            row.created_at,
-            row.original_digest,
-            row.source_size_bytes,
+            id=row.id,
+            digest=row.digest,
+            storage_key=row.storage_key,
+            source_filename=row.source_filename,
+            request_count=row.request_count,
+            earliest_arrival=row.earliest_arrival,
+            latest_arrival=row.latest_arrival,
+            size_bytes=row.size_bytes,
+            created_at=row.created_at,
+            original_digest=row.original_digest,
+            source_size_bytes=row.source_size_bytes,
         )
 
 
@@ -78,12 +78,12 @@ class RunRecord:
     @classmethod
     def from_model(cls, row: Run) -> Self:
         return cls(
-            row.id,
-            row.snapshot_digest,
-            row.snapshot_key,
-            row.dataset_id,
-            tuple(sorted(row.server_versions.items())),
-            row.created_at,
+            id=row.id,
+            snapshot_digest=row.snapshot_digest,
+            snapshot_key=row.snapshot_key,
+            dataset_id=row.dataset_id,
+            server_versions=tuple(sorted(row.server_versions.items())),
+            created_at=row.created_at,
         )
 
 
@@ -112,5 +112,10 @@ class JobRecord:
     @classmethod
     def from_model(cls, row: Job) -> Self:
         return cls(
-            row.run_id, row.status, row.attempts, row.fence, row.error_code, row.lease_expires_at
+            run_id=row.run_id,
+            status=row.status,
+            attempts=row.attempts,
+            fence=row.fence,
+            error_code=row.error_code,
+            lease_expires_at=row.lease_expires_at,
         )

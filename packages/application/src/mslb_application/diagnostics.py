@@ -5,7 +5,7 @@ from contextlib import suppress
 from typing import Literal
 from uuid import UUID
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = logging.getLogger(name=__name__)
 
 
 def report_failure(
@@ -19,7 +19,7 @@ def report_failure(
     identifier = "unavailable"
     if len(request_id) <= 36:
         with suppress(ValueError):
-            identifier = str(UUID(hex=request_id))
+            identifier = str(object=UUID(hex=request_id))
     kind = (
         "".join(
             character

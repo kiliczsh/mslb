@@ -48,7 +48,7 @@ def test_fragmented_publication_flushes_before_reading_ahead_and_preserves_bytes
 
     reference = files.publish(key="runs/owned/data.bin", chunks=producer(), maximum=len(expected))
     assert files.path(key=reference.key).read_bytes() == expected
-    assert reference.sha256 == hashlib.sha256(expected).hexdigest()
+    assert reference.sha256 == hashlib.sha256(data=expected).hexdigest()
     assert reference.size_bytes == len(expected)
     assert files.admissions == [
         (65536, 0),
@@ -59,7 +59,7 @@ def test_fragmented_publication_flushes_before_reading_ahead_and_preserves_bytes
     assert not tuple((tmp_path / ".staging").iterdir())
 
 
-@pytest.mark.parametrize("maximum", [0, 3, 65536])
+@pytest.mark.parametrize(argnames="maximum", argvalues=[0, 3, 65536])
 def test_fragmented_overflow_is_rejected_and_staging_is_removed(
     tmp_path: Path, maximum: int
 ) -> None:

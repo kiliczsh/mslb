@@ -145,7 +145,7 @@ def test_rehashed_http_tampering_is_rejected_independently(tmp_path: Path, mutat
     path = saved.files.path(key=original.key)
     events = [json.loads(s=line) for line in path.read_bytes().splitlines()]
     if mutation == "scope":
-        events[0]["run_id"] = str(uuid4())
+        events[0]["run_id"] = str(object=uuid4())
     elif mutation == "sequence":
         events[0]["sequence"] = 2
     elif mutation == "backend":
@@ -194,7 +194,7 @@ def test_rehashed_lifecycle_identity_and_unresolved_history_are_rejected(
     path = saved.files.path(key=original.key)
     events = [json.loads(s=line) for line in path.read_bytes().splitlines()]
     if mutation == "foreign_definition":
-        events[-1]["definition"]["deployment_id"] = str(uuid4())
+        events[-1]["definition"]["deployment_id"] = str(object=uuid4())
     elif mutation == "changed_id":
         events[-1]["container_id"] = "c" * 64
     else:

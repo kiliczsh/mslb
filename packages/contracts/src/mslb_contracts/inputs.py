@@ -36,7 +36,7 @@ def normalize_identifier(*, value: str) -> str:
     if normalized in {".", ".."}:
         raise ValueError("identifier_cannot_be_dot_segment")
     try:
-        size = len(normalized.encode("utf-8"))
+        size = len(normalized.encode(encoding="utf-8"))
     except UnicodeEncodeError:
         raise ValueError("invalid_utf8") from None
     if not 1 <= size <= 128:
@@ -102,15 +102,17 @@ def read_servers(stream: BinaryIO) -> tuple[ServerInput, ...]:
     """Load bounded JSON, accepting a UTF-8 BOM and rejecting malformed input."""
     payload = stream.read(256 * 1024 + 1)
     if len(payload) > 256 * 1024:
-        raise InputError("servers", "document_too_large")
+        raise InputError(field="servers", reason="document_too_large")
     try:
-        document = ServerDocument.model_validate_json(payload.decode("utf-8-sig"))
+        document = ServerDocument.model_validate_json(
+            json_data=payload.decode(encoding="utf-8-sig")
+        )
     except UnicodeDecodeError:
-        raise InputError("servers", "invalid_utf8") from None
+        raise InputError(field="servers", reason="invalid_utf8") from None
     except ValidationError as error:
         first = error.errors(include_input=False)[0]
-        field = ".".join(str(part) for part in first["loc"]) or "servers"
-        raise InputError(field, first["type"]) from None
+        field = ".".join(str(object=part) for part in first["loc"]) or "servers"
+        raise InputError(field=field, reason=first["type"]) from None
     return document.servers
 
 
@@ -131,32 +133,32 @@ class _BoundedLines(Iterator[str]):
         self.total += len(raw)
         self.row_bytes += len(raw)
         if self.total > MAX_UPLOAD_BYTES:
-            raise InputError("csv", "upload_too_large")
+            raise InputError(field="csv", reason="upload_too_large")
         if self.row_bytes > MAX_ROW_BYTES:
-            raise InputError("csv", "row_too_large")
+            raise InputError(field="csv", reason="row_too_large")
         try:
-            return raw.decode("utf-8-sig" if first else "utf-8")
+            return raw.decode(encoding="utf-8-sig" if first else "utf-8")
         except UnicodeDecodeError:
-            raise InputError("csv", "invalid_utf8") from None
+            raise InputError(field="csv", reason="invalid_utf8") from None
 
 
 def _integer(value: str, field: str) -> int:
-    if len(value) > 10 or not re.fullmatch(r"[0-9]+", value):
-        raise InputError(field, "expected_bounded_integer")
+    if len(value) > 10 or not re.fullmatch(pattern=r"[0-9]+", string=value):
+        raise InputError(field=field, reason="expected_bounded_integer")
     return int(value)
 
 
 def read_requests(stream: BinaryIO) -> tuple[RequestInput, ...]:
     """Parse CSV incrementally, bounding physical and quoted logical rows."""
-    lines = _BoundedLines(stream)
+    lines = _BoundedLines(stream=stream)
     reader = csv.reader(lines, strict=True)
     try:
         header = next(reader, [])
         required = ("t", "request_id", "work_units", "mem_mb")
         if len(set(header)) != len(header) or not set(required).issubset(header):
-            raise InputError("header", "missing_or_duplicate_columns")
-        if any(len(field.encode("utf-8")) > MAX_FIELD_BYTES for field in header):
-            raise InputError("header", "field_too_large")
+            raise InputError(field="header", reason="missing_or_duplicate_columns")
+        if any(len(field.encode(encoding="utf-8")) > MAX_FIELD_BYTES for field in header):
+            raise InputError(field="header", reason="field_too_large")
         indexes = {name: header.index(name) for name in required}
         requests: list[RequestInput] = []
         seen: set[str] = set()
@@ -167,42 +169,46 @@ def read_requests(stream: BinaryIO) -> tuple[RequestInput, ...]:
                 break
             field = f"rows[{len(requests) + 2}]"
             if len(requests) >= MAX_REQUESTS:
-                raise InputError(field, "request_count_exceeded")
+                raise InputError(field=field, reason="request_count_exceeded")
             if len(row) != len(header):
-                raise InputError(field, "row_width")
-            if any(len(cell.encode("utf-8")) > MAX_FIELD_BYTES for cell in row):
-                raise InputError(field, "field_too_large")
+                raise InputError(field=field, reason="row_width")
+            if any(len(cell.encode(encoding="utf-8")) > MAX_FIELD_BYTES for cell in row):
+                raise InputError(field=field, reason="field_too_large")
             try:
                 request = RequestInput(
-                    t=_integer(row[indexes["t"]], field + ".t"),
+                    t=_integer(value=row[indexes["t"]], field=field + ".t"),
                     request_id=row[indexes["request_id"]],
-                    work_units=_integer(row[indexes["work_units"]], field + ".work_units"),
-                    mem_mb=_integer(row[indexes["mem_mb"]], field + ".mem_mb"),
+                    work_units=_integer(
+                        value=row[indexes["work_units"]], field=field + ".work_units"
+                    ),
+                    mem_mb=_integer(value=row[indexes["mem_mb"]], field=field + ".mem_mb"),
                 )
             except ValidationError as error:
                 first = error.errors(include_input=False)[0]
-                suffix = ".".join(str(part) for part in first["loc"])
-                raise InputError(field + "." + suffix, first["type"]) from None
+                suffix = ".".join(str(object=part) for part in first["loc"])
+                raise InputError(field=field + "." + suffix, reason=first["type"]) from None
             if request.request_id in seen:
-                raise InputError(field + ".request_id", "duplicate_normalized_identifier")
+                raise InputError(
+                    field=field + ".request_id", reason="duplicate_normalized_identifier"
+                )
             seen.add(request.request_id)
             requests.append(request)
     except csv.Error:
-        raise InputError("csv", "malformed_row") from None
+        raise InputError(field="csv", reason="malformed_row") from None
     if not requests:
-        raise InputError("csv", "empty_workload")
+        raise InputError(field="csv", reason="empty_workload")
     return tuple(sorted(requests, key=lambda request: (request.t, request.request_id)))
 
 
 def input_digest(records: tuple[ServerInput, ...] | tuple[RequestInput, ...]) -> str:
     """Hash already-normalized ordered records with explicit schema identity."""
     # This versioned wire-format marker must stay stable for archived snapshot identities.
-    digest = hashlib.sha256(b"load-balancer-input-v1\n")
+    digest = hashlib.sha256(data=b"load-balancer-input-v1\n")
     for record in records:
         digest.update(
             json.dumps(
-                record.model_dump(), sort_keys=True, ensure_ascii=False, separators=(",", ":")
-            ).encode("utf-8")
+                obj=record.model_dump(), sort_keys=True, ensure_ascii=False, separators=(",", ":")
+            ).encode(encoding="utf-8")
         )
         digest.update(b"\n")
     return digest.hexdigest()

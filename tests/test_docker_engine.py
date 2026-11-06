@@ -53,8 +53,8 @@ def fixture(
         key: value for key, value in body.items() if key not in {"HostConfig", "NetworkingConfig"}
     }
     config.update(Hostname="c" * 12, Domainname="", Tty=False, OpenStdin=False, AttachStdin=False)
-    config["Env"] = ["PATH=/app/.venv/bin", *strings(body["Env"])]
-    host = mapping(body["HostConfig"])
+    config["Env"] = ["PATH=/app/.venv/bin", *strings(value=body["Env"])]
+    host = mapping(value=body["HostConfig"])
     host.update(
         RestartPolicy={"Name": "no", "MaximumRetryCount": 0},
         IpcMode="private",
@@ -80,7 +80,7 @@ def fixture(
 
 def test_inspection_requires_configuration_not_only_labels() -> None:
     intent, image, net, info = fixture()
-    dynamic(info, image, net, intent)
+    dynamic(info=info, image=image, net=net, intent=intent)
     for section, field, value in (
         ("HostConfig", "Privileged", True),
         ("HostConfig", "Binds", ["/:/host"]),
@@ -98,12 +98,19 @@ def test_inspection_requires_configuration_not_only_labels() -> None:
     ):
         raw = info.model_dump()
         raw[section][field] = value
-        with pytest.raises(EngineError, match="OWNERSHIP_CONFLICT"):
-            dynamic(ContainerInfo.model_validate(raw), image, net, intent)
-    with pytest.raises(EngineError):
-        dynamic(info.model_copy(update={"Mounts": [{"Source": "/host"}]}), image, net, intent)
-    with pytest.raises(EngineError):
-        dynamic(info, image, net.model_copy(update={"Internal": False}), intent)
+        with pytest.raises(expected_exception=EngineError, match="OWNERSHIP_CONFLICT"):
+            dynamic(info=ContainerInfo.model_validate(obj=raw), image=image, net=net, intent=intent)
+    with pytest.raises(expected_exception=EngineError):
+        dynamic(
+            info=info.model_copy(update={"Mounts": [{"Source": "/host"}]}),
+            image=image,
+            net=net,
+            intent=intent,
+        )
+    with pytest.raises(expected_exception=EngineError):
+        dynamic(
+            info=info, image=image, net=net.model_copy(update={"Internal": False}), intent=intent
+        )
 
 
 def test_disconnected_endpoint_requires_pinned_network_and_stopped_state() -> None:
@@ -116,13 +123,13 @@ def test_disconnected_endpoint_requires_pinned_network_and_stopped_state() -> No
             },
         }
     )
-    dynamic(pending, image, net, intent)
+    dynamic(info=pending, image=image, net=net, intent=intent)
     for changed in (
         {"State": {"Running": True, "Status": "running"}},
         {"HostConfig": pending.HostConfig | {"NetworkMode": net.Name}},
     ):
-        with pytest.raises(EngineError, match="OWNERSHIP_CONFLICT"):
-            dynamic(pending.model_copy(update=changed), image, net, intent)
+        with pytest.raises(expected_exception=EngineError, match="OWNERSHIP_CONFLICT"):
+            dynamic(info=pending.model_copy(update=changed), image=image, net=net, intent=intent)
 
 
 def test_fixed_engine_paths_and_no_automatic_retry() -> None:
@@ -133,39 +140,39 @@ def test_fixed_engine_paths_and_no_automatic_retry() -> None:
             requests.append(request)
             if request.url.path.endswith("/create"):
                 return httpx.Response(
-                    HTTPStatus.CREATED.value,
+                    status_code=HTTPStatus.CREATED.value,
                     stream=httpx.ByteStream(
-                        json.dumps({"Id": "c" * 64, "Warnings": ["retain ID"]}).encode()
+                        stream=json.dumps(obj={"Id": "c" * 64, "Warnings": ["retain ID"]}).encode()
                     ),
                 )
-            return httpx.Response(HTTPStatus.NO_CONTENT.value)
+            return httpx.Response(status_code=HTTPStatus.NO_CONTENT.value)
 
-        engine = Engine(httpx.MockTransport(respond))
+        engine = Engine(transport=httpx.MockTransport(handler=respond))
         intent, _image, _net, _info = fixture()
         try:
-            created = await engine.create(intent)
+            created = await engine.create(intent=intent)
             assert created.Id == "c" * 64 and created.Warnings == ["retain ID"]
-            assert json.loads(requests[0].content) == intent.daemon_body()
+            assert json.loads(s=requests[0].content) == intent.daemon_body()
             assert requests[0].url.params["name"] == intent.name
-            await engine.start(created.Id)
-            await engine.stop(created.Id)
-            await engine.remove(created.Id)
+            await engine.start(container_id=created.Id)
+            await engine.stop(container_id=created.Id)
+            await engine.remove(container_id=created.Id)
             assert requests[-1].url.query == b"force=false&v=false"
             for bad in ("../all", "backend-a", "abc", "c" * 64 + "?force=true"):
-                with pytest.raises(EngineError, match="INVALID_REFERENCE"):
-                    await engine.remove(bad)
-                with pytest.raises(EngineError, match="INVALID_REFERENCE"):
-                    await engine.inspect(bad)
+                with pytest.raises(expected_exception=EngineError, match="INVALID_REFERENCE"):
+                    await engine.remove(container_id=bad)
+                with pytest.raises(expected_exception=EngineError, match="INVALID_REFERENCE"):
+                    await engine.inspect(reference=bad)
             assert len(requests) == 4
         finally:
             await engine.close()
 
-    asyncio.run(run())
+    asyncio.run(main=run())
 
 
 @pytest.mark.parametrize(
-    "status,body,headers,code",
-    [
+    argnames="status,body,headers,code",
+    argvalues=[
         (
             HTTPStatus.FOUND.value,
             b"private details",
@@ -187,14 +194,16 @@ def test_daemon_errors_are_bounded_and_do_not_echo_host_details(
         def respond(_request: httpx.Request) -> httpx.Response:
             nonlocal count
             count += 1
-            return httpx.Response(status, stream=httpx.ByteStream(body), headers=headers)
+            return httpx.Response(
+                status_code=status, stream=httpx.ByteStream(stream=body), headers=headers
+            )
 
-        engine = Engine(httpx.MockTransport(respond))
+        engine = Engine(transport=httpx.MockTransport(handler=respond))
         try:
-            with pytest.raises(EngineError, match=code) as error:
+            with pytest.raises(expected_exception=EngineError, match=code) as error:
                 await engine.image()
-            assert str(error.value) == code and count == 1
+            assert str(object=error.value) == code and count == 1
         finally:
             await engine.close()
 
-    asyncio.run(run())
+    asyncio.run(main=run())

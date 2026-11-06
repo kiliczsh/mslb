@@ -14,7 +14,7 @@ def build() -> FastAPI:
     return create_app(
         database=Database(
             url=os.environ["DATABASE_URL"],
-            schema=os.environ.get("CONTROL_DATABASE_SCHEMA", "public"),
+            schema=os.environ.get(key="CONTROL_DATABASE_SCHEMA", default="public"),
         ),
         token=read_token(role="controller"),
         guard_token=read_token(role="guard"),
@@ -23,9 +23,9 @@ def build() -> FastAPI:
 
 if __name__ == "__main__":
     uvicorn.run(
-        "mslb_controller.proxy_main:build",
+        app="mslb_controller.proxy_main:build",
         factory=True,
-        host=os.environ.get("PROXY_BIND_HOST", "127.0.0.1"),
+        host=os.environ.get(key="PROXY_BIND_HOST", default="127.0.0.1"),
         port=8081,
         workers=1,
         proxy_headers=False,

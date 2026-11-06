@@ -14,20 +14,24 @@ from mslb_api.settings import Settings, cursor_secret
 
 def build() -> FastAPI:
     return create_app(
-        Settings.environment(),
-        Database(os.environ["DATABASE_URL"]),
-        ManagedFiles(Path(os.environ.get("INPUT_ROOT", "/data/inputs"))),
-        ManagedFiles(Path(os.environ.get("OUTPUT_ROOT", "/data/outputs")), read_only=True),
-        cursor_secret(Path(os.environ.get("API_STATE_ROOT", "/data/api-state"))),
+        settings=Settings.environment(),
+        database=Database(url=os.environ["DATABASE_URL"]),
+        inputs=ManagedFiles(root=Path(os.environ.get(key="INPUT_ROOT", default="/data/inputs"))),
+        outputs=ManagedFiles(
+            root=Path(os.environ.get(key="OUTPUT_ROOT", default="/data/outputs")), read_only=True
+        ),
+        signing_key=cursor_secret(
+            root=Path(os.environ.get(key="API_STATE_ROOT", default="/data/api-state"))
+        ),
         close_database=True,
     )
 
 
 if __name__ == "__main__":
     uvicorn.run(
-        "mslb_api.__main__:build",
+        app="mslb_api.__main__:build",
         factory=True,
-        host=os.environ.get("API_BIND_HOST", "127.0.0.1"),
+        host=os.environ.get(key="API_BIND_HOST", default="127.0.0.1"),
         port=8000,
         workers=1,
         proxy_headers=False,

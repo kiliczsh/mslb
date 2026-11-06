@@ -26,32 +26,32 @@ def artifacts() -> dict[str, bytes]:
             f"tools/{tool.name}.output.schema.json",
         )
         files[source], files[result] = (
-            canonical_bytes(schema(tool.input)),
-            canonical_bytes(output_schema(tool)),
+            canonical_bytes(value=schema(model=tool.input)),
+            canonical_bytes(value=output_schema(tool=tool)),
         )
         tools.append({"name": tool.name, "input_schema": source, "output_schema": result})
     for name, uri, model in RESOURCES:
         path = f"resources/{name}.schema.json"
-        files[path] = canonical_bytes(schema(model))
+        files[path] = canonical_bytes(value=schema(model=model))
         resources.append({"name": name, "uri": uri, "schema": path})
     for name, _, model in PROMPTS:
         path = f"prompts/{name}.arguments.schema.json"
-        files[path] = canonical_bytes(schema(model))
+        files[path] = canonical_bytes(value=schema(model=model))
         prompts.append({"name": name, "arguments_schema": path})
     common = {}
     for name, model in COMMON.items():
         path = f"common/{name}.schema.json"
-        files[path] = canonical_bytes(schema(model))
+        files[path] = canonical_bytes(value=schema(model=model))
         common[name] = path
     files["manifest.json"] = canonical_bytes(
-        {
+        value={
             "contract_version": CONTRACT_VERSION,
             "tools": tools,
             "resources": resources,
             "prompts": prompts,
             "common": common,
             "files": {
-                path: hashlib.sha256(data).hexdigest() for path, data in sorted(files.items())
+                path: hashlib.sha256(data=data).hexdigest() for path, data in sorted(files.items())
             },
         }
     )
@@ -64,22 +64,22 @@ def generate(root: Path) -> None:
         if path.is_symlink():
             raise ValueError("Schema destination must not be a symlink")
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(data)
+        path.write_bytes(data=data)
 
 
 def check(root: Path) -> None:
     with tempfile.TemporaryDirectory(prefix="mslb-mcp-schemas-") as temporary:
         generated = Path(temporary)
-        generate(generated)
+        generate(root=generated)
         expected = {
             path.relative_to(generated).as_posix(): path.read_bytes()
-            for path in generated.rglob("*")
+            for path in generated.rglob(pattern="*")
             if path.is_file()
         }
         actual = {}
         if root.is_symlink():
             raise ValueError("Schema inventory must not be a symlink")
-        for index, path in enumerate(root.rglob("*")):
+        for index, path in enumerate(iterable=root.rglob(pattern="*")):
             if index > 256 or path.is_symlink():
                 raise ValueError("Unsafe or oversized schema inventory")
             if path.is_file():
@@ -96,7 +96,7 @@ if __name__ == "__main__":
     parser.add_argument("--directory", type=Path, default=Path("docs/contracts/mcp"))
     arguments = parser.parse_args()
     if arguments.command == "generate":
-        generate(arguments.directory)
+        generate(root=arguments.directory)
     else:
-        check(arguments.directory)
+        check(root=arguments.directory)
     print("MCP contract schemas " + arguments.command + " passed")

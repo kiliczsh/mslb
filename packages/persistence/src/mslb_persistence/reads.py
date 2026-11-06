@@ -40,8 +40,8 @@ def run_view(run: Run, job: Job, progress: OutputProgress | None) -> RunView:
             settings=LegacyRunSettings.model_validate(obj=configuration)
         ).model_dump(mode="json")
     data = {
-        "id": str(run.id),
-        "dataset_id": str(run.dataset_id),
+        "id": str(object=run.id),
+        "dataset_id": str(object=run.dataset_id),
         "snapshot_digest": run.snapshot_digest,
         "dataset_digest": run.dataset_digest,
         "server_snapshot_digest": run.server_snapshot_digest,
@@ -54,17 +54,17 @@ def run_view(run: Run, job: Job, progress: OutputProgress | None) -> RunView:
         "error_code": job.error_code,
         "progress": None,
     }
-    view = RunView.model_validate_json(canonical_bytes(data))
+    view = RunView.model_validate_json(json_data=canonical_bytes(value=data))
     if progress is None:
         return view
     counts = [p.get("records") for p in progress.prefixes if p.get("name") == "run.jsonl"]
     if len(counts) != 1 or type(counts[0]) is not int:
-        raise StoreError("VALIDATION_FAILED", "Committed progress metadata is invalid")
+        raise StoreError(code="VALIDATION_FAILED", message="Committed progress metadata is invalid")
     return view.model_copy(
         update={
             "progress": RunProgress.model_validate_json(
-                canonical_bytes(
-                    {
+                json_data=canonical_bytes(
+                    value={
                         "revision": progress.revision,
                         "kind": progress.kind,
                         "next_tick": progress.next_tick,
@@ -79,7 +79,7 @@ def run_view(run: Run, job: Job, progress: OutputProgress | None) -> RunView:
 
 def check_limit(limit: int) -> None:
     if type(limit) is not int or not 1 <= limit <= 500:
-        raise StoreError("VALIDATION_ERROR", "Page limit must be between 1 and 500")
+        raise StoreError(code="VALIDATION_ERROR", message="Page limit must be between 1 and 500")
 
 
 class Reads:
@@ -113,60 +113,62 @@ class Reads:
         async def operation(session: AsyncSession) -> RunView:
             row = (
                 await session.execute(
-                    select(Run, Job, OutputProgress)
-                    .join(Job, Job.run_id == Run.id)
-                    .outerjoin(OutputProgress, OutputProgress.run_id == Run.id)
+                    statement=select(Run, Job, OutputProgress)
+                    .join(target=Job, onclause=Job.run_id == Run.id)
+                    .outerjoin(target=OutputProgress, onclause=OutputProgress.run_id == Run.id)
                     .where(Run.id == run_id, Job.kind == "logical")
                 )
             ).one_or_none()
             if row is None:
-                raise StoreError("NOT_FOUND", "Run does not exist")
+                raise StoreError(code="NOT_FOUND", message="Run does not exist")
             return run_view(*row)
 
-        return await self.database.transaction(operation)
+        return await self.database.transaction(operation=operation)
 
     async def runs(
         self, after: tuple[datetime, UUID] | None = None, limit: int = 100
     ) -> tuple[RunView, ...]:
         """Page durable history in stable creation-time/ID order."""
-        check_limit(limit)
+        check_limit(limit=limit)
 
         async def operation(session: AsyncSession) -> tuple[RunView, ...]:
             query = (
                 select(Run, Job, OutputProgress)
-                .join(Job, Job.run_id == Run.id)
-                .outerjoin(OutputProgress, OutputProgress.run_id == Run.id)
+                .join(target=Job, onclause=Job.run_id == Run.id)
+                .outerjoin(target=OutputProgress, onclause=OutputProgress.run_id == Run.id)
                 .where(Job.kind == "logical")
             )
             if after is not None:
                 query = query.where(tuple_(Run.created_at, Run.id) > after)
-            rows = await session.execute(query.order_by(Run.created_at, Run.id).limit(limit))
+            rows = await session.execute(
+                statement=query.order_by(Run.created_at, Run.id).limit(limit=limit)
+            )
             return tuple(run_view(*row) for row in rows)
 
-        return await self.database.transaction(operation)
+        return await self.database.transaction(operation=operation)
 
     async def dataset(self, dataset_id: UUID) -> DatasetView:
         async def operation(session: AsyncSession) -> DatasetView:
-            row = await session.get(Dataset, dataset_id)
+            row = await session.get(entity=Dataset, ident=dataset_id)
             if row is None:
-                raise StoreError("NOT_FOUND", "Dataset does not exist")
-            return dataset_view(row)
+                raise StoreError(code="NOT_FOUND", message="Dataset does not exist")
+            return dataset_view(row=row)
 
-        return await self.database.transaction(operation)
+        return await self.database.transaction(operation=operation)
 
     async def datasets(
         self, after: tuple[datetime, UUID] | None = None, limit: int = 100
     ) -> tuple[DatasetView, ...]:
         """Page immutable dataset metadata without reading uploaded file bodies."""
-        check_limit(limit)
+        check_limit(limit=limit)
 
         async def operation(session: AsyncSession) -> tuple[DatasetView, ...]:
             query = select(Dataset)
             if after is not None:
                 query = query.where(tuple_(Dataset.created_at, Dataset.id) > after)
             rows = await session.scalars(
-                query.order_by(Dataset.created_at, Dataset.id).limit(limit)
+                statement=query.order_by(Dataset.created_at, Dataset.id).limit(limit=limit)
             )
-            return tuple(dataset_view(row) for row in rows)
+            return tuple(dataset_view(row=row) for row in rows)
 
-        return await self.database.transaction(operation)
+        return await self.database.transaction(operation=operation)

@@ -50,3 +50,48 @@ generate-openapi-schemas:
 
 check-openapi-schemas:
     python scripts/openapi_schemas.py check
+
+# Docker tasks use built images; build explicitly after changing source.
+build:
+    docker compose --profile tools build postgres
+    docker compose --profile tools build python-checks
+    docker compose --profile tools build api
+    docker compose --profile tools build frontend-checks
+    docker compose --profile tools build web
+    docker compose --profile tools build browser-checks
+
+up:
+    docker compose up --build -d --wait
+
+down:
+    docker compose down
+
+test-python:
+    docker compose --profile tools run --rm --no-deps python-checks
+
+test-frontend:
+    docker compose --profile tools run --rm --no-deps frontend-checks
+
+test-persistence:
+    docker compose --profile tools run --rm --no-deps persistence-checks
+
+check-runtime:
+    docker compose --profile tools run --rm --no-deps runtime-check
+
+check-api:
+    docker compose --profile tools run --rm --no-deps api-check
+
+check-mcp:
+    docker compose --profile tools run --rm --no-deps mcp-check
+
+check-worker:
+    docker compose --profile tools run --rm --no-deps worker-check
+
+check-traffic:
+    docker compose --profile tools run --rm --no-deps traffic-check
+
+check-docker-proxy:
+    docker compose --profile tools run --rm --no-deps docker-proxy-check
+
+check-browser:
+    pwsh -NoProfile -File scripts/check-browser.ps1

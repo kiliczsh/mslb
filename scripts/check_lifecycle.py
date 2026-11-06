@@ -53,13 +53,13 @@ async def server(database: Database) -> asyncio.subprocess.Process:
                 break
             try:
                 if (
-                    await client.get("http://127.0.0.1:8081/health")
+                    await client.get(url="http://127.0.0.1:8081/health")
                 ).status_code == HTTPStatus.OK.value:
                     return process
             except httpx.HTTPError:
                 pass
-            await asyncio.sleep(0.1)
-    await stop(process)
+            await asyncio.sleep(delay=0.1)
+    await stop(process=process)
     raise RuntimeError("Test proxy did not become ready")
 
 
@@ -69,12 +69,12 @@ async def stop(process: asyncio.subprocess.Process, *, crash: bool = False) -> N
             process.kill()
         else:
             process.terminate()
-    async with asyncio.timeout(55):
+    async with asyncio.timeout(delay=55):
         output, _error = await process.communicate()
-    require(len(output) < 32768, "Proxy log bound exceeded")
+    require(value=len(output) < 32768, message="Proxy log bound exceeded")
     require(
-        not any(word in output.upper() for word in (b"WARNING", b"ERROR", b"TRACEBACK")),
-        "Proxy emitted a diagnostic during lifecycle verification",
+        value=not any(word in output.upper() for word in (b"WARNING", b"ERROR", b"TRACEBACK")),
+        message="Proxy emitted a diagnostic during lifecycle verification",
     )
 
 
@@ -89,24 +89,24 @@ async def rpc(
         run_id=lease.run_id, fence=lease.fence, owner=lease.owner, phase=lease.phase
     )
     response = await client.post(
-        f"/control/resources/{identifier}/{action}", content=reference.model_dump_json()
+        url=f"/control/resources/{identifier}/{action}", content=reference.model_dump_json()
     )
     require(
-        response.status_code == status,
-        f"Lifecycle {action} returned {response.status_code}: {response.text}",
+        value=response.status_code == status,
+        message=f"Lifecycle {action} returned {response.status_code}: {response.text}",
     )
 
 
 async def enqueue(database: Database) -> ControlLease:
     engine, http = Engine(), BackendHttp()
     try:
-        deployment = await Lifecycle(database, engine, http).enroll()
+        deployment = await Lifecycle(database=database, engine=engine, http=http).enroll()
     finally:
         await engine.close()
         await http.client.aclose()
-    logical = await prepare(database)
-    await DockerCatalog(database).enqueue(
-        DockerSnapshot(
+    logical = await prepare(database=database)
+    await DockerCatalog(database=database).enqueue(
+        snapshot=DockerSnapshot(
             dataset_id=logical.dataset.id,
             dataset_digest=logical.dataset.digest,
             request_count=logical.dataset.request_count,
@@ -116,7 +116,7 @@ async def enqueue(database: Database) -> ControlLease:
             configuration=DockerSettings(),
         )
     )
-    lease = await DockerControl(database).claim("lifecycle-check", 120)
+    lease = await DockerControl(database=database).claim(owner="lifecycle-check", lease_seconds=120)
     if lease is None:
         raise RuntimeError("Test Docker claim failed")
     return lease
@@ -125,24 +125,30 @@ async def enqueue(database: Database) -> ControlLease:
 async def crash_create() -> None:
     """Abrupt exit after real daemon success, optionally after persisting its immutable ID."""
     schema, run_id, identifier, fence, phase = sys.argv[2:]
-    database = Database(os.environ["TEST_DATABASE_URL"], schema)
+    database = Database(url=os.environ["TEST_DATABASE_URL"], schema=schema)
     lease = ControlLease(
-        UUID(run_id),
-        int(fence),
-        "lifecycle-check",
-        LeaseRef(run_id=UUID(run_id), fence=int(fence), owner="lifecycle-check", phase="running")
+        run_id=UUID(hex=run_id),
+        fence=int(fence),
+        owner="lifecycle-check",
+        expires_at=LeaseRef(
+            run_id=UUID(hex=run_id), fence=int(fence), owner="lifecycle-check", phase="running"
+        )
         .lease()
         .expires_at,
-        "running",
+        phase="running",
     )
-    resources, engine = DockerResources(database), Engine()
-    intent = await resources.authorize_create(lease, UUID(identifier))
-    created = await engine.create(intent)
-    require(not bool(created.Warnings), "Create emitted daemon diagnostics")
+    resources, engine = DockerResources(database=database), Engine()
+    intent = await resources.authorize_create(lease=lease, resource_id=UUID(hex=identifier))
+    created = await engine.create(intent=intent)
+    require(value=not bool(created.Warnings), message="Create emitted daemon diagnostics")
     if phase == "observed":
         http = BackendHttp()
-        await Lifecycle(database, engine, http).observe(lease, UUID(identifier))
-    os._exit(73)  # Deliberate process death: no Python finalizers/ID receipt in the creating case.
+        await Lifecycle(database=database, engine=engine, http=http).observe(
+            lease=lease, identifier=UUID(hex=identifier)
+        )
+    os._exit(
+        status=73
+    )  # Deliberate process death: no Python finalizers/ID receipt in the creating case.
 
 
 async def main() -> None:
@@ -151,12 +157,15 @@ async def main() -> None:
     scoped = ControlClient()
     try:
         deployment = await scoped.enroll()
-        require(deployment.definition.network_id != "", "Installed proxy enrollment failed")
+        require(
+            value=deployment.definition.network_id != "",
+            message="Installed proxy enrollment failed",
+        )
     finally:
         await scoped.close()
     async with scratch(retain_on_failure=True) as database:
-        resources, control = DockerResources(database), DockerControl(database)
-        process = await server(database)
+        resources, control = DockerResources(database=database), DockerControl(database=database)
+        process = await server(database=database)
         engine, backend = Engine(), BackendHttp()
         auth = {"Authorization": "Bearer " + read_token(), "Content-Type": "application/json"}
         try:
@@ -164,77 +173,93 @@ async def main() -> None:
                 base_url="http://127.0.0.1:8081", headers=auth, trust_env=False, timeout=50
             ) as client:
                 require(
-                    (await client.post("/containers/create", json={})).status_code
+                    value=(await client.post(url="/containers/create", json={})).status_code
                     == HTTPStatus.NOT_FOUND.value,
-                    "Raw API exposed",
+                    message="Raw API exposed",
                 )
                 require(
-                    (
+                    value=(
                         await client.post(
-                            "/control/enroll", json={}, headers={"Authorization": "Bearer invalid"}
+                            url="/control/enroll",
+                            json={},
+                            headers={"Authorization": "Bearer invalid"},
                         )
                     ).status_code
                     == HTTPStatus.UNAUTHORIZED.value,
-                    "Bad token accepted",
+                    message="Bad token accepted",
                 )
-                lease = await enqueue(database)
-                static = await resources.reserve_static(lease, "backend-a")
-                record = await resources.prepare_dynamic(lease)
+                lease = await enqueue(database=database)
+                static = await resources.reserve_static(lease=lease, name="backend-a")
+                record = await resources.prepare_dynamic(lease=lease)
                 owned_id: str | None = None
                 try:
                     await rpc(
-                        client,
-                        replace(lease, fence=lease.fence + 1),
-                        record.id,
-                        "create",
-                        HTTPStatus.CONFLICT.value,
+                        client=client,
+                        lease=replace(lease, fence=lease.fence + 1),
+                        identifier=record.id,
+                        action="create",
+                        status=HTTPStatus.CONFLICT.value,
                     )
-                    await rpc(client, lease, record.id, "create")
-                    owned = await resources.get(lease, record.id)
+                    await rpc(client=client, lease=lease, identifier=record.id, action="create")
+                    owned = await resources.get(lease=lease, resource_id=record.id)
                     owned_id = owned.container_id
                     require(
-                        owned_id is not None and owned.state == "observed",
-                        "ID not saved before start",
+                        value=owned_id is not None and owned.state == "observed",
+                        message="ID not saved before start",
                     )
-                    await rpc(client, lease, record.id, "create", HTTPStatus.CONFLICT.value)
-                    await rpc(client, lease, record.id, "start")
-                    spec = BackendSpec(record.name)
-                    router = Router((spec,), "first_fit", backend)
+                    await rpc(
+                        client=client,
+                        lease=lease,
+                        identifier=record.id,
+                        action="create",
+                        status=HTTPStatus.CONFLICT.value,
+                    )
+                    await rpc(client=client, lease=lease, identifier=record.id, action="start")
+                    spec = BackendSpec(id=record.name)
+                    router = Router(specs=(spec,), strategy="first_fit", http=backend)
                     for _ in range(40):
                         await router.refresh()
                         if router.states[spec.id].healthy:
                             break
-                        await asyncio.sleep(0.1)
+                        await asyncio.sleep(delay=0.1)
                     result = await backend.work(
-                        router.reserve(
-                            WorkRequest(request_id="lifecycle-real", work_units=1, mem_mb=1)
+                        reservation=router.reserve(
+                            request=WorkRequest(request_id="lifecycle-real", work_units=1, mem_mb=1)
                         )
                     )
                     require(
-                        result.backend_id == record.name and result.operations == 2048,
-                        "Actual work was not executed",
+                        value=result.backend_id == record.name and result.operations == 2048,
+                        message="Actual work was not executed",
                     )
-                    await rpc(client, lease, static.id, "start", HTTPStatus.CONFLICT.value)
+                    await rpc(
+                        client=client,
+                        lease=lease,
+                        identifier=static.id,
+                        action="start",
+                        status=HTTPStatus.CONFLICT.value,
+                    )
                 finally:
-                    cleanup = await control.begin_cleanup(lease, "failed", "CONTROLLER_FAILURE")
-                    await rpc(client, cleanup, record.id, "cleanup")
-                    await rpc(client, cleanup, static.id, "cleanup")
-                    await control.finish_cleanup(cleanup)
+                    cleanup = await control.begin_cleanup(
+                        lease=lease, outcome="failed", error_code="CONTROLLER_FAILURE"
+                    )
+                    await rpc(client=client, lease=cleanup, identifier=record.id, action="cleanup")
+                    await rpc(client=client, lease=cleanup, identifier=static.id, action="cleanup")
+                    await control.finish_cleanup(lease=cleanup)
                 if owned_id is None:
                     raise RuntimeError("Container ID missing")
                 try:
-                    await engine.inspect(owned_id)
+                    await engine.inspect(reference=owned_id)
                 except EngineError as error:
                     require(
-                        error.status == HTTPStatus.NOT_FOUND.value,
-                        "Removed container absence not verified",
+                        value=error.status == HTTPStatus.NOT_FOUND.value,
+                        message="Removed container absence not verified",
                     )
                 else:
                     raise RuntimeError("Owned container survived cleanup")
                 # Before create, after daemon success, and after ID persistence: never replay work.
                 for phase in ("prepared", "creating", "observed"):
-                    lease = await enqueue(database)
-                    record = await resources.prepare_dynamic(lease)
+                    lease = await enqueue(database=database)
+                    record = await resources.prepare_dynamic(lease=lease)
                     if phase != "prepared":
                         child = await asyncio.create_subprocess_exec(
                             sys.executable,
@@ -242,54 +267,62 @@ async def main() -> None:
                             "scripts.check_lifecycle",
                             "crash-create",
                             database.schema,
-                            str(lease.run_id),
-                            str(record.id),
-                            str(lease.fence),
+                            str(object=lease.run_id),
+                            str(object=record.id),
+                            str(object=lease.fence),
                             phase,
                         )
                         require(
-                            await child.wait() == 73,
-                            "Fault process did not reach intended crash window",
+                            value=await child.wait() == 73,
+                            message="Fault process did not reach intended crash window",
                         )
-                    await stop(process, crash=True)
-                    await expire(database)
-                    recovered = await control.claim("recovery", 120)
+                    await stop(process=process, crash=True)
+                    await expire(database=database)
+                    recovered = await control.claim(owner="recovery", lease_seconds=120)
                     require(
-                        recovered is not None and recovered.phase == "cleanup",
-                        "Interrupted work was replayed",
+                        value=recovered is not None and recovered.phase == "cleanup",
+                        message="Interrupted work was replayed",
                     )
                     if recovered is None:
                         raise RuntimeError("Cleanup claim missing")
-                    process = await server(database)
-                    await rpc(client, lease, record.id, "start", HTTPStatus.CONFLICT.value)
-                    await rpc(client, recovered, record.id, "cleanup")
-                    require(
-                        (await resources.get(recovered, record.id)).state
-                        in {"removed", "abandoned"},
-                        "Orphan remains",
+                    process = await server(database=database)
+                    await rpc(
+                        client=client,
+                        lease=lease,
+                        identifier=record.id,
+                        action="start",
+                        status=HTTPStatus.CONFLICT.value,
                     )
-                    job = await control.finish_cleanup(recovered)
+                    await rpc(
+                        client=client, lease=recovered, identifier=record.id, action="cleanup"
+                    )
                     require(
-                        job.status == "failed"
+                        value=(await resources.get(lease=recovered, resource_id=record.id)).state
+                        in {"removed", "abandoned"},
+                        message="Orphan remains",
+                    )
+                    job = await control.finish_cleanup(lease=recovered)
+                    require(
+                        value=job.status == "failed"
                         and job.error_code == "INTERRUPTED"
                         and job.attempts == 1,
-                        "Interrupted outcome incorrect",
+                        message="Interrupted outcome incorrect",
                     )
                 # Static IDs remain live and identical throughout all destructive dynamic checks.
                 await check_outputs(
                     database=database, client=client, backend=backend, engine=engine
                 )
-                final = await Lifecycle(database, engine, backend).enroll()
+                final = await Lifecycle(database=database, engine=engine, http=backend).enroll()
                 require(
-                    final.definition == deployment.definition,
-                    "Static deployment changed during cleanup",
+                    value=final.definition == deployment.definition,
+                    message="Static deployment changed during cleanup",
                 )
         finally:
-            await stop(process)
+            await stop(process=process)
             await engine.close()
             await backend.client.aclose()
     print("Restricted proxy, actual work, fenced cleanup and three process-crash windows passed")
 
 
 if __name__ == "__main__":
-    asyncio.run(crash_create() if len(sys.argv) > 1 else main())
+    asyncio.run(main=crash_create() if len(sys.argv) > 1 else main())

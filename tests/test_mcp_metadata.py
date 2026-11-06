@@ -42,7 +42,7 @@ def test_response_metadata_preserves_request_correlation_for_all_result_paths() 
         prompt = await adapter.get_prompt(
             context=context,
             params=GetPromptRequestParams(
-                name="analyze_performance", arguments={"run_id": str(UUID(int=1))}
+                name="analyze_performance", arguments={"run_id": str(object=UUID(int=1))}
             ),
         )
 

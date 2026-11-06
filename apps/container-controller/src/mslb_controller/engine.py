@@ -33,7 +33,7 @@ class Engine:
             base_url="http://engine",
             trust_env=False,
             follow_redirects=False,
-            timeout=httpx.Timeout(5, connect=1, pool=0.1),
+            timeout=httpx.Timeout(timeout=5, connect=1, pool=0.1),
             limits=limits,
             headers={"Accept": "application/json", "Accept-Encoding": "identity"},
         )
@@ -50,101 +50,107 @@ class Engine:
         """Bound daemon HTTP bytes/time and return safe status/schema failures."""
         try:
             async with (
-                asyncio.timeout(8),
-                self.client.stream(method, API_VERSION + path, json=body) as response,
+                asyncio.timeout(delay=8),
+                self.client.stream(method=method, url=API_VERSION + path, json=body) as response,
             ):
                 if response.status_code not in expected:
-                    raise EngineError("ENGINE_STATUS", response.status_code)
+                    raise EngineError(code="ENGINE_STATUS", status=response.status_code)
                 if response.status_code in {
                     HTTPStatus.NO_CONTENT.value,
                     HTTPStatus.NOT_MODIFIED.value,
                 }:
                     return None
-                if response.headers.get("content-encoding", "identity") != "identity":
-                    raise EngineError("ENGINE_RESPONSE")
+                if response.headers.get(key="content-encoding", default="identity") != "identity":
+                    raise EngineError(code="ENGINE_RESPONSE")
                 raw = bytearray()
-                async for chunk in response.aiter_raw(65536):
+                async for chunk in response.aiter_raw(chunk_size=65536):
                     if len(raw) + len(chunk) > 256 * 1024:
-                        raise EngineError("ENGINE_RESPONSE")
+                        raise EngineError(code="ENGINE_RESPONSE")
                     raw.extend(chunk)
                 try:
-                    return model.model_validate_json(raw)
+                    return model.model_validate_json(json_data=raw)
                 except ValidationError:
-                    raise EngineError("ENGINE_RESPONSE") from None
+                    raise EngineError(code="ENGINE_RESPONSE") from None
         except (TimeoutError, httpx.TimeoutException):
-            raise EngineError("ENGINE_TIMEOUT") from None
+            raise EngineError(code="ENGINE_TIMEOUT") from None
         except httpx.HTTPError:
-            raise EngineError("ENGINE_UNAVAILABLE") from None
+            raise EngineError(code="ENGINE_UNAVAILABLE") from None
 
     async def image(self, image_id: str | None = None) -> ImageInfo:
-        if image_id is not None and not re.fullmatch(r"sha256:[0-9a-f]{64}", image_id):
-            raise EngineError("INVALID_REFERENCE")
-        value = await self._request("GET", f"/images/{image_id or IMAGE}/json", ImageInfo)
+        if image_id is not None and not re.fullmatch(
+            pattern=r"sha256:[0-9a-f]{64}", string=image_id
+        ):
+            raise EngineError(code="INVALID_REFERENCE")
+        value = await self._request(
+            method="GET", path=f"/images/{image_id or IMAGE}/json", model=ImageInfo
+        )
         if value is None:
-            raise EngineError("ENGINE_RESPONSE")
+            raise EngineError(code="ENGINE_RESPONSE")
         return value
 
     async def network(self) -> NetworkInfo:
-        value = await self._request("GET", f"/networks/{NETWORK}", NetworkInfo)
+        value = await self._request(method="GET", path=f"/networks/{NETWORK}", model=NetworkInfo)
         if value is None:
-            raise EngineError("ENGINE_RESPONSE")
+            raise EngineError(code="ENGINE_RESPONSE")
         return value
 
     async def inspect(self, reference: str) -> ContainerInfo:
         if not re.fullmatch(
-            r"[0-9a-f]{64}|mslb-backend-[ab]-1|mslb-[0-9a-f]{32}-[0-3]",
-            reference,
+            pattern=r"[0-9a-f]{64}|mslb-backend-[ab]-1|mslb-[0-9a-f]{32}-[0-3]",
+            string=reference,
         ):
-            raise EngineError("INVALID_REFERENCE")
-        value = await self._request("GET", f"/containers/{reference}/json", ContainerInfo)
+            raise EngineError(code="INVALID_REFERENCE")
+        value = await self._request(
+            method="GET", path=f"/containers/{reference}/json", model=ContainerInfo
+        )
         if value is None:
-            raise EngineError("ENGINE_RESPONSE")
+            raise EngineError(code="ENGINE_RESPONSE")
         return value
 
     async def create(self, intent: CreationIntent) -> Created:
         value = await self._request(
-            "POST",
-            f"/containers/create?name={intent.name}",
-            Created,
+            method="POST",
+            path=f"/containers/create?name={intent.name}",
+            model=Created,
             body=intent.daemon_body(),
             expected=(HTTPStatus.CREATED.value,),
         )
         if value is None:
-            raise EngineError("ENGINE_RESPONSE")
+            raise EngineError(code="ENGINE_RESPONSE")
         # Preserve the ID even if a daemon warning is returned: the reservation still needs cleanup.
         return value
 
     async def start(self, container_id: str) -> None:
-        self._id(container_id)
+        self._id(value=container_id)
         await self._request(
-            "POST",
-            f"/containers/{container_id}/start",
-            Created,
+            method="POST",
+            path=f"/containers/{container_id}/start",
+            model=Created,
             expected=(HTTPStatus.NO_CONTENT.value, HTTPStatus.NOT_MODIFIED.value),
         )
 
     async def stop(self, container_id: str) -> None:
-        self._id(container_id)
+        self._id(value=container_id)
         await self._request(
-            "POST",
-            f"/containers/{container_id}/stop?t=3",
-            Created,
+            method="POST",
+            path=f"/containers/{container_id}/stop?t=3",
+            model=Created,
             expected=(HTTPStatus.NO_CONTENT.value, HTTPStatus.NOT_MODIFIED.value),
         )
 
     async def remove(self, container_id: str) -> None:
-        self._id(container_id)
+        self._id(value=container_id)
         await self._request(
-            "DELETE",
-            f"/containers/{container_id}?force=false&v=false",
-            Created,
+            method="DELETE",
+            path=f"/containers/{container_id}?force=false&v=false",
+            model=Created,
             expected=(HTTPStatus.NO_CONTENT.value,),
         )
 
     @staticmethod
     def _id(value: str) -> None:
-        if not re.fullmatch(r"[0-9a-f]{64}", value):
-            raise EngineError("INVALID_REFERENCE")
+        if not re.fullmatch(pattern=r"[0-9a-f]{64}", string=value):
+            raise EngineError(code="INVALID_REFERENCE")
 
     async def close(self) -> None:
         await self.client.aclose()

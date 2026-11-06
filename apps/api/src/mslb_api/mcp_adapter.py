@@ -74,8 +74,8 @@ RESPONSE_LIMIT = 1024**2 - 65536 - 1024
 
 def correlation(*, context: ServerRequestContext[object]) -> str:
     if isinstance(context.request, Request):
-        return str(getattr(context.request.state, "request_id", str(uuid4())))
-    return str(uuid4())
+        return str(object=getattr(context.request.state, "request_id", str(object=uuid4())))
+    return str(object=uuid4())
 
 
 class McpAdapter:
@@ -157,7 +157,7 @@ class McpAdapter:
                 progress_token=token,
                 progress=float(progress),
                 message=message,
-                related_request_id=str(context.request_id)
+                related_request_id=str(object=context.request_id)
                 if context.request_id is not None
                 else None,
             )

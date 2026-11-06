@@ -32,13 +32,13 @@ READONLY = {"/proc/bus", "/proc/fs", "/proc/irq", "/proc/sys", "/proc/sysrq-trig
 
 def require(condition: bool) -> None:
     if not condition:
-        raise EngineError("OWNERSHIP_CONFLICT")
+        raise EngineError(code="OWNERSHIP_CONFLICT")
 
 
 def mapping(value: object) -> dict[str, object]:
     if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
-        raise EngineError("ENGINE_RESPONSE")
-    return {str(key): item for key, item in value.items()}
+        raise EngineError(code="ENGINE_RESPONSE")
+    return {str(object=key): item for key, item in value.items()}
 
 
 def strings(value: object) -> tuple[str, ...]:
@@ -47,88 +47,92 @@ def strings(value: object) -> tuple[str, ...]:
         or len(value) > 64
         or any(not isinstance(item, str) or len(item) > 4096 for item in value)
     ):
-        raise EngineError("ENGINE_RESPONSE")
-    return tuple(str(item) for item in value)
+        raise EngineError(code="ENGINE_RESPONSE")
+    return tuple(str(object=item) for item in value)
 
 
 def environment(value: object) -> dict[str, str]:
     result: dict[str, str] = {}
-    for item in strings(value):
+    for item in strings(value=value):
         key, separator, content = item.partition("=")
-        require(bool(separator) and bool(key) and key not in result)
+        require(condition=bool(separator) and bool(key) and key not in result)
         result[key] = content
     return result
 
 
 def labels(value: object) -> dict[str, str]:
-    raw = mapping(value or {})
+    raw = mapping(value=value or {})
     if len(raw) > 64 or any(not isinstance(item, str) or len(item) > 4096 for item in raw.values()):
-        raise EngineError("ENGINE_RESPONSE")
-    return {key: str(item) for key, item in raw.items()}
+        raise EngineError(code="ENGINE_RESPONSE")
+    return {key: str(object=item) for key, item in raw.items()}
 
 
 def network(info: NetworkInfo) -> None:
     require(
-        info.Name == NETWORK and info.Internal and info.Driver == "bridge" and info.Scope == "local"
+        condition=info.Name == NETWORK
+        and info.Internal
+        and info.Driver == "bridge"
+        and info.Scope == "local"
     )
     require(
-        info.Labels.get("com.docker.compose.project") == PROJECT
+        condition=info.Labels.get("com.docker.compose.project") == PROJECT
         and info.Labels.get("com.docker.compose.network") == "docker-traffic"
     )
 
 
 def _tmpfs(value: object) -> None:
-    raw = mapping(value)
-    require(set(raw) == {TMP_PATH} and isinstance(raw[TMP_PATH], str))
-    options = str(raw[TMP_PATH]).replace("size=16m", "size=16777216").split(",")
-    require(len(options) == 7 and set(options) == set(TMP_OPTIONS.split(",")))
+    raw = mapping(value=value)
+    require(condition=set(raw) == {TMP_PATH} and isinstance(raw[TMP_PATH], str))
+    options = str(object=raw[TMP_PATH]).replace("size=16m", "size=16777216").split(sep=",")
+    require(condition=len(options) == 7 and set(options) == set(TMP_OPTIONS.split(sep=",")))
 
 
 def _common(
     info: ContainerInfo, image: ImageInfo, net: NetworkInfo, *, name: str, memory: int, cpus: int
 ) -> None:
     """Verify the complete approved container security and resource template, failing closed."""
-    network(net)
-    require(info.Image == image.Id and info.Name == "/" + name)
+    network(info=net)
+    require(condition=info.Image == image.Id and info.Name == "/" + name)
     config, host = info.Config, info.HostConfig
-    require(config.get("User") == "1000:1000" and config.get("WorkingDir") == "/app")
-    require(config.get("Hostname") == info.Id[:12] and config.get("Domainname") == "")
-    require(config.get("StopSignal") == image.Config.get("StopSignal"))
+    require(condition=config.get("User") == "1000:1000" and config.get("WorkingDir") == "/app")
+    require(condition=config.get("Hostname") == info.Id[:12] and config.get("Domainname") == "")
+    require(condition=config.get("StopSignal") == image.Config.get("StopSignal"))
     require(
-        not config.get("Volumes")
+        condition=not config.get("Volumes")
         and config.get("Tty") is False
         and config.get("OpenStdin") is False
         and config.get("AttachStdin") is False
     )
     require(
-        info.Mounts == []
+        condition=info.Mounts == []
         and host.get("Memory") == memory * 1024**2
         and host.get("MemorySwap") == memory * 1024**2
     )
     require(
-        host.get("NanoCpus") == cpus
+        condition=host.get("NanoCpus") == cpus
         and host.get("PidsLimit") == 32
         and host.get("ReadonlyRootfs") is True
     )
     require(
-        host.get("CapDrop") == ["ALL"] and host.get("SecurityOpt") == ["no-new-privileges:true"]
+        condition=host.get("CapDrop") == ["ALL"]
+        and host.get("SecurityOpt") == ["no-new-privileges:true"]
     )
     require(
-        host.get("LogConfig") == LOGGING
+        condition=host.get("LogConfig") == LOGGING
         and host.get("RestartPolicy") == {"Name": "no", "MaximumRetryCount": 0}
     )
-    require(host.get("NetworkMode") in {net.Id, net.Name})
+    require(condition=host.get("NetworkMode") in {net.Id, net.Name})
     require(
-        host.get("IpcMode") == "private"
+        condition=host.get("IpcMode") == "private"
         and host.get("CgroupnsMode") == "private"
         and host.get("Runtime") == "runc"
         and host.get("ShmSize") == 64 * 1024**2
     )
     require(
-        set(strings(host.get("MaskedPaths"))) == MASKED
-        and set(strings(host.get("ReadonlyPaths"))) == READONLY
+        condition=set(strings(value=host.get("MaskedPaths"))) == MASKED
+        and set(strings(value=host.get("ReadonlyPaths"))) == READONLY
     )
-    _tmpfs(host.get("Tmpfs"))
+    _tmpfs(value=host.get("Tmpfs"))
     allowed = {
         "Memory",
         "MemorySwap",
@@ -149,20 +153,20 @@ def _common(
         "Tmpfs",
         "ConsoleSize",
     }
-    require(host.get("ConsoleSize") == [0, 0])
+    require(condition=host.get("ConsoleSize") == [0, 0])
     for key, value in host.items():
         if key not in allowed:
             require(
-                value is None
+                condition=value is None
                 or value is False
                 or value == 0
                 or value == ""
                 or value == []
                 or value == {}
             )
-    networks = mapping(info.NetworkSettings.get("Networks"))
-    require(set(networks) == {net.Name})
-    endpoint = mapping(networks[net.Name])
+    networks = mapping(value=info.NetworkSettings.get("Networks"))
+    require(condition=set(networks) == {net.Name})
+    endpoint = mapping(value=networks[net.Name])
     attached = endpoint.get("NetworkID") == net.Id
     pending = (
         endpoint.get("NetworkID") == ""
@@ -175,57 +179,61 @@ def _common(
     )
     # Docker resolves the pinned endpoint's NetworkID only when a new container starts.
     # A disconnected container still requires the exact immutable HostConfig network ID.
-    require(attached or pending)
+    require(condition=attached or pending)
     require(
-        not endpoint.get("IPAMConfig")
+        condition=not endpoint.get("IPAMConfig")
         and not endpoint.get("DriverOpts")
         and not endpoint.get("Links")
     )
-    require(type(endpoint.get("GwPriority", 0)) is int and endpoint.get("GwPriority", 0) == 0)
+    require(
+        condition=type(endpoint.get("GwPriority", 0)) is int and endpoint.get("GwPriority", 0) == 0
+    )
 
 
 def static(info: ContainerInfo, image: ImageInfo, net: NetworkInfo, name: str) -> StaticBackend:
     """Bind an inspected static backend to trusted deployment image/network/configuration."""
-    require(name in {"backend-a", "backend-b"})
-    _common(info, image, net, name=f"{PROJECT}-{name}-1", memory=128, cpus=500_000_000)
+    require(condition=name in {"backend-a", "backend-b"})
+    _common(
+        info=info, image=image, net=net, name=f"{PROJECT}-{name}-1", memory=128, cpus=500_000_000
+    )
     config = info.Config
     require(
-        config.get("Image") == IMAGE
+        condition=config.get("Image") == IMAGE
         and config.get("Cmd") == ["python", "-m", "mslb_mock_server"]
         and config.get("Entrypoint") == image.Config.get("Entrypoint")
     )
-    expected_env = environment(image.Config.get("Env")) | {
+    expected_env = environment(value=image.Config.get("Env")) | {
         "BACKEND_ID": name,
         "LOGICAL_ADMISSION_MEM_MB": "1024",
         "MAX_INFLIGHT": "4",
         "TMPDIR": TMP_PATH,
     }
-    require(environment(config.get("Env")) == expected_env)
-    actual = labels(config.get("Labels"))
+    require(condition=environment(value=config.get("Env")) == expected_env)
+    actual = labels(value=config.get("Labels"))
     require(
-        actual.get("com.docker.compose.project") == PROJECT
+        condition=actual.get("com.docker.compose.project") == PROJECT
         and actual.get("com.docker.compose.service") == name
         and actual.get("com.docker.compose.container-number") == "1"
         and actual.get("com.docker.compose.oneoff") == "False"
     )
     require(
-        actual.get("com.mslb.component") == "http-backend"
+        condition=actual.get("com.mslb.component") == "http-backend"
         and actual.get("com.mslb.backend-kind") == "static"
     )
     require(
-        all(
+        condition=all(
             key.startswith("com.docker.compose.")
             or key in {"com.mslb.component", "com.mslb.backend-kind"}
-            or key in labels(image.Config.get("Labels"))
+            or key in labels(value=image.Config.get("Labels"))
             for key in actual
         )
     )
-    require(info.State.get("Running") is True)
-    endpoint = mapping(mapping(info.NetworkSettings["Networks"])[net.Name])
-    require(set(strings(endpoint.get("Aliases"))) == {f"{PROJECT}-{name}-1", name})
-    require(config.get("StopTimeout") == 5)
+    require(condition=info.State.get("Running") is True)
+    endpoint = mapping(value=mapping(value=info.NetworkSettings["Networks"])[net.Name])
+    require(condition=set(strings(value=endpoint.get("Aliases"))) == {f"{PROJECT}-{name}-1", name})
+    require(condition=config.get("StopTimeout") == 5)
     require(
-        config.get("Healthcheck")
+        condition=config.get("Healthcheck")
         == {
             "Test": [
                 "CMD",
@@ -248,26 +256,34 @@ def dynamic(
     info: ContainerInfo, image: ImageInfo, net: NetworkInfo, intent: CreationIntent
 ) -> None:
     """Verify a dynamic container against the complete persisted creation intent."""
-    require(intent.image_id == image.Id and intent.network_id == net.Id)
-    _common(info, image, net, name=intent.name, memory=intent.memory_mb, cpus=intent.nano_cpus)
+    require(condition=intent.image_id == image.Id and intent.network_id == net.Id)
+    _common(
+        info=info,
+        image=image,
+        net=net,
+        name=intent.name,
+        memory=intent.memory_mb,
+        cpus=intent.nano_cpus,
+    )
     body = intent.daemon_body()
     config = info.Config
     require(
-        config.get("Image") == intent.image_id
+        condition=config.get("Image") == intent.image_id
         and config.get("Cmd") in (None, [])
         and config.get("Entrypoint") == body["Entrypoint"]
     )
     require(
-        environment(config.get("Env"))
-        == environment(image.Config.get("Env")) | environment(body["Env"])
+        condition=environment(value=config.get("Env"))
+        == environment(value=image.Config.get("Env")) | environment(value=body["Env"])
     )
     require(
-        labels(config.get("Labels")) == labels(image.Config.get("Labels")) | labels(body["Labels"])
+        condition=labels(value=config.get("Labels"))
+        == labels(value=image.Config.get("Labels")) | labels(value=body["Labels"])
     )
-    require(config.get("Healthcheck") == image.Config.get("Healthcheck"))
-    endpoint = mapping(mapping(info.NetworkSettings["Networks"])[net.Name])
-    aliases = strings(endpoint.get("Aliases"))
-    require(intent.name in aliases and set(aliases) <= {intent.name, info.Id[:12]})
+    require(condition=config.get("Healthcheck") == image.Config.get("Healthcheck"))
+    endpoint = mapping(value=mapping(value=info.NetworkSettings["Networks"])[net.Name])
+    aliases = strings(value=endpoint.get("Aliases"))
+    require(condition=intent.name in aliases and set(aliases) <= {intent.name, info.Id[:12]})
 
 
 def deployment(
@@ -276,5 +292,8 @@ def deployment(
     return DeploymentSpec(
         image_id=image.Id,
         network_id=net.Id,
-        static=(static(first, image, net, "backend-a"), static(second, image, net, "backend-b")),
+        static=(
+            static(info=first, image=image, net=net, name="backend-a"),
+            static(info=second, image=image, net=net, name="backend-b"),
+        ),
     )

@@ -24,16 +24,16 @@ from pydantic import ValidationError
 
 
 def snapshot(settings: RunSettings | None = None, scaling_example: bool = False) -> RunSnapshot:
-    with Path("/fixtures/core/servers.json").open("rb") as stream:
-        servers = read_servers(stream)
+    with Path("/fixtures/core/servers.json").open(mode="rb") as stream:
+        servers = read_servers(stream=stream)
     requests_path = (
         Path("data/examples/scaling-requests.csv")
         if scaling_example
         else Path("/fixtures/core/requests.csv")
     )
-    with requests_path.open("rb") as stream:
-        requests = read_requests(stream)
-    return make_snapshot(servers, requests, settings or RunSettings())
+    with requests_path.open(mode="rb") as stream:
+        requests = read_requests(stream=stream)
+    return make_snapshot(servers=servers, requests=requests, settings=settings or RunSettings())
 
 
 def test_snapshot_defaults_are_frozen_normalized_and_round_trip() -> None:
@@ -42,18 +42,25 @@ def test_snapshot_defaults_are_frozen_normalized_and_round_trip() -> None:
     assert saved.configuration.autoscaling.max_servers == 5
     assert (
         make_snapshot(
-            tuple(reversed(saved.servers)), tuple(reversed(saved.requests)), RunSettings()
+            servers=tuple(reversed(saved.servers)),
+            requests=tuple(reversed(saved.requests)),
+            settings=RunSettings(),
         )
         == saved
     )
-    assert read_snapshot(io.BytesIO(canonical_bytes(saved.model_dump(mode="json")))) == saved
+    assert (
+        read_snapshot(
+            stream=io.BytesIO(initial_bytes=canonical_bytes(value=saved.model_dump(mode="json")))
+        )
+        == saved
+    )
     assert domain_config(settings=saved.configuration).mode == "sequential"
-    assert saved.engine_version == __version__ == version("mslb-engine")
+    assert saved.engine_version == __version__ == version(distribution_name="mslb-engine")
 
 
 @pytest.mark.parametrize(
-    "body",
-    [
+    argnames="body",
+    argvalues=[
         '{"max_samples":true}',
         '{"max_simulation_ticks":"100"}',
         '{"queue_timeout_ticks":0}',
@@ -67,45 +74,45 @@ def test_snapshot_defaults_are_frozen_normalized_and_round_trip() -> None:
     ],
 )
 def test_configuration_rejects_ambiguous_or_unsupported_values(body: str) -> None:
-    with pytest.raises(ValidationError):
-        RunSettings.model_validate_json(body)
+    with pytest.raises(expected_exception=ValidationError):
+        RunSettings.model_validate_json(json_data=body)
 
 
 def test_cross_field_scaling_validation_is_shared_with_domain() -> None:
-    with pytest.raises(SimulationError, match="template"):
-        snapshot(RunSettings(autoscaling=ScalingSettings(enabled=True)))
-    with pytest.raises(SimulationError, match="bounds"):
-        snapshot(RunSettings(autoscaling=ScalingSettings(max_servers=1)))
+    with pytest.raises(expected_exception=SimulationError, match="template"):
+        snapshot(settings=RunSettings(autoscaling=ScalingSettings(enabled=True)))
+    with pytest.raises(expected_exception=SimulationError, match="bounds"):
+        snapshot(settings=RunSettings(autoscaling=ScalingSettings(max_servers=1)))
 
 
 def test_snapshot_identity_rejects_tampering_and_unknown_versions() -> None:
     saved = snapshot()
-    with pytest.raises(InputError):
-        verify_snapshot(saved.model_copy(update={"dataset_digest": "0" * 64}))
-    with pytest.raises(InputError, match="version"):
-        verify_snapshot(saved.model_copy(update={"engine_version": "unknown"}))
+    with pytest.raises(expected_exception=InputError):
+        verify_snapshot(snapshot=saved.model_copy(update={"dataset_digest": "0" * 64}))
+    with pytest.raises(expected_exception=InputError, match="version"):
+        verify_snapshot(snapshot=saved.model_copy(update={"engine_version": "unknown"}))
     raw = saved.model_dump(mode="json")
     raw["schema_version"] = True
-    with pytest.raises(InputError):
-        read_snapshot(io.BytesIO(canonical_bytes(raw)))
+    with pytest.raises(expected_exception=InputError):
+        read_snapshot(stream=io.BytesIO(initial_bytes=canonical_bytes(value=raw)))
 
 
-@pytest.mark.parametrize("mode", ["concurrent", "sequential"])
+@pytest.mark.parametrize(argnames="mode", argvalues=["concurrent", "sequential"])
 def test_complete_bundle_replays_and_repeated_execution_is_identical(
     tmp_path: Path, mode: str
 ) -> None:
-    settings = RunSettings.model_validate_json(json.dumps({"mode": mode}))
-    saved = snapshot(settings)
+    settings = RunSettings.model_validate_json(json_data=json.dumps(obj={"mode": mode}))
+    saved = snapshot(settings=settings)
     destination = tmp_path / "result"
-    result = execute_bundle(saved, destination)
+    result = execute_bundle(snapshot=saved, destination=destination)
     assert set(result.artifacts) == ARTIFACT_NAMES
     assert result.independent_replay == "passed"
     assert result.original_validator == ("passed" if mode == "sequential" else "not_applicable")
-    assert verify_bundle(destination) == result
+    assert verify_bundle(directory=destination) == result
     before = {path.name: path.read_bytes() for path in destination.iterdir()}
-    assert execute_bundle(saved, destination) == result
+    assert execute_bundle(snapshot=saved, destination=destination) == result
     assert {path.name: path.read_bytes() for path in destination.iterdir()} == before
-    assert not list(tmp_path.glob(".mslb-attempt-*"))
+    assert not list(tmp_path.glob(pattern=".mslb-attempt-*"))
 
 
 def test_scaled_bundle_has_independently_validated_decisions_and_metrics(tmp_path: Path) -> None:
@@ -118,28 +125,28 @@ def test_scaled_bundle_has_independently_validated_decisions_and_metrics(tmp_pat
             ),
         )
     )
-    saved = snapshot(settings, scaling_example=True)
+    saved = snapshot(settings=settings, scaling_example=True)
     destination = tmp_path / "scaled"
-    result = execute_bundle(saved, destination)
+    result = execute_bundle(snapshot=saved, destination=destination)
     assert result.decision_count > 0 and result.original_validator == "not_applicable"
-    assert verify_bundle(destination) == result
+    assert verify_bundle(directory=destination) == result
     decisions = [
-        json.loads(line)
+        json.loads(s=line)
         for line in (destination / "autoscaling_decisions.jsonl").read_text().splitlines()
     ]
     assert any(decision["action"] == "scale_out" for decision in decisions)
-    metrics = json.loads((destination / "metrics.json").read_text())
+    metrics = json.loads(s=(destination / "metrics.json").read_text())
     assert metrics["finished"] == 3
     assert "autoscale-000001" in metrics["servers"]
 
 
 def test_storage_pressure_and_cancellation_never_publish_partial_bundles(tmp_path: Path) -> None:
     for limits in (BundleLimits(artifact_bytes=8), BundleLimits(total_bytes=64)):
-        with pytest.raises(OperationError) as failure:
-            execute_bundle(snapshot(), tmp_path / "failed", limits)
+        with pytest.raises(expected_exception=OperationError) as failure:
+            execute_bundle(snapshot=snapshot(), destination=tmp_path / "failed", limits=limits)
         assert failure.value.code == "STORAGE_LIMIT_EXCEEDED"
         assert not (tmp_path / "failed").exists()
-        assert not list(tmp_path.glob(".mslb-attempt-*"))
+        assert not list(tmp_path.glob(pattern=".mslb-attempt-*"))
     calls = 0
 
     def cancelled() -> bool:
@@ -147,10 +154,10 @@ def test_storage_pressure_and_cancellation_never_publish_partial_bundles(tmp_pat
         calls += 1
         return calls >= 3
 
-    with pytest.raises(OperationError) as failure:
-        execute_bundle(snapshot(), tmp_path / "cancelled", cancelled=cancelled)
+    with pytest.raises(expected_exception=OperationError) as failure:
+        execute_bundle(snapshot=snapshot(), destination=tmp_path / "cancelled", cancelled=cancelled)
     assert failure.value.code == "INTERRUPTED" and not (tmp_path / "cancelled").exists()
-    assert not list(tmp_path.glob(".mslb-attempt-*"))
+    assert not list(tmp_path.glob(pattern=".mslb-attempt-*"))
 
 
 def test_corrupt_producer_fails_before_publication(
@@ -159,51 +166,53 @@ def test_corrupt_producer_fails_before_publication(
     original = Event.canonical_line
 
     def corrupt(self: Event) -> str:
-        return original(self).replace('"server_id":"s1"', '"server_id":"unknown"')
+        return original(self=self).replace('"server_id":"s1"', '"server_id":"unknown"')
 
-    monkeypatch.setattr(Event, "canonical_line", corrupt)
-    with pytest.raises(ValueError):
-        execute_bundle(snapshot(), tmp_path / "corrupt")
+    monkeypatch.setattr(target=Event, name="canonical_line", value=corrupt)
+    with pytest.raises(expected_exception=ValueError):
+        execute_bundle(snapshot=snapshot(), destination=tmp_path / "corrupt")
     assert list(tmp_path.iterdir()) == []
 
 
 def test_existing_directory_or_different_snapshot_is_never_overwritten(tmp_path: Path) -> None:
     unrelated = tmp_path / "unrelated"
     unrelated.mkdir()
-    (unrelated / "user.txt").write_text("keep this")
-    with pytest.raises(OperationError) as failure:
-        execute_bundle(snapshot(), unrelated)
+    (unrelated / "user.txt").write_text(data="keep this")
+    with pytest.raises(expected_exception=OperationError) as failure:
+        execute_bundle(snapshot=snapshot(), destination=unrelated)
     assert failure.value.code == "CONFLICT" and (unrelated / "user.txt").read_text() == "keep this"
     destination = tmp_path / "saved"
-    result = execute_bundle(snapshot(), destination)
-    with pytest.raises(OperationError):
-        execute_bundle(snapshot(RunSettings(strategy="round_robin")), destination)
-    assert verify_bundle(destination) == result
+    result = execute_bundle(snapshot=snapshot(), destination=destination)
+    with pytest.raises(expected_exception=OperationError):
+        execute_bundle(
+            snapshot=snapshot(settings=RunSettings(strategy="round_robin")), destination=destination
+        )
+    assert verify_bundle(directory=destination) == result
 
 
 def test_missing_corrupt_extra_and_traversal_bundle_artifacts_fail(tmp_path: Path) -> None:
     for corruption in ("changed", "missing", "extra", "traversal"):
         destination = tmp_path / corruption
-        execute_bundle(snapshot(), destination)
+        execute_bundle(snapshot=snapshot(), destination=destination)
         if corruption == "changed":
-            (destination / "run.jsonl").write_text("{}\n")
+            (destination / "run.jsonl").write_text(data="{}\n")
         elif corruption == "missing":
             (destination / "metrics.json").unlink()
         elif corruption == "extra":
-            (destination / "unexpected.txt").write_text("extra")
+            (destination / "unexpected.txt").write_text(data="extra")
         else:
             manifest_path = destination / "manifest.json"
-            manifest = json.loads(manifest_path.read_text())
+            manifest = json.loads(s=manifest_path.read_text())
             manifest["artifacts"]["../outside"] = manifest["artifacts"].pop("run.jsonl")
-            manifest_path.write_text(json.dumps(manifest))
-        with pytest.raises(OperationError):
-            verify_bundle(destination)
+            manifest_path.write_text(data=json.dumps(obj=manifest))
+        with pytest.raises(expected_exception=OperationError):
+            verify_bundle(directory=destination)
 
 
 def test_packaged_original_validator_is_byte_identical() -> None:
     assert (
-        hashlib.sha256(Path("scripts/validate_run.py").read_bytes()).digest()
-        == hashlib.sha256(Path("/fixtures/core/validate_run.py").read_bytes()).digest()
+        hashlib.sha256(data=Path("scripts/validate_run.py").read_bytes()).digest()
+        == hashlib.sha256(data=Path("/fixtures/core/validate_run.py").read_bytes()).digest()
     )
 
 
@@ -211,11 +220,14 @@ def test_evaluator_timeout_is_controlled_and_never_publishes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def timed_out(*args: object, **kwargs: object) -> subprocess.CompletedProcess[bytes]:
-        raise subprocess.TimeoutExpired("verified evaluator", 60)
+        raise subprocess.TimeoutExpired(cmd="verified evaluator", timeout=60)
 
-    monkeypatch.setattr(subprocess, "run", timed_out)
-    with pytest.raises(OperationError, match="timed out") as failure:
-        execute_bundle(snapshot(RunSettings(mode="sequential")), tmp_path / "timeout")
+    monkeypatch.setattr(target=subprocess, name="run", value=timed_out)
+    with pytest.raises(expected_exception=OperationError, match="timed out") as failure:
+        execute_bundle(
+            snapshot=snapshot(settings=RunSettings(mode="sequential")),
+            destination=tmp_path / "timeout",
+        )
     assert failure.value.code == "VALIDATION_FAILED"
     assert list(tmp_path.iterdir()) == []
 
@@ -224,7 +236,7 @@ def test_bundle_cli_run_verify_and_safe_error(tmp_path: Path) -> None:
     base = [sys.executable, "scripts/run_bundle.py"]
     destination = tmp_path / "cli"
     run = subprocess.run(  # noqa: S603 -- fixed local CLI and trusted fixture paths
-        [
+        args=[
             *base,
             "run",
             "--servers",
@@ -232,18 +244,21 @@ def test_bundle_cli_run_verify_and_safe_error(tmp_path: Path) -> None:
             "--requests",
             "/fixtures/core/requests.csv",
             "--output",
-            str(destination),
+            str(object=destination),
         ],
         capture_output=True,
         text=True,
         check=True,
     )
     verify = subprocess.run(  # noqa: S603 -- fixed local CLI and test-owned directory
-        [*base, "verify", str(destination)], capture_output=True, text=True, check=True
+        args=[*base, "verify", str(object=destination)], capture_output=True, text=True, check=True
     )
-    assert json.loads(run.stdout) == json.loads(verify.stdout)
+    assert json.loads(s=run.stdout) == json.loads(s=verify.stdout)
     failed = subprocess.run(  # noqa: S603 -- intentional missing test-owned artifact
-        [*base, "verify", str(tmp_path / "missing")], capture_output=True, text=True, check=False
+        args=[*base, "verify", str(object=tmp_path / "missing")],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert failed.returncode == 2 and "Traceback" not in failed.stderr
-    assert json.loads(failed.stderr)["error"]["code"] == "VALIDATION_FAILED"
+    assert json.loads(s=failed.stderr)["error"]["code"] == "VALIDATION_FAILED"

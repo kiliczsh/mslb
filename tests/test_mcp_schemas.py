@@ -12,7 +12,7 @@ def test_generated_inventory_is_stable_valid_complete_and_detects_missing_files(
 ) -> None:
     files = artifacts()
     assert files == artifacts()
-    manifest = json.loads(files["manifest.json"])
+    manifest = json.loads(s=files["manifest.json"])
     assert manifest["contract_version"] == "2.0.0"
     assert {item["uri"] for item in manifest["resources"]} == {
         "mslb://servers",
@@ -27,18 +27,18 @@ def test_generated_inventory_is_stable_valid_complete_and_detects_missing_files(
     )
     for name, payload in files.items():
         if name != "manifest.json":
-            Draft202012Validator.check_schema(json.loads(payload))
-    generate(tmp_path)
-    check(tmp_path)
+            Draft202012Validator.check_schema(schema=json.loads(s=payload))
+    generate(root=tmp_path)
+    check(root=tmp_path)
     missing = tmp_path / "tools/list_servers.input.schema.json"
     missing.unlink()
-    with pytest.raises(ValueError, match="missing"):
-        check(tmp_path)
-    generate(tmp_path)
-    missing.write_bytes(b"{}")
-    with pytest.raises(ValueError, match="changed"):
-        check(tmp_path)
-    generate(tmp_path)
-    (tmp_path / "unexpected.schema.json").write_text("{}")
-    with pytest.raises(ValueError, match="unexpected"):
-        check(tmp_path)
+    with pytest.raises(expected_exception=ValueError, match="missing"):
+        check(root=tmp_path)
+    generate(root=tmp_path)
+    missing.write_bytes(data=b"{}")
+    with pytest.raises(expected_exception=ValueError, match="changed"):
+        check(root=tmp_path)
+    generate(root=tmp_path)
+    (tmp_path / "unexpected.schema.json").write_text(data="{}")
+    with pytest.raises(expected_exception=ValueError, match="unexpected"):
+        check(root=tmp_path)

@@ -39,8 +39,8 @@ class ResourceEvidence(Base):
     )
     id: Mapped[int] = MappedColumn[int](type_=Integer, primary_key=True)
     owner: Mapped[str | None] = MappedColumn[str | None](type_=String(length=128))
-    fence: Mapped[int] = MappedColumn[int](type_=BigInteger, server_default=text("0"))
-    revision: Mapped[int] = MappedColumn[int](type_=BigInteger, server_default=text("0"))
+    fence: Mapped[int] = MappedColumn[int](type_=BigInteger, server_default=text(text="0"))
+    revision: Mapped[int] = MappedColumn[int](type_=BigInteger, server_default=text(text="0"))
     lease_expires_at: Mapped[datetime | None] = MappedColumn[datetime | None](
         type_=DateTime(timezone=True)
     )

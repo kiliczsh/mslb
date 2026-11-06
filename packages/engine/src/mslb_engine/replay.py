@@ -51,7 +51,7 @@ def _records(stream: BinaryIO, count: int, horizon: int) -> Iterator[_Record]:
         if index == 3 * count or len(raw) > 2048 or not raw.endswith(b"\n"):
             raise ReplayError("Trace exceeds event/line bounds or lacks final LF")
         try:
-            value: object = json.loads(raw.decode("utf-8"))
+            value: object = json.loads(s=raw.decode(encoding="utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
             raise ReplayError("Invalid UTF-8 JSON event") from None
         if not isinstance(value, dict):
@@ -76,14 +76,16 @@ def _records(stream: BinaryIO, count: int, horizon: int) -> Iterator[_Record]:
             raise ReplayError("Arrival/drop cannot include a server ID")
         if (
             raw
-            != (json.dumps(canonical, ensure_ascii=False, separators=(",", ":")) + "\n").encode()
+            != (
+                json.dumps(obj=canonical, ensure_ascii=False, separators=(",", ":")) + "\n"
+            ).encode()
         ):
             raise ReplayError("Noncanonical fields, key order, or JSON encoding")
-        key = (tick, _PRIORITY[kind], rid, str(sid) if assigned else "")
+        key = (tick, _PRIORITY[kind], rid, str(object=sid) if assigned else "")
         if previous is not None and key < previous:
             raise ReplayError("Events are out of canonical order")
         previous = key
-        yield _Record(tick, kind, rid, sid if isinstance(sid, str) else None)
+        yield _Record(t=tick, kind=kind, rid=rid, sid=sid if isinstance(sid, str) else None)
 
 
 def validate_trace(
@@ -111,7 +113,9 @@ def validate_trace(
     ordered_requests = sorted(requests, key=lambda request: (request.t, request.request_id))
     if ordered_requests[-1].t >= config.max_simulation_ticks:
         raise ReplayError("Arrival outside configured horizon")
-    records = iter(_records(stream, len(requests), config.max_simulation_ticks))
+    records = iter(
+        _records(stream=stream, count=len(requests), horizon=config.max_simulation_ticks)
+    )
     following = next(records, None)
     pending: dict[str, Request] = {}
     running: dict[str, dict[str, Fraction]] = {sid: {} for sid in by_server}
@@ -124,9 +128,13 @@ def validate_trace(
     sample_count = 0
     tick = 0
     max_memory = max(server.mem_mb for server in servers)
-    policy = config.autoscaling.resolved(len(servers))
+    policy = config.autoscaling.resolved(initial_count=len(servers))
     scaling = ScalingReplay(
-        scale_stream, policy, servers, config.max_fraction_bits, config.max_metric_series
+        stream=scale_stream,
+        policy=policy,
+        initial_servers=servers,
+        bit_limit=config.max_fraction_bits,
+        max_series=config.max_metric_series,
     )
     if (
         policy.enabled
@@ -136,7 +144,7 @@ def validate_trace(
     ):
         max_memory = max(max_memory, policy.server_template.mem_mb)
     while tick <= config.max_simulation_ticks:
-        scaling.activate(tick, by_server, running, memory)
+        scaling.activate(tick=tick, members=by_server, running=running, memory=memory)
         boundary: dict[str, list[_Record]] = {kind: [] for kind in _PRIORITY}
         while following is not None and following.t == tick:
             if following.rid not in by_request:
@@ -200,7 +208,7 @@ def validate_trace(
                 raise ReplayError("Memory, rate, or sequential overlap violation")
             starts[sid] += 1
             memory[sid] += request.mem_mb
-            running[sid][rid] = Fraction(request.work_units)
+            running[sid][rid] = Fraction(numerator=request.work_units)
             started.add(rid)
             del pending[rid]
         # A trace may not invent queue waiting or overflow drops while an eligible
@@ -228,20 +236,29 @@ def validate_trace(
                 raise ReplayError("Trailing events or incomplete terminal accounting")
             scaling.finish()
             return ReplaySummary(
-                arrivals, len(started), len(finished), len(dropped), tick, event_count
+                arrived=arrivals,
+                started=len(started),
+                finished=len(finished),
+                dropped=len(dropped),
+                terminal_tick=tick,
+                events=event_count,
             )
         if tick == config.max_simulation_ticks:
             raise ReplayError("Trace does not terminate before horizon")
         sample_count += len(by_server)
         if sample_count > config.max_samples:
             raise ReplayError("Recorded sample bound exceeded")
-        scaling.check_decision(tick, by_server, running, len(pending))
+        scaling.check_decision(
+            tick=tick, members=by_server, running=running, pending_count=len(pending)
+        )
         total_consumed = Fraction()
         for sid in sorted(running):
             active = running[sid]
             if active:
-                allocation = Fraction(by_server[sid].cpu_units_per_tick, len(active))
-                consumed = Fraction(0)
+                allocation = Fraction(
+                    numerator=by_server[sid].cpu_units_per_tick, denominator=len(active)
+                )
+                consumed = Fraction(numerator=0)
                 if (
                     max(allocation.numerator.bit_length(), allocation.denominator.bit_length())
                     > config.max_fraction_bits
@@ -249,7 +266,7 @@ def validate_trace(
                     raise ReplayError("Arithmetic complexity bound exceeded")
                 for rid in sorted(active):
                     consumed += min(active[rid], allocation)
-                    remaining = max(Fraction(0), active[rid] - allocation)
+                    remaining = max(Fraction(numerator=0), active[rid] - allocation)
                     if (
                         max(consumed.numerator.bit_length(), consumed.denominator.bit_length())
                         > config.max_fraction_bits
@@ -271,10 +288,10 @@ def validate_trace(
                 ):
                     raise ReplayError("Cluster arithmetic complexity bound exceeded")
         scaling.observe(
-            total_consumed,
-            sum(server.cpu_units_per_tick for server in by_server.values()),
-            len(due_drops),
-            len(arriving),
+            consumed=total_consumed,
+            capacity=sum(server.cpu_units_per_tick for server in by_server.values()),
+            drops=len(due_drops),
+            arrivals=len(arriving),
         )
         tick += 1
         if (

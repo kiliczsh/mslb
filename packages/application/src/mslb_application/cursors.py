@@ -39,18 +39,20 @@ class Cursors:
 
     def __init__(self, secret: bytes) -> None:
         if not isinstance(secret, bytes) or not 32 <= len(secret) <= 256:
-            raise OperationError("VALIDATION_ERROR", "Cursor signing key must contain 32–256 bytes")
+            raise OperationError(
+                code="VALIDATION_ERROR", message="Cursor signing key must contain 32–256 bytes"
+            )
         self.secret = secret
 
     def encode(self, context: object, position: Position) -> str:
         cursor = _Cursor(
-            context=hashlib.sha256(canonical_bytes(context)).hexdigest(),
+            context=hashlib.sha256(data=canonical_bytes(value=context)).hexdigest(),
             expires=int(time.time()) + 24 * 60 * 60,
             position=position,
         )
         payload = cursor.model_dump_json().encode()
-        signature = hmac.digest(self.secret, payload, "sha256")
-        return base64.urlsafe_b64encode(signature + payload).decode().rstrip("=")
+        signature = hmac.digest(key=self.secret, msg=payload, digest="sha256")
+        return base64.urlsafe_b64encode(s=signature + payload).decode().rstrip("=")
 
     def decode(self, context: object, token: str | None) -> Position:
         """Verify cursor authentication, expiry and collection/filter identity before use."""
@@ -59,13 +61,15 @@ class Cursors:
         try:
             if type(token) is not str or not 1 <= len(token) <= 2048:
                 raise ValueError("Invalid cursor length")
-            raw = base64.b64decode(token + "=" * (-len(token) % 4), altchars=b"-_", validate=True)
+            raw = base64.b64decode(s=token + "=" * (-len(token) % 4), altchars=b"-_", validate=True)
             signature, payload = raw[:32], raw[32:]
-            if not hmac.compare_digest(signature, hmac.digest(self.secret, payload, "sha256")):
+            if not hmac.compare_digest(
+                signature, hmac.digest(key=self.secret, msg=payload, digest="sha256")
+            ):
                 raise ValueError("Invalid cursor signature")
-            value = _Cursor.model_validate_json(payload)
+            value = _Cursor.model_validate_json(json_data=payload)
             if (
-                value.context != hashlib.sha256(canonical_bytes(context)).hexdigest()
+                value.context != hashlib.sha256(data=canonical_bytes(value=context)).hexdigest()
                 or value.expires <= int(time.time())
                 or value.expires > int(time.time()) + 24 * 60 * 60 + 1
             ):
@@ -73,5 +77,5 @@ class Cursors:
             return value.position
         except (ValueError, binascii.Error, ValidationError):
             raise OperationError(
-                "VALIDATION_ERROR", "Invalid, expired, or unrelated cursor"
+                code="VALIDATION_ERROR", message="Invalid, expired, or unrelated cursor"
             ) from None

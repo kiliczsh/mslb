@@ -40,46 +40,54 @@ class ManagedFiles:
         if sys.platform != "linux":
             raise RuntimeError("Managed storage requires Linux containers")
         if root.is_symlink():
-            raise OperationError("VALIDATION_FAILED", "Managed storage root is unsafe")
+            raise OperationError(code="VALIDATION_FAILED", message="Managed storage root is unsafe")
         if not read_only:
             root.mkdir(parents=True, exist_ok=True)
         elif not root.is_dir():
-            raise OperationError("VALIDATION_FAILED", "Read-only storage root is missing")
+            raise OperationError(
+                code="VALIDATION_FAILED", message="Read-only storage root is missing"
+            )
         self.root = root.resolve()
         self.limits = limits or StorageLimits()
         self.read_only = read_only
         for name in (".staging", "uploads", "datasets", "snapshots"):
             path = self.root / name
             if path.is_symlink():
-                raise OperationError("VALIDATION_FAILED", "Managed storage directory is unsafe")
+                raise OperationError(
+                    code="VALIDATION_FAILED", message="Managed storage directory is unsafe"
+                )
             if not read_only:
                 path.mkdir(exist_ok=True)
         if not read_only:
-            self._sync_directory(self.root)
+            self._sync_directory(directory=self.root)
 
     @staticmethod
     def _sync_directory(directory: Path) -> None:
         if sys.platform != "linux":
             raise RuntimeError("Managed storage synchronization requires Linux containers")
-        descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+        descriptor = os.open(path=directory, flags=os.O_RDONLY | os.O_DIRECTORY)
         try:
-            os.fsync(descriptor)
+            os.fsync(fd=descriptor)
         finally:
-            os.close(descriptor)
+            os.close(fd=descriptor)
 
     def path(self, key: str) -> Path:
-        if not re.fullmatch(r"[a-z0-9][a-z0-9._/-]{0,255}", key) or any(
-            part in {"", ".", ".."} for part in key.split("/")
+        if not re.fullmatch(pattern=r"[a-z0-9][a-z0-9._/-]{0,255}", string=key) or any(
+            part in {"", ".", ".."} for part in key.split(sep="/")
         ):
-            raise OperationError("VALIDATION_ERROR", "Invalid managed storage key")
+            raise OperationError(code="VALIDATION_ERROR", message="Invalid managed storage key")
         path = self.root / key
         for candidate in (path, *path.parents):
             if candidate == self.root:
                 break
             if candidate.is_symlink():
-                raise OperationError("VALIDATION_FAILED", "Managed storage path is unsafe")
+                raise OperationError(
+                    code="VALIDATION_FAILED", message="Managed storage path is unsafe"
+                )
         if not path.resolve().is_relative_to(self.root):
-            raise OperationError("VALIDATION_FAILED", "Managed storage path escapes its root")
+            raise OperationError(
+                code="VALIDATION_FAILED", message="Managed storage path escapes its root"
+            )
         return path
 
     @contextmanager
@@ -88,8 +96,10 @@ class ManagedFiles:
         if sys.platform != "linux":
             raise RuntimeError("Managed storage locking requires Linux containers")
         if self.read_only:
-            raise OperationError("FORBIDDEN", "Storage is read-only")
-        descriptor = os.open(self.root / name, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+            raise OperationError(code="FORBIDDEN", message="Storage is read-only")
+        descriptor = os.open(
+            path=self.root / name, flags=os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, mode=0o600
+        )
         deadline = time.monotonic() + 5
         try:
             while True:
@@ -99,16 +109,16 @@ class ManagedFiles:
                 except BlockingIOError:
                     if not wait:
                         raise OperationError(
-                            "RATE_LIMITED", "Another upload is being parsed"
+                            code="RATE_LIMITED", message="Another upload is being parsed"
                         ) from None
                     if time.monotonic() >= deadline:
                         raise OperationError(
-                            "RESOURCE_PRESSURE", "Storage writer is busy"
+                            code="RESOURCE_PRESSURE", message="Storage writer is busy"
                         ) from None
                     time.sleep(0.01)
             yield
         finally:
-            os.close(descriptor)
+            os.close(fd=descriptor)
 
     def _usage(self, root: Path | None = None) -> int:
         """Measure physical bytes while rejecting unsafe or excessive directory entries."""
@@ -118,27 +128,31 @@ class ManagedFiles:
             """Walk accounted entries without following links or exceeding count/depth bounds."""
             nonlocal entries
             if depth > 8:
-                raise OperationError("STORAGE_LIMIT_EXCEEDED", "Managed directory depth exceeded")
+                raise OperationError(
+                    code="STORAGE_LIMIT_EXCEEDED", message="Managed directory depth exceeded"
+                )
             total = 0
-            with os.scandir(directory) as children:
+            with os.scandir(path=directory) as children:
                 for entry in children:
                     entries += 1
                     if entries > self.limits.max_entries:
                         raise OperationError(
-                            "STORAGE_LIMIT_EXCEEDED", "Managed file count exceeded"
+                            code="STORAGE_LIMIT_EXCEEDED", message="Managed file count exceeded"
                         )
                     try:
                         if entry.is_symlink():
                             raise OperationError(
-                                "VALIDATION_FAILED", "Managed storage contains unsafe links"
+                                code="VALIDATION_FAILED",
+                                message="Managed storage contains unsafe links",
                             )
                         if entry.is_dir(follow_symlinks=False):
-                            total += measure(Path(entry.path), depth + 1)
+                            total += measure(directory=Path(entry.path), depth=depth + 1)
                         elif entry.is_file(follow_symlinks=False):
                             total += entry.stat(follow_symlinks=False).st_size
                         else:
                             raise OperationError(
-                                "VALIDATION_FAILED", "Managed storage contains unsafe entries"
+                                code="VALIDATION_FAILED",
+                                message="Managed storage contains unsafe entries",
                             )
                     except FileNotFoundError:
                         # Another managed writer may remove its own staging file
@@ -146,28 +160,30 @@ class ManagedFiles:
                         continue
             return total
 
-        return measure(root or self.root)
+        return measure(directory=root or self.root)
 
     def _admit(
         self, additional: int, scope: str | None = None, scope_additional: int | None = None
     ) -> None:
         if self._usage() + additional > self.limits.quota_bytes:
-            raise OperationError("STORAGE_LIMIT_EXCEEDED", "Managed storage quota exceeded")
-        if shutil.disk_usage(self.root).free - additional < self.limits.min_free_bytes:
             raise OperationError(
-                "STORAGE_LIMIT_EXCEEDED", "Managed storage free-space reserve reached"
+                code="STORAGE_LIMIT_EXCEEDED", message="Managed storage quota exceeded"
+            )
+        if shutil.disk_usage(path=self.root).free - additional < self.limits.min_free_bytes:
+            raise OperationError(
+                code="STORAGE_LIMIT_EXCEEDED", message="Managed storage free-space reserve reached"
             )
         if scope is not None:
-            directory = self.path(scope)
+            directory = self.path(key=scope)
             pending = additional if scope_additional is None else scope_additional
-            if directory.is_dir() and self._usage(directory) + pending > 512 * 1024**2:
+            if directory.is_dir() and self._usage(root=directory) + pending > 512 * 1024**2:
                 raise OperationError(
-                    "STORAGE_LIMIT_EXCEEDED", "Run physical storage ceiling reached"
+                    code="STORAGE_LIMIT_EXCEEDED", message="Run physical storage ceiling reached"
                 )
 
     @staticmethod
     def run_scope(key: str) -> str | None:
-        parts = key.split("/")
+        parts = key.split(sep="/")
         if len(parts) >= 3 and (
             parts[0] == "runs"
             or (parts[0] == "docker" and re.fullmatch(pattern=r"[0-9a-f]{32}", string=parts[1]))
@@ -181,7 +197,7 @@ class ManagedFiles:
     ) -> Generator[_Staged]:
         """Account bounded physical writes before exposing an immutable candidate."""
         if self.read_only:
-            raise OperationError("FORBIDDEN", "Storage is read-only")
+            raise OperationError(code="FORBIDDEN", message="Storage is read-only")
         # Unbuffered writes make in-flight file bytes visible to other writers'
         # quota scans before the cross-process admission lock is released.
         with tempfile.NamedTemporaryFile(
@@ -202,8 +218,8 @@ class ManagedFiles:
                             raise OSError("Short managed file write")
                     digest.update(block)
                     size += len(block)
-                os.fsync(stream.fileno())
-                yield _Staged(path, digest.hexdigest(), size)
+                os.fsync(fd=stream.fileno())
+                yield _Staged(path=path, sha256=digest.hexdigest(), size_bytes=size)
             finally:
                 stream.close()
                 path.unlink(missing_ok=True)
@@ -211,53 +227,58 @@ class ManagedFiles:
     @staticmethod
     def _hash(path: Path, maximum: int) -> tuple[int, str]:
         size, digest = 0, hashlib.sha256()
-        with path.open("rb") as stream:
-            for block in _read_chunks(stream):
+        with path.open(mode="rb") as stream:
+            for block in _read_chunks(stream=stream):
                 size += len(block)
                 if size > maximum:
-                    raise OperationError("VALIDATION_FAILED", "Managed file length mismatch")
+                    raise OperationError(
+                        code="VALIDATION_FAILED", message="Managed file length mismatch"
+                    )
                 digest.update(block)
         return size, digest.hexdigest()
 
     def _publish(self, staged: _Staged, key: str) -> FileReference:
         """Link an immutable candidate or verify identical existing bytes before fsync."""
-        path = self.path(key)
+        path = self.path(key=key)
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            os.link(staged.path, path)
+            os.link(src=staged.path, dst=path)
         except FileExistsError:
             if (
                 not path.is_file()
                 or path.is_symlink()
-                or self._hash(path, staged.size_bytes) != (staged.size_bytes, staged.sha256)
+                or self._hash(path=path, maximum=staged.size_bytes)
+                != (staged.size_bytes, staged.sha256)
             ):
                 raise OperationError(
-                    "VALIDATION_FAILED", "Existing immutable file differs"
+                    code="VALIDATION_FAILED", message="Existing immutable file differs"
                 ) from None
         directory = path.parent
         while True:
-            self._sync_directory(directory)
+            self._sync_directory(directory=directory)
             if directory == self.root:
                 break
             directory = directory.parent
-        return FileReference(key, staged.sha256, staged.size_bytes)
+        return FileReference(key=key, sha256=staged.sha256, size_bytes=staged.size_bytes)
 
     def publish(self, key: str, chunks: Iterable[bytes], maximum: int) -> FileReference:
         """Write a server-owned candidate without replacing any existing file."""
-        self.path(key)
+        self.path(key=key)
         if type(maximum) is not int or not 0 <= maximum <= 256 * 1024**2:
-            raise OperationError("VALIDATION_ERROR", "Invalid file byte limit")
-        with self._stage(chunks, maximum, self.run_scope(key)) as staged:
-            return self._publish(staged, key)
+            raise OperationError(code="VALIDATION_ERROR", message="Invalid file byte limit")
+        with self._stage(chunks=chunks, maximum=maximum, scope=self.run_scope(key=key)) as staged:
+            return self._publish(staged=staged, key=key)
 
     @contextmanager
     def work_file(self, key: str) -> Generator["WorkFile"]:
-        if self.read_only or self.run_scope(key) is None:
-            raise OperationError("FORBIDDEN", "Work files require a writable run namespace")
-        path = self.path(key)
+        if self.read_only or self.run_scope(key=key) is None:
+            raise OperationError(
+                code="FORBIDDEN", message="Work files require a writable run namespace"
+            )
+        path = self.path(key=key)
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("x+b", buffering=0) as stream:
-            writer = WorkFile(self, key, stream)
+        with path.open(mode="x+b", buffering=0) as stream:
+            writer = WorkFile(files=self, key=key, stream=stream)
             try:
                 yield writer
             finally:
@@ -267,10 +288,12 @@ class ManagedFiles:
     def remove(self, key: str) -> None:
         """Remove an exact file only after the caller verifies DB non-reference/ownership."""
         if self.read_only:
-            raise OperationError("FORBIDDEN", "Storage is read-only")
-        path = self.path(key)
+            raise OperationError(code="FORBIDDEN", message="Storage is read-only")
+        path = self.path(key=key)
         if path.exists() and not path.is_file():
-            raise OperationError("VALIDATION_FAILED", "Cleanup target is not a regular file")
+            raise OperationError(
+                code="VALIDATION_FAILED", message="Cleanup target is not a regular file"
+            )
         path.unlink(missing_ok=True)
 
     def ingest(self, source: BinaryIO, filename: str) -> DatasetRegistration:
@@ -279,7 +302,7 @@ class ManagedFiles:
             self._lock(name=".upload-lock", wait=False),
             self._stage(chunks=_read_chunks(stream=source), maximum=MAX_UPLOAD_BYTES) as original,
         ):
-            with original.path.open("rb") as stream:
+            with original.path.open(mode="rb") as stream:
                 requests = read_requests(stream=stream)
             digest = input_digest(records=requests)
             with self._stage(
@@ -300,48 +323,56 @@ class ManagedFiles:
             return data
 
     def load_requests(self, digest: str, size_bytes: int) -> tuple[RequestInput, ...]:
-        path = self.path(f"datasets/{digest}.csv")
+        path = self.path(key=f"datasets/{digest}.csv")
         if not path.is_file() or path.stat().st_size != size_bytes:
-            raise OperationError("VALIDATION_FAILED", "Stored dataset length mismatch")
-        with path.open("rb") as stream:
-            requests = read_requests(stream)
+            raise OperationError(code="VALIDATION_FAILED", message="Stored dataset length mismatch")
+        with path.open(mode="rb") as stream:
+            requests = read_requests(stream=stream)
         expected = hashlib.sha256()
-        for chunk in request_bytes(requests):
+        for chunk in request_bytes(requests=requests):
             expected.update(chunk)
         if (
-            input_digest(requests) != digest
-            or self._hash(path, MAX_UPLOAD_BYTES)[1] != expected.hexdigest()
+            input_digest(records=requests) != digest
+            or self._hash(path=path, maximum=MAX_UPLOAD_BYTES)[1] != expected.hexdigest()
         ):
-            raise OperationError("VALIDATION_FAILED", "Stored dataset identity mismatch")
+            raise OperationError(
+                code="VALIDATION_FAILED", message="Stored dataset identity mismatch"
+            )
         return requests
 
     def save_snapshot(self, snapshot: RunSnapshot) -> FileReference:
-        verify_snapshot(snapshot)
+        verify_snapshot(snapshot=snapshot)
         return self.publish(
-            f"snapshots/{snapshot.snapshot_digest}.json",
-            (canonical_bytes(snapshot.model_dump(mode="json")),),
-            32 * 1024**2,
+            key=f"snapshots/{snapshot.snapshot_digest}.json",
+            chunks=(canonical_bytes(value=snapshot.model_dump(mode="json")),),
+            maximum=32 * 1024**2,
         )
 
     def load_snapshot(self, key: str, expected_digest: str) -> RunSnapshot:
         if key != f"snapshots/{expected_digest}.json":
-            raise OperationError("VALIDATION_FAILED", "Snapshot reference does not match identity")
-        path = self.path(key)
+            raise OperationError(
+                code="VALIDATION_FAILED", message="Snapshot reference does not match identity"
+            )
+        path = self.path(key=key)
         if not path.is_file():
-            raise OperationError("VALIDATION_FAILED", "Stored snapshot is missing or unsafe")
-        with path.open("rb") as stream:
-            saved = read_snapshot(stream)
+            raise OperationError(
+                code="VALIDATION_FAILED", message="Stored snapshot is missing or unsafe"
+            )
+        with path.open(mode="rb") as stream:
+            saved = read_snapshot(stream=stream)
         if saved.snapshot_digest != expected_digest:
-            raise OperationError("VALIDATION_FAILED", "Stored snapshot identity mismatch")
+            raise OperationError(
+                code="VALIDATION_FAILED", message="Stored snapshot identity mismatch"
+            )
         return saved
 
     @contextmanager
     def verified_stream(self, reference: FileReference) -> Generator[BinaryIO]:
-        path = self.path(reference.key)
-        if not path.is_file() or self._hash(path, reference.size_bytes) != (
+        path = self.path(key=reference.key)
+        if not path.is_file() or self._hash(path=path, maximum=reference.size_bytes) != (
             reference.size_bytes,
             reference.sha256,
         ):
-            raise OperationError("VALIDATION_FAILED", "Stored file identity mismatch")
-        with path.open("rb") as stream:
+            raise OperationError(code="VALIDATION_FAILED", message="Stored file identity mismatch")
+        with path.open(mode="rb") as stream:
             yield stream

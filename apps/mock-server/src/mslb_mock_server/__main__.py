@@ -7,12 +7,12 @@ from mslb_mock_server.app import Settings, create_app
 
 
 def build() -> FastAPI:
-    return create_app(Settings.environment())
+    return create_app(settings=Settings.environment())
 
 
 if __name__ == "__main__":
     uvicorn.run(
-        "mslb_mock_server.__main__:build",
+        app="mslb_mock_server.__main__:build",
         factory=True,
         host="0.0.0.0",  # noqa: S104 -- isolated un-published Docker traffic network only.
         port=8080,

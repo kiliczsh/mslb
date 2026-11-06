@@ -30,7 +30,7 @@ def main() -> None:
     parser.add_argument("--max-queue-size", type=int)
     parser.add_argument("--max-simulation-ticks", type=int, default=100_000)
     args = parser.parse_args(namespace=Arguments())
-    with args.servers.open("rb") as stream:
+    with args.servers.open(mode="rb") as stream:
         servers = tuple(
             Server(
                 id=s.id,
@@ -40,12 +40,12 @@ def main() -> None:
             )
             for s in read_servers(stream=stream)
         )
-    with args.requests.open("rb") as stream:
+    with args.requests.open(mode="rb") as stream:
         requests = tuple(
             Request(t=r.t, request_id=r.request_id, work_units=r.work_units, mem_mb=r.mem_mb)
             for r in read_requests(stream=stream)
         )
-    with args.run.open("rb") as stream:
+    with args.run.open(mode="rb") as stream:
         summary = validate_trace(
             stream=stream,
             servers=servers,
@@ -57,16 +57,18 @@ def main() -> None:
                 max_simulation_ticks=args.max_simulation_ticks,
             ),
         )
-    print(json.dumps(asdict(summary), sort_keys=True))
+    print(json.dumps(obj=asdict(obj=summary), sort_keys=True))
 
 
 if __name__ == "__main__":
     try:
         main()
     except (InputError, SimulationError, ReplayError, OSError) as error:
-        message = "Unable to read validation input" if isinstance(error, OSError) else str(error)
+        message = (
+            "Unable to read validation input" if isinstance(error, OSError) else str(object=error)
+        )
         print(
-            json.dumps({"error": {"code": "VALIDATION_FAILED", "message": message}}),
+            json.dumps(obj={"error": {"code": "VALIDATION_FAILED", "message": message}}),
             file=sys.stderr,
         )
         sys.exit(2)

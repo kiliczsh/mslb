@@ -83,7 +83,7 @@ def test_stateful_disconnect_releases_tokens_and_rejects_active_token_reuse(tmp_
                         "params": {
                             "name": "wait_for_simulations",
                             "arguments": {
-                                "run_ids": [str(run_id)],
+                                "run_ids": [str(object=run_id)],
                                 "wait_seconds": seconds,
                             },
                             "_meta": {"progressToken": "one-active-token"},
@@ -106,7 +106,7 @@ def test_stateful_disconnect_releases_tokens_and_rejects_active_token_reuse(tmp_
                                 assert "total" not in item["params"]
                                 break
                     else:
-                        pytest.fail("Stateful HTTP did not deliver progress")
+                        pytest.fail(reason="Stateful HTTP did not deliver progress")
                     duplicate = await raw.post(
                         url=workspace.url,
                         headers=headers,
@@ -136,7 +136,7 @@ def test_stateful_disconnect_releases_tokens_and_rejects_active_token_reuse(tmp_
     asyncio.run(main=scenario())
 
 
-@pytest.mark.parametrize("opt_in", [True, False])
+@pytest.mark.parametrize(argnames="opt_in", argvalues=[True, False])
 def test_official_http_progress_precedes_result_and_only_reports_persisted_state(
     tmp_path: Path, opt_in: bool
 ) -> None:
@@ -149,7 +149,7 @@ def test_official_http_progress_precedes_result_and_only_reports_persisted_state
 
             def observe(phase: str, lease: Lease, tick: int) -> None:
                 if phase == "candidate_published":
-                    loop.call_soon_threadsafe(held.set)
+                    loop.call_soon_threadsafe(callback=held.set)
                     assert release.wait(timeout=10), "Worker publication was never released"
 
             execution.observer = observe
@@ -165,20 +165,20 @@ def test_official_http_progress_precedes_result_and_only_reports_persisted_state
                 task = asyncio.create_task(
                     coro=client.call_tool(
                         name="wait_for_simulations",
-                        arguments={"run_ids": [str(run_id)], "wait_seconds": 8},
+                        arguments={"run_ids": [str(object=run_id)], "wait_seconds": 8},
                         progress_callback=progress if opt_in else None,
                     )
                 )
                 if opt_in:
                     await eventually(predicate=lambda: len(updates) == 1)
-                    assert "queued" in str(updates[0][3]) and not task.done()
+                    assert "queued" in str(object=updates[0][3]) and not task.done()
                 running = asyncio.create_task(coro=execution.run_once())
                 try:
                     await asyncio.wait_for(fut=held.wait(), timeout=5)
                     intermediate = waited(
                         reply=await client.call_tool(
                             name="wait_for_simulations",
-                            arguments={"run_ids": [str(run_id)], "wait_seconds": 0},
+                            arguments={"run_ids": [str(object=run_id)], "wait_seconds": 0},
                         )
                     )
                     row = intermediate.statuses[0]
@@ -187,8 +187,8 @@ def test_official_http_progress_precedes_result_and_only_reports_persisted_state
                     assert intermediate.timed_out and not intermediate.all_terminal
                     if opt_in:
                         await eventually(predicate=lambda: len(updates) >= 2)
-                        assert "running" in str(updates[-1][3])
-                        assert "committed events" in str(updates[-1][3])
+                        assert "running" in str(object=updates[-1][3])
+                        assert "committed events" in str(object=updates[-1][3])
                         count = len(updates)
                         await asyncio.sleep(delay=1.1)
                         assert len(updates) == count, "Unchanged persisted state emitted progress"
@@ -278,11 +278,14 @@ def test_four_strategy_http_batch_wait_measures_protocol_and_database_work(
                     accepted = await client.call_tool(
                         name="run_simulation",
                         arguments={
-                            "simulation": {"dataset_id": str(dataset_id), "strategy": strategy}
+                            "simulation": {
+                                "dataset_id": str(object=dataset_id),
+                                "strategy": strategy,
+                            }
                         },
                     )
                     assert not accepted.is_error
-                    ids.append(str(accepted.structured_content["run_id"]))
+                    ids.append(str(object=accepted.structured_content["run_id"]))
                 execution = worker(workspace=workspace)
 
                 async def run_all() -> None:
@@ -343,7 +346,7 @@ def test_four_strategy_http_batch_wait_measures_protocol_and_database_work(
     asyncio.run(main=scenario())
 
 
-@pytest.mark.parametrize("ending", ["timeout", "disconnect", "cancel"])
+@pytest.mark.parametrize(argnames="ending", argvalues=["timeout", "disconnect", "cancel"])
 def test_wait_cleanup_preserves_execution_and_reconnects(tmp_path: Path, ending: str) -> None:
     async def scenario() -> None:
         async with http_workspace(root=tmp_path) as workspace:
@@ -354,7 +357,7 @@ def test_wait_cleanup_preserves_execution_and_reconnects(tmp_path: Path, ending:
 
             def observe(phase: str, lease: Lease, tick: int) -> None:
                 if phase == "terminal_committed":
-                    loop.call_soon_threadsafe(held.set)
+                    loop.call_soon_threadsafe(callback=held.set)
                     assert release.wait(timeout=10), "Test failed to release validation"
 
             execution.observer = observe
@@ -369,7 +372,7 @@ def test_wait_cleanup_preserves_execution_and_reconnects(tmp_path: Path, ending:
                         "method": "tools/call",
                         "params": {
                             "name": "wait_for_simulations",
-                            "arguments": {"run_ids": [str(run_id)], "wait_seconds": 20},
+                            "arguments": {"run_ids": [str(object=run_id)], "wait_seconds": 20},
                             "_meta": {
                                 "progressToken": 0,
                                 "io.modelcontextprotocol/protocolVersion": "2026-07-28",
@@ -399,14 +402,14 @@ def test_wait_cleanup_preserves_execution_and_reconnects(tmp_path: Path, ending:
                                     assert notification["params"]["progressToken"] == 0
                                     break
                         else:
-                            pytest.fail("No progress before disconnect")
+                            pytest.fail(reason="No progress before disconnect")
                 else:
                     async with Client(server=streamable_http_client(url=workspace.url)) as client:
                         task = asyncio.create_task(
                             coro=client.call_tool(
                                 name="wait_for_simulations",
                                 arguments={
-                                    "run_ids": [str(run_id)],
+                                    "run_ids": [str(object=run_id)],
                                     "wait_seconds": 1 if ending == "timeout" else 20,
                                 },
                             )
@@ -419,7 +422,7 @@ def test_wait_cleanup_preserves_execution_and_reconnects(tmp_path: Path, ending:
                                 predicate=lambda: workspace.adapter.wait_calls._value == 1
                             )
                             task.cancel()
-                            with pytest.raises(asyncio.CancelledError):
+                            with pytest.raises(expected_exception=asyncio.CancelledError):
                                 await task
                 await eventually(predicate=lambda: workspace.adapter.wait_calls._value == 2)
                 assert workspace.adapter.progress_tokens == set()
@@ -432,7 +435,7 @@ def test_wait_cleanup_preserves_execution_and_reconnects(tmp_path: Path, ending:
             async with Client(server=streamable_http_client(url=workspace.url)) as reconnected:
                 result = waited(
                     reply=await reconnected.call_tool(
-                        name="wait_for_simulations", arguments={"run_ids": [str(run_id)]}
+                        name="wait_for_simulations", arguments={"run_ids": [str(object=run_id)]}
                     )
                 )
                 assert result.all_terminal and result.statuses[0].status == "completed"
@@ -451,7 +454,7 @@ def test_wait_admission_leaves_crud_and_cancellation_available(tmp_path: Path) -
                 tasks = [
                     asyncio.create_task(
                         coro=client.call_tool(
-                            name="wait_for_simulations", arguments={"run_ids": [str(run_id)]}
+                            name="wait_for_simulations", arguments={"run_ids": [str(object=run_id)]}
                         )
                     )
                     for _ in range(2)
@@ -459,7 +462,7 @@ def test_wait_admission_leaves_crud_and_cancellation_available(tmp_path: Path) -
                 try:
                     await eventually(predicate=lambda: workspace.adapter.wait_calls.locked())
                     excess = await client.call_tool(
-                        name="wait_for_simulations", arguments={"run_ids": [str(run_id)]}
+                        name="wait_for_simulations", arguments={"run_ids": [str(object=run_id)]}
                     )
                     assert (
                         excess.is_error
@@ -486,7 +489,7 @@ def test_wait_admission_leaves_crud_and_cancellation_available(tmp_path: Path) -
                     ).is_error
                     assert not (
                         await client.call_tool(
-                            name="cancel_simulation", arguments={"run_id": str(run_id)}
+                            name="cancel_simulation", arguments={"run_id": str(object=run_id)}
                         )
                     ).is_error
                     replies = await asyncio.wait_for(fut=asyncio.gather(*tasks), timeout=3)
@@ -520,7 +523,7 @@ def test_wait_batch_order_failure_unknown_input_and_dependency_errors(
                     reply=await client.call_tool(
                         name="wait_for_simulations",
                         arguments={
-                            "run_ids": [str(third), str(second), str(first)],
+                            "run_ids": [str(object=third), str(object=second), str(object=first)],
                             "wait_seconds": 0,
                         },
                     )
@@ -530,15 +533,18 @@ def test_wait_batch_order_failure_unknown_input_and_dependency_errors(
                 assert result.statuses[-1].error_code == "VALIDATION_FAILED" and result.timed_out
                 invalid = [
                     ({"run_ids": []}, "VALIDATION_ERROR"),
-                    ({"run_ids": [str(first)] * 2}, "VALIDATION_ERROR"),
-                    ({"run_ids": [str(uuid4()) for _ in range(9)]}, "VALIDATION_ERROR"),
+                    ({"run_ids": [str(object=first)] * 2}, "VALIDATION_ERROR"),
+                    ({"run_ids": [str(object=uuid4()) for _ in range(9)]}, "VALIDATION_ERROR"),
                     ({"run_ids": ["not-a-uuid"]}, "VALIDATION_ERROR"),
-                    ({"run_ids": [str(first), str(uuid4())]}, "NOT_FOUND"),
+                    ({"run_ids": [str(object=first), str(object=uuid4())]}, "NOT_FOUND"),
                     *[
-                        ({"run_ids": [str(first)], "wait_seconds": value}, "VALIDATION_ERROR")
+                        (
+                            {"run_ids": [str(object=first)], "wait_seconds": value},
+                            "VALIDATION_ERROR",
+                        )
                         for value in (-1, 26, True, "2", 1.5)
                     ],
-                    ({"run_ids": [str(first)], "extra": 1}, "VALIDATION_ERROR"),
+                    ({"run_ids": [str(object=first)], "extra": 1}, "VALIDATION_ERROR"),
                 ]
                 for arguments, code in invalid:
                     reply = await client.call_tool(name="wait_for_simulations", arguments=arguments)
@@ -552,7 +558,7 @@ def test_wait_batch_order_failure_unknown_input_and_dependency_errors(
                 with monkeypatch.context() as patch:
                     patch.setattr(target=Reads, name="runs_by_ids", value=unavailable)
                     reply = await client.call_tool(
-                        name="wait_for_simulations", arguments={"run_ids": [str(first)]}
+                        name="wait_for_simulations", arguments={"run_ids": [str(object=first)]}
                     )
                     assert (
                         reply.is_error
@@ -571,7 +577,7 @@ def test_wait_batch_order_failure_unknown_input_and_dependency_errors(
                     patch.setattr(target=waiting, name="READ_SECONDS", value=0.05)
                     reply = await asyncio.wait_for(
                         fut=client.call_tool(
-                            name="wait_for_simulations", arguments={"run_ids": [str(first)]}
+                            name="wait_for_simulations", arguments={"run_ids": [str(object=first)]}
                         ),
                         timeout=2,
                     )
@@ -585,7 +591,7 @@ def test_wait_batch_order_failure_unknown_input_and_dependency_errors(
                 published = await workspace.adapter.services.queries.durable.published(run_id=third)
                 workspace.outputs.path(key=published.key).write_bytes(data=b"corrupt")
                 reply = await client.call_tool(
-                    name="wait_for_simulations", arguments={"run_ids": [str(third)]}
+                    name="wait_for_simulations", arguments={"run_ids": [str(object=third)]}
                 )
                 assert (
                     reply.is_error

@@ -38,7 +38,7 @@ class RedisHints:
             async with asyncio.timeout(delay=0.25):
                 # EVAL is a variadic Redis protocol call. One atomic command keeps
                 # the cardinality and TTL bounds true even if the client dies.
-                response: object = await self.client.eval(_PUBLISH, 1, self.key, str(run_id))
+                response: object = await self.client.eval(_PUBLISH, 1, self.key, str(object=run_id))
                 return type(response) is int and response == 1
         except (RedisError, OSError, TimeoutError):
             return False

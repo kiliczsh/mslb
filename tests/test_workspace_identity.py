@@ -4,8 +4,8 @@ import pytest
 
 
 @pytest.mark.parametrize(
-    ("distribution_name", "namespace", "former_distribution", "former_namespace"),
-    [
+    argnames=("distribution_name", "namespace", "former_distribution", "former_namespace"),
+    argvalues=[
         ("mslb-api", "mslb_api", "lb-api", "lb_api"),
         ("mslb-application", "mslb_application", "lb-application", "lb_application"),
         ("mslb-contracts", "mslb_contracts", "lb-contracts", "lb_contracts"),

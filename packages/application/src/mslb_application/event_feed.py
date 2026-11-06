@@ -18,8 +18,8 @@ class EventFeed:
 
     def __init__(self, database: Database, run_id: UUID, after_sequence: int = 0) -> None:
         if type(after_sequence) is not int or not 0 <= after_sequence <= 30_000:
-            raise OperationError("VALIDATION_ERROR", "Invalid Last-Event-ID")
-        self.reads, self.events = Reads(database), Durability(database)
+            raise OperationError(code="VALIDATION_ERROR", message="Invalid Last-Event-ID")
+        self.reads, self.events = Reads(database=database), Durability(database=database)
         self.run_id, self.sequence = run_id, after_sequence
         self.queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=500)
         self.queued_bytes = 0
@@ -31,7 +31,7 @@ class EventFeed:
             self.overflow = True
             self.closed.set()
             return False
-        self.queue.put_nowait(frame)
+        self.queue.put_nowait(item=frame)
         self.queued_bytes += len(frame)
         return True
 
@@ -41,12 +41,14 @@ class EventFeed:
         run = initial
         try:
             while True:
-                page = await self.events.events(self.run_id, self.sequence, limit=100)
+                page = await self.events.events(
+                    run_id=self.run_id, after_sequence=self.sequence, limit=100
+                )
                 for event in page:
                     frame = (
                         f"id: {event.sequence}\nevent: trace\ndata: {event.model_dump_json()}\n\n"
                     ).encode()
-                    if not self.offer(frame):
+                    if not self.offer(frame=frame):
                         return
                     self.sequence = event.sequence
                 progress = run.model_dump_json(
@@ -61,35 +63,37 @@ class EventFeed:
                     }
                 )
                 if progress != previous:
-                    if not self.offer(f"event: progress\ndata: {progress}\n\n".encode()):
+                    if not self.offer(frame=f"event: progress\ndata: {progress}\n\n".encode()):
                         return
                     previous = progress
                 if len(page) == 100:
-                    run = await self.reads.run(self.run_id)
+                    run = await self.reads.run(run_id=self.run_id)
                     continue
-                run = await self.reads.run(self.run_id)
+                run = await self.reads.run(run_id=self.run_id)
                 # Re-read after observing terminal status to cover a completion
                 # transaction racing the preceding event page.
                 if run.status in {"completed", "failed", "cancelled"}:
-                    tail = await self.events.events(self.run_id, self.sequence, limit=1)
+                    tail = await self.events.events(
+                        run_id=self.run_id, after_sequence=self.sequence, limit=1
+                    )
                     if tail:
                         continue
                     final = run.model_dump_json(exclude={"configuration"})
-                    self.offer(f"event: status\ndata: {final}\n\n".encode())
+                    self.offer(frame=f"event: status\ndata: {final}\n\n".encode())
                     return
-                await asyncio.sleep(0.25)
+                await asyncio.sleep(delay=0.25)
         except (StoreError, DBAPIError, OSError, TimeoutError):
-            self.offer(b'event: error\ndata: {"code":"RESOURCE_PRESSURE"}\n\n')
+            self.offer(frame=b'event: error\ndata: {"code":"RESOURCE_PRESSURE"}\n\n')
         finally:
             self.closed.set()
 
     async def stream(self, initial: RunView) -> AsyncGenerator[bytes]:
         """Own producer cancellation and release retained frames when the consumer disconnects."""
-        producer = asyncio.create_task(self.produce(initial))
+        producer = asyncio.create_task(coro=self.produce(initial=initial))
         try:
             while not self.closed.is_set() or not self.queue.empty():
                 try:
-                    frame = await asyncio.wait_for(self.queue.get(), timeout=1)
+                    frame = await asyncio.wait_for(fut=self.queue.get(), timeout=1)
                 except TimeoutError:
                     if producer.done():
                         await producer

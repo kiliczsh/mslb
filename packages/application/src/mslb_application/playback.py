@@ -18,8 +18,10 @@ def _frame(timeline: BinaryIO, tick: int) -> tuple[TimelineFrame, set[str] | Non
         if not line:
             break
         if len(line) > 8 * 1024**2 or not line.endswith(b"\n"):
-            raise OperationError("VALIDATION_FAILED", "Timeline exceeds supported frame bounds")
-        frame = TimelineFrame.model_validate_json(line)
+            raise OperationError(
+                code="VALIDATION_FAILED", message="Timeline exceeds supported frame bounds"
+            )
+        frame = TimelineFrame.model_validate_json(json_data=line)
         ids = [server.id for server in frame.membership]
         end = frame.t + frame.duration_ticks
         if (
@@ -28,15 +30,17 @@ def _frame(timeline: BinaryIO, tick: int) -> tuple[TimelineFrame, set[str] | Non
             or ids != sorted(set(ids))
             or (not frame.terminal and [sample.server_id for sample in frame.servers] != ids)
         ):
-            raise OperationError("VALIDATION_FAILED", "Timeline interval or membership is invalid")
+            raise OperationError(
+                code="VALIDATION_FAILED", message="Timeline interval or membership is invalid"
+            )
         if frame.t <= tick < end or (frame.terminal and tick == frame.t):
             return frame, previous_ids
         if frame.terminal or frame.t > tick:
-            raise OperationError("NOT_FOUND", "Tick is outside the completed run")
+            raise OperationError(code="NOT_FOUND", message="Tick is outside the completed run")
         previous_end, previous_ids = end, set(ids)
     else:
-        raise OperationError("VALIDATION_FAILED", "Timeline exceeds its frame count")
-    raise OperationError("NOT_FOUND", "Tick is outside the completed run")
+        raise OperationError(code="VALIDATION_FAILED", message="Timeline exceeds its frame count")
+    raise OperationError(code="NOT_FOUND", message="Tick is outside the completed run")
 
 
 def read_playback(
@@ -51,7 +55,7 @@ def read_playback(
     request_offset: int,
 ) -> PlaybackView:
     """Read bounded persisted membership/request slices without replaying engine execution."""
-    frame, previous_ids = _frame(timeline, tick)
+    frame, previous_ids = _frame(timeline=timeline, tick=tick)
     ids = [member.id for member in frame.membership]
     samples = {sample.server_id: sample for sample in frame.servers}
     servers = []
@@ -82,19 +86,27 @@ def read_playback(
         if not line:
             break
         if index == 1_000_000:
-            raise OperationError("VALIDATION_FAILED", "Scaling history exceeds its record count")
+            raise OperationError(
+                code="VALIDATION_FAILED", message="Scaling history exceeds its record count"
+            )
         if len(line) > 65536 or not line.endswith(b"\n"):
-            raise OperationError("VALIDATION_FAILED", "Scaling record exceeds its byte bound")
-        decision = PlaybackDecision.model_validate_json(line)
+            raise OperationError(
+                code="VALIDATION_FAILED", message="Scaling record exceeds its byte bound"
+            )
+        decision = PlaybackDecision.model_validate_json(json_data=line)
         if decision.t <= previous_tick:
-            raise OperationError("VALIDATION_FAILED", "Scaling records are not ordered")
+            raise OperationError(
+                code="VALIDATION_FAILED", message="Scaling records are not ordered"
+            )
         previous_tick = decision.t
         if decision.t > tick:
             break
         if decision.t == tick or decision.applied_at == tick:
             decisions.append(decision)
     else:
-        raise OperationError("VALIDATION_FAILED", "Scaling history exceeds its record count")
+        raise OperationError(
+            code="VALIDATION_FAILED", message="Scaling history exceeds its record count"
+        )
     return PlaybackView(
         run_id=run_id,
         bundle_digest=bundle_digest,

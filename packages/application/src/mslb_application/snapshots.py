@@ -97,7 +97,7 @@ def settings_from_domain(config: RunConfig) -> RunSettings:
             ),
             scale_in_cpu_threshold=FractionValue.from_fraction(value=policy.scale_in_cpu_threshold),
             scale_out_drop_rate_threshold=FractionValue.from_fraction(
-                policy.scale_out_drop_rate_threshold
+                value=policy.scale_out_drop_rate_threshold
             ),
             scale_out_queue_threshold=policy.scale_out_queue_threshold,
             cooldown_ticks=policy.cooldown_ticks,
@@ -155,28 +155,28 @@ def make_snapshot(
         snapshot_digest="0" * 64,
     )
     digest = hashlib.sha256(
-        canonical_bytes(value=snapshot.model_dump(mode="json", exclude={"snapshot_digest"}))
+        data=canonical_bytes(value=snapshot.model_dump(mode="json", exclude={"snapshot_digest"}))
     ).hexdigest()
     return snapshot.model_copy(update={"snapshot_digest": digest})
 
 
 def verify_snapshot(snapshot: RunSnapshot) -> RunSnapshot:
     if snapshot.engine_version != __version__:
-        raise InputError("engine_version", "incompatible_engine_version")
+        raise InputError(field="engine_version", reason="incompatible_engine_version")
     expected = make_snapshot(
         servers=snapshot.servers, requests=snapshot.requests, settings=snapshot.configuration
     )
     if snapshot != expected:
-        raise InputError("snapshot", "identity_or_normalization_mismatch")
+        raise InputError(field="snapshot", reason="identity_or_normalization_mismatch")
     return snapshot
 
 
 def read_snapshot(stream: BinaryIO) -> RunSnapshot:
     payload = stream.read(32 * 1024 * 1024 + 1)
     if len(payload) > 32 * 1024 * 1024:
-        raise InputError("snapshot", "payload_too_large")
+        raise InputError(field="snapshot", reason="payload_too_large")
     try:
         snapshot = RunSnapshot.model_validate_json(json_data=payload)
     except ValidationError:
-        raise InputError("snapshot", "invalid_schema") from None
+        raise InputError(field="snapshot", reason="invalid_schema") from None
     return verify_snapshot(snapshot=snapshot)

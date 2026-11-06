@@ -46,7 +46,7 @@ def on_loop[T](loop: asyncio.AbstractEventLoop, operation: Awaitable[T]) -> T:
     async def wait() -> T:
         return await operation
 
-    future = asyncio.run_coroutine_threadsafe(wait(), loop)
+    future = asyncio.run_coroutine_threadsafe(coro=wait(), loop=loop)
     try:
         return future.result(timeout=20)
     except TimeoutError:
@@ -58,7 +58,7 @@ def json_chunks(value: object) -> Generator[bytes]:
     encoder = json.JSONEncoder(
         ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
     )
-    for piece in encoder.iterencode(value):
+    for piece in encoder.iterencode(o=value):
         yield piece.encode()
     yield b"\n"
 
@@ -68,7 +68,9 @@ def stored(reference: FileReference) -> StoredFile:
 
 
 def file_reference(reference: StoredFile) -> FileReference:
-    return FileReference(reference.key, reference.sha256, reference.size_bytes)
+    return FileReference(
+        key=reference.key, sha256=reference.sha256, size_bytes=reference.size_bytes
+    )
 
 
 def stream_chunks(stream: BinaryIO, length: int) -> Generator[bytes]:
@@ -76,7 +78,7 @@ def stream_chunks(stream: BinaryIO, length: int) -> Generator[bytes]:
     while remaining:
         block = stream.read(min(64 * 1024, remaining))
         if not block:
-            raise OperationError("VALIDATION_FAILED", "Committed stream was truncated")
+            raise OperationError(code="VALIDATION_FAILED", message="Committed stream was truncated")
         remaining -= len(block)
         yield block
 
@@ -99,7 +101,7 @@ class Journal:
         self.repository, self.loop, self.check = repository, loop, check
         self.prefix = f"runs/{lease.run_id}/attempt-{lease.fence}"
         self.writers: dict[PrefixName, WorkFile] = {
-            name: stack.enter_context(files.work_file(f"{self.prefix}/work/{name}.part"))
+            name: stack.enter_context(cm=files.work_file(key=f"{self.prefix}/work/{name}.part"))
             for name in PREFIX_NAMES
         }
         for writer in self.writers.values():
@@ -109,7 +111,7 @@ class Journal:
         }
         self.before = {
             name: ArtifactPrefix(
-                name=name, size_bytes=0, records=0, sha256=hashlib.sha256(b"").hexdigest()
+                name=name, size_bytes=0, records=0, sha256=hashlib.sha256(data=b"").hexdigest()
             )
             for name in PREFIX_NAMES
         }
@@ -123,13 +125,19 @@ class Journal:
         self.simulation: Simulation | None = None
         self.metrics: MetricAccumulator | None = None
         if recovery is None:
-            servers, requests = domain_inputs(snapshot)
-            self.simulation = Simulation(servers, requests, domain_config(snapshot.configuration))
+            servers, requests = domain_inputs(snapshot=snapshot)
+            self.simulation = Simulation(
+                servers=servers,
+                requests=requests,
+                config=domain_config(settings=snapshot.configuration),
+            )
             self.metrics = MetricAccumulator(
-                requests, servers, snapshot.configuration.max_metric_series
+                requests=requests,
+                servers=servers,
+                max_series=snapshot.configuration.max_metric_series,
             )
         else:
-            self.restore(recovery)
+            self.restore(recovery=recovery)
 
     def restore(self, recovery: RecoveryState) -> None:
         """Verify committed prefixes and restore interval state or sealed finalization."""
@@ -137,13 +145,18 @@ class Journal:
             recovery.snapshot_digest != self.snapshot.snapshot_digest
             or recovery.engine_version != self.snapshot.engine_version
         ):
-            raise OperationError("VALIDATION_FAILED", "Recovery input identity mismatch")
+            raise OperationError(
+                code="VALIDATION_FAILED", message="Recovery input identity mismatch"
+            )
         for prefix in recovery.prefixes:
             count, offset, digest = 0, 0, hashlib.sha256()
             after = 0
             while True:
                 page = on_loop(
-                    self.loop, self.repository.chunks(self.lease.run_id, prefix.name, after)
+                    loop=self.loop,
+                    operation=self.repository.chunks(
+                        run_id=self.lease.run_id, name=prefix.name, after_sequence=after
+                    ),
                 )
                 if not page:
                     break
@@ -151,17 +164,21 @@ class Journal:
                     self.check()
                     if chunk.first_sequence != count + 1 or chunk.byte_offset != offset:
                         raise OperationError(
-                            "VALIDATION_FAILED", "Committed chunks are not contiguous"
+                            code="VALIDATION_FAILED", message="Committed chunks are not contiguous"
                         )
                     records = 0
-                    with self.files.verified_stream(file_reference(chunk.file)) as stream:
+                    with self.files.verified_stream(
+                        reference=file_reference(reference=chunk.file)
+                    ) as stream:
                         while data := stream.read(64 * 1024):
                             self.check()
-                            self.writers[prefix.name].write(data)
+                            self.writers[prefix.name].write(data=data)
                             digest.update(data)
                             records += data.count(b"\n")
                     if records != chunk.last_sequence - chunk.first_sequence + 1:
-                        raise OperationError("VALIDATION_FAILED", "Chunk sequence count mismatch")
+                        raise OperationError(
+                            code="VALIDATION_FAILED", message="Chunk sequence count mismatch"
+                        )
                     count, offset, after = (
                         chunk.last_sequence,
                         offset + chunk.file.size_bytes,
@@ -173,11 +190,17 @@ class Journal:
                 prefix.size_bytes,
                 prefix.sha256,
             ):
-                raise OperationError("VALIDATION_FAILED", "Recovered prefix digest mismatch")
+                raise OperationError(
+                    code="VALIDATION_FAILED", message="Recovered prefix digest mismatch"
+                )
             self.before[prefix.name], self.records[prefix.name] = prefix, prefix.records
-        with self.files.verified_stream(file_reference(recovery.reference)) as state:
+        with self.files.verified_stream(
+            reference=file_reference(reference=recovery.reference)
+        ) as state:
             if recovery.kind == "terminal":
-                seal = read_terminal_seal(state, recovery.reference.sha256, self.snapshot)
+                seal = read_terminal_seal(
+                    stream=state, expected_digest=recovery.reference.sha256, snapshot=self.snapshot
+                )
                 if (
                     seal.prefixes != recovery.prefixes
                     or seal.metrics != recovery.metrics
@@ -185,50 +208,61 @@ class Journal:
                     or seal.executed_intervals != recovery.executed_intervals
                 ):
                     raise OperationError(
-                        "VALIDATION_FAILED", "Terminal seal differs from committed metadata"
+                        code="VALIDATION_FAILED",
+                        message="Terminal seal differs from committed metadata",
                     )
                 self.seal = seal
             else:
                 restored = read_checkpoint(
-                    state, recovery.reference.sha256, self.snapshot, self.streams
+                    stream=state,
+                    expected_digest=recovery.reference.sha256,
+                    snapshot=self.snapshot,
+                    prefixes=self.streams,
                 )
                 if (
                     restored.simulation.tick != recovery.next_tick
                     or restored.prefixes != recovery.prefixes
                 ):
                     raise OperationError(
-                        "VALIDATION_FAILED", "Checkpoint differs from committed progress"
+                        code="VALIDATION_FAILED",
+                        message="Checkpoint differs from committed progress",
                     )
                 self.simulation, self.metrics = restored.simulation, restored.metrics
                 self.last_checkpoint = CheckpointArtifact(
-                    self.files.path(recovery.reference.key),
-                    recovery.reference.sha256,
-                    recovery.reference.size_bytes,
-                    recovery.next_tick,
-                    recovery.executed_intervals,
-                    self.records["run.jsonl"],
-                    recovery.prefixes,
+                    path=self.files.path(key=recovery.reference.key),
+                    sha256=recovery.reference.sha256,
+                    size_bytes=recovery.reference.size_bytes,
+                    next_tick=recovery.next_tick,
+                    executed_intervals=recovery.executed_intervals,
+                    event_count=self.records["run.jsonl"],
+                    prefixes=recovery.prefixes,
                 )
 
     def _record(self, name: PrefixName, pieces: Iterable[bytes], tick: int) -> None:
         self.first_ticks.setdefault(name, tick)
         self.last_ticks[name] = tick
         for piece in pieces:
-            self.writers[name].write(piece)
+            self.writers[name].write(data=piece)
         self.records[name] += 1
 
     def append(self, frame: TickFrame) -> None:
         """Append one observed frame to attempt-private spools and exact event indexes."""
         if self.metrics is None:
-            raise OperationError("INVALID_STATE", "Sealed attempts cannot execute again")
-        self.metrics.observe(frame)
-        self._record("timeline.jsonl", json_chunks(timeline_record(frame)), frame.t)
+            raise OperationError(
+                code="INVALID_STATE", message="Sealed attempts cannot execute again"
+            )
+        self.metrics.observe(frame=frame)
+        self._record(
+            name="timeline.jsonl",
+            pieces=json_chunks(value=timeline_record(frame=frame)),
+            tick=frame.t,
+        )
         for event in frame.events:
-            self._record("run.jsonl", (event.canonical_line().encode(),), frame.t)
+            self._record(name="run.jsonl", pieces=(event.canonical_line().encode(),), tick=frame.t)
             self.pending.append(
                 PersistedEvent.model_validate_json(
-                    canonical_bytes(
-                        {
+                    json_data=canonical_bytes(
+                        value={
                             "sequence": self.records["run.jsonl"],
                             "t": event.t,
                             "event": event.event,
@@ -241,22 +275,22 @@ class Journal:
             )
             if event.reason is not None:
                 self._record(
-                    "drop_reasons.jsonl",
-                    json_chunks(
-                        {"t": event.t, "request_id": event.request_id, "reason": event.reason}
+                    name="drop_reasons.jsonl",
+                    pieces=json_chunks(
+                        value={"t": event.t, "request_id": event.request_id, "reason": event.reason}
                     ),
-                    frame.t,
+                    tick=frame.t,
                 )
         if frame.scale_decision is not None:
             self._record(
-                "autoscaling_decisions.jsonl",
-                (frame.scale_decision.canonical_line().encode(),),
-                frame.t,
+                name="autoscaling_decisions.jsonl",
+                pieces=(frame.scale_decision.canonical_line().encode(),),
+                tick=frame.t,
             )
 
     def checkpoint_needed(self) -> bool:
         return self.simulation is not None and (
-            checkpoint_due(self.simulation, self.last_checkpoint)
+            checkpoint_due(simulation=self.simulation, previous=self.last_checkpoint)
             or any(
                 writer.position - self.before[name].size_bytes >= 256 * 1024
                 for name, writer in self.writers.items()
@@ -268,22 +302,32 @@ class Journal:
         self.check()
         simulation, metrics = self.simulation, self.metrics
         if simulation is None or metrics is None:
-            raise OperationError("INVALID_STATE", "Cannot write progress for sealed execution")
+            raise OperationError(
+                code="INVALID_STATE", message="Cannot write progress for sealed execution"
+            )
         for writer in self.writers.values():
             writer.sync()
         report = None
         if simulation.terminal:
             report = stored(
-                self.files.publish(
-                    f"{self.prefix}/metrics.json", json_chunks(metrics.summary()), 256 * 1024**2
+                reference=self.files.publish(
+                    key=f"{self.prefix}/metrics.json",
+                    chunks=json_chunks(value=metrics.summary()),
+                    maximum=256 * 1024**2,
                 )
             )
-            seal = capture_terminal_seal(self.snapshot, simulation, metrics, self.streams, report)
+            seal = capture_terminal_seal(
+                snapshot=self.snapshot,
+                simulation=simulation,
+                metrics=metrics,
+                streams=self.streams,
+                report=report,
+            )
             reference = stored(
-                self.files.publish(
-                    f"{self.prefix}/terminal.json",
-                    json_chunks(seal.model_dump(mode="json")),
-                    1024**2,
+                reference=self.files.publish(
+                    key=f"{self.prefix}/terminal.json",
+                    chunks=json_chunks(value=seal.model_dump(mode="json")),
+                    maximum=1024**2,
                 )
             )
             prefixes = seal.prefixes
@@ -291,18 +335,24 @@ class Journal:
         else:
             with tempfile.TemporaryDirectory(prefix="mslb-checkpoint-") as temporary:
                 checkpoint = write_checkpoint(
-                    Path(temporary), self.snapshot, simulation, metrics, self.streams
+                    directory=Path(temporary),
+                    snapshot=self.snapshot,
+                    simulation=simulation,
+                    metrics=metrics,
+                    prefixes=self.streams,
                 )
-                with checkpoint.path.open("rb") as source:
+                with checkpoint.path.open(mode="rb") as source:
                     reference = stored(
-                        self.files.publish(
-                            f"{self.prefix}/checkpoints/{checkpoint.sha256}.json",
-                            stream_chunks(source, checkpoint.size_bytes),
-                            32 * 1024**2,
+                        reference=self.files.publish(
+                            key=f"{self.prefix}/checkpoints/{checkpoint.sha256}.json",
+                            chunks=stream_chunks(stream=source, length=checkpoint.size_bytes),
+                            maximum=32 * 1024**2,
                         )
                     )
                 prefixes = checkpoint.prefixes
-                self.pending_checkpoint = replace(checkpoint, path=self.files.path(reference.key))
+                self.pending_checkpoint = replace(
+                    checkpoint, path=self.files.path(key=reference.key)
+                )
         chunks: list[OutputChunk] = []
         for prefix in prefixes:
             before = self.before[prefix.name]
@@ -312,10 +362,12 @@ class Journal:
             stream = self.streams[prefix.name]
             stream.seek(before.size_bytes)
             reference_chunk = stored(
-                self.files.publish(
-                    f"{self.prefix}/chunks/{prefix.name}-{before.records + 1:07d}.jsonl",
-                    stream_chunks(stream, prefix.size_bytes - before.size_bytes),
-                    32 * 1024**2,
+                reference=self.files.publish(
+                    key=f"{self.prefix}/chunks/{prefix.name}-{before.records + 1:07d}.jsonl",
+                    chunks=stream_chunks(
+                        stream=stream, length=prefix.size_bytes - before.size_bytes
+                    ),
+                    maximum=32 * 1024**2,
                 )
             )
             chunks.append(
@@ -345,7 +397,9 @@ class Journal:
     def commit(self) -> None:
         """Commit a flushed safe boundary under the current attempt and fencing token."""
         data = self.describe()
-        retired = on_loop(self.loop, self.repository.commit(self.lease, data))
+        retired = on_loop(
+            loop=self.loop, operation=self.repository.commit(lease=self.lease, data=data)
+        )
         self.before = {prefix.name: prefix for prefix in data.prefixes}
         self.pending.clear()
         self.first_ticks.clear()
@@ -353,70 +407,81 @@ class Journal:
         if self.pending_checkpoint is not None:
             self.last_checkpoint, self.pending_checkpoint = self.pending_checkpoint, None
         for reference in retired:
-            if on_loop(self.loop, self.repository.removable(self.lease, reference.key)):
-                self.files.remove(reference.key)
+            if on_loop(
+                loop=self.loop,
+                operation=self.repository.removable(lease=self.lease, key=reference.key),
+            ):
+                self.files.remove(key=reference.key)
 
     def finalize(self) -> tuple[StoredFile, BundleManifest]:
         """Validate sealed prefixes and publish completion only under current ownership."""
         self.check()
         seal = self.seal
         if seal is None:
-            raise OperationError("INVALID_STATE", "Finalization requires committed terminal output")
+            raise OperationError(
+                code="INVALID_STATE", message="Finalization requires committed terminal output"
+            )
         directory_key = f"{self.prefix}/candidate"
         for prefix in seal.prefixes:
             self.check()
             stream = self.streams[prefix.name]
             stream.seek(0)
             result = self.files.publish(
-                f"{directory_key}/{prefix.name}",
-                stream_chunks(stream, prefix.size_bytes),
-                256 * 1024**2,
+                key=f"{directory_key}/{prefix.name}",
+                chunks=stream_chunks(stream=stream, length=prefix.size_bytes),
+                maximum=256 * 1024**2,
             )
             if (result.sha256, result.size_bytes) != (prefix.sha256, prefix.size_bytes):
-                raise OperationError("VALIDATION_FAILED", "Finalization changed a sealed prefix")
-        with self.files.verified_stream(file_reference(seal.metrics)) as stream:
+                raise OperationError(
+                    code="VALIDATION_FAILED", message="Finalization changed a sealed prefix"
+                )
+        with self.files.verified_stream(reference=file_reference(reference=seal.metrics)) as stream:
             self.files.publish(
-                f"{directory_key}/metrics.json",
-                stream_chunks(stream, seal.metrics.size_bytes),
-                256 * 1024**2,
+                key=f"{directory_key}/metrics.json",
+                chunks=stream_chunks(stream=stream, length=seal.metrics.size_bytes),
+                maximum=256 * 1024**2,
             )
         self.files.publish(
-            f"{directory_key}/snapshot.json",
-            json_chunks(self.snapshot.model_dump(mode="json")),
-            32 * 1024**2,
+            key=f"{directory_key}/snapshot.json",
+            chunks=json_chunks(value=self.snapshot.model_dump(mode="json")),
+            maximum=32 * 1024**2,
         )
         self.files.publish(
-            f"{directory_key}/servers.json",
-            json_chunks(
-                {
+            key=f"{directory_key}/servers.json",
+            chunks=json_chunks(
+                value={
                     "tick_seconds": 1,
                     "servers": [server.model_dump() for server in self.snapshot.servers],
                 }
             ),
-            256 * 1024,
+            maximum=256 * 1024,
         )
         self.files.publish(
-            f"{directory_key}/requests.csv", request_bytes(self.snapshot.requests), 10 * 1024**2
+            key=f"{directory_key}/requests.csv",
+            chunks=request_bytes(requests=self.snapshot.requests),
+            maximum=10 * 1024**2,
         )
         counts = {prefix.name: prefix.records for prefix in seal.prefixes}
         manifest = validate_artifact_files(
-            self.snapshot,
-            self.files.path(directory_key),
-            seal.terminal_tick,
-            counts["run.jsonl"],
-            counts["autoscaling_decisions.jsonl"],
+            snapshot=self.snapshot,
+            directory=self.files.path(key=directory_key),
+            terminal_tick=seal.terminal_tick,
+            event_count=counts["run.jsonl"],
+            decision_count=counts["autoscaling_decisions.jsonl"],
         )
         self.check()
         reference = self.files.publish(
-            f"{directory_key}/manifest.json", json_chunks(manifest.model_dump(mode="json")), 1024**2
+            key=f"{directory_key}/manifest.json",
+            chunks=json_chunks(value=manifest.model_dump(mode="json")),
+            maximum=1024**2,
         )
         self.check()
         final_key = f"{self.prefix}/bundles/{manifest.bundle_digest}"
-        final = self.files.path(final_key)
+        final = self.files.path(key=final_key)
         final.parent.mkdir(parents=True, exist_ok=True)
-        self.files.path(directory_key).rename(final)
-        self.files._sync_directory(final.parent)
-        self.files._sync_directory(final.parent.parent)
+        self.files.path(key=directory_key).rename(target=final)
+        self.files._sync_directory(directory=final.parent)
+        self.files._sync_directory(directory=final.parent.parent)
         return StoredFile(
             key=f"{final_key}/manifest.json",
             sha256=reference.sha256,

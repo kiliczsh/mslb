@@ -21,7 +21,9 @@ def test_redis_hints_are_uuid_only_bounded_expiring_and_namespaced() -> None:
                 assert await hints.publish(run_id=expected)
             assert await hints.client.llen(name=hints.key) == 128
             assert 0 < await hints.client.ttl(name=hints.key) <= 60
-            assert await hints.client.lindex(name=hints.key, index=0) == str(expected).encode()
+            assert (
+                await hints.client.lindex(name=hints.key, index=0) == str(object=expected).encode()
+            )
             await asyncio.wait_for(fut=hints.wait(), timeout=0.5)
             assert await hints.client.llen(name=hints.key) == 127
             # Eviction/restart is represented by deleting only this test's exact
