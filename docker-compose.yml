@@ -16,11 +16,16 @@ x-tool: &tool
 
 services:
   postgres:
-    image: postgres:17-alpine@sha256:562a6e0a66b5136bc28bef5944bbc2ddddf8ea0058d4016b96cee63f2edaf143
+    image: mslb-postgres:local
+    build:
+      context: .
+      dockerfile: infra/postgres/Dockerfile
+    pull_policy: build
     environment:
       POSTGRES_USER: mslb
       POSTGRES_PASSWORD: local-demo-only
       POSTGRES_DB: mslb
+      POSTGRES_INITDB_ARGS: --locale=C --encoding=UTF8 --auth-local=scram-sha-256 --auth-host=scram-sha-256
     command: [postgres, -c, shared_buffers=128MB, -c, work_mem=2MB, -c, max_connections=20, -c, max_parallel_workers_per_gather=0]
     volumes: [postgres-data:/var/lib/postgresql/data]
     shm_size: 128m
@@ -29,7 +34,7 @@ services:
     cpus: 1
     pids_limit: 128
     healthcheck:
-      test: [CMD-SHELL, pg_isready -U mslb -d mslb]
+      test: [CMD-SHELL, 'PGCONNECT_TIMEOUT=2 PGPASSWORD="$$POSTGRES_PASSWORD" psql --host=127.0.0.1 --username="$$POSTGRES_USER" --dbname="$$POSTGRES_DB" --no-password --tuples-only --command="SELECT 1" > /dev/null']
       interval: 2s
       timeout: 3s
       retries: 30

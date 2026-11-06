@@ -19,7 +19,7 @@ function Invoke-CheckedDocker {
         throw "Docker command failed with exit code $LASTEXITCODE"
     }
     $diagnostics = $lines | Where-Object {
-        $_ -match '(?i)(^|\s)(warning|warn)(:|\s)|\bdeprecated\b|\bfound\s+[1-9][0-9]*\s+warnings?\b'
+        $_ -match '(?i)(^|[\s=])(warning|warn)(:|\s)|\bdeprecated\b|\bfound\s+[1-9][0-9]*\s+warnings?\b'
     }
     if ($diagnostics) {
         throw ('Warnings must be resolved before committing: ' + ($diagnostics -join "`n"))
@@ -42,7 +42,7 @@ try {
     [Environment]::SetEnvironmentVariable($keyName, 'safe.directory', 'Process')
     [Environment]::SetEnvironmentVariable($valueName, $repositoryRoot, 'Process')
     Invoke-CheckedDocker -DockerArguments @('compose', '--profile', 'tools', 'config', '--quiet')
-    foreach ($service in @('python-checks', 'frontend-checks', 'web', 'browser-checks')) {
+    foreach ($service in @('postgres', 'python-checks', 'frontend-checks', 'web', 'browser-checks')) {
         Invoke-CheckedDocker -DockerArguments @(
             'compose', '--progress', 'plain', '--profile', 'tools', 'build', $service
         )
