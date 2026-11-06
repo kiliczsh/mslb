@@ -36,6 +36,7 @@ class Settings:
     allowed_origins: tuple[str, ...] = ("http://localhost:8000", "http://127.0.0.1:8000")
     request_limit: int = 32
     stream_limit: int = 20
+    mcp_session_idle_seconds: float = 60
 
     def __post_init__(self) -> None:
         if (
@@ -44,6 +45,7 @@ class Settings:
             and re.fullmatch(r"[A-Za-z0-9_-]{32,256}", self.token) is None
             or not 1 <= self.request_limit <= 32
             or not 1 <= self.stream_limit <= 20
+            or not 0.05 <= self.mcp_session_idle_seconds <= 1800
             or not self.allowed_hosts
             or len(self.allowed_hosts) > 16
             or any(

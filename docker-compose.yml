@@ -194,6 +194,17 @@ services:
       api: {condition: service_healthy}
       worker: {condition: service_healthy}
     networks: [internal]
+  mcp-check:
+    <<: *tool
+    image: mslb-python-tools:local
+    command: [python, scripts/check_mcp.py]
+    environment:
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+      AUTH_TOKEN: ${AUTH_TOKEN:-}
+    depends_on:
+      api: {condition: service_healthy}
+      worker: {condition: service_healthy}
+    networks: [internal]
 
 networks:
   ingress:

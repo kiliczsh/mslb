@@ -19,7 +19,7 @@ package = false
 members = ["packages/contracts", "packages/engine", "packages/application", "packages/persistence", "apps/worker", "apps/api"]
 
 [dependency-groups]
-dev = ["ruff", "ty", "pytest", "asyncpg", "redis", "httpx==0.28.1"]
+dev = ["ruff", "ty", "pytest", "asyncpg", "redis", "httpx==0.28.1", "jsonschema==4.26.0"]
 
 [tool.ruff]
 target-version = "py313"

@@ -9,6 +9,7 @@ def main() -> None:
         ["ruff", "check", "."],
         ["ruff", "format", "--check", "."],
         ["ty", "check"],
+        ["just", "check-mcp-schemas"],
         ["pytest"],
         [
             "python",

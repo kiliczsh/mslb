@@ -1,0 +1,1 @@
+{"$defs":{"RunId":{"format":"uuid","type":"string"}},"$schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"properties":{"dataset_id":{"$ref":"#/$defs/RunId"},"mode":{"default":"concurrent","enum":["concurrent","sequential_compat"],"title":"Mode","type":"string"}},"required":["dataset_id"],"title":"CompareStrategiesArguments","type":"object"}

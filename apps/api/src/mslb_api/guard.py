@@ -44,6 +44,10 @@ class Guard:
                 "if-match",
                 "last-event-id",
                 "idempotency-key",
+                "mcp-session-id",
+                "mcp-protocol-version",
+                "mcp-method",
+                "mcp-name",
             ):
                 if len(headers.getlist(name)) > 1:
                     raise OperationError("VALIDATION_ERROR", "Duplicate singleton request header")
@@ -73,7 +77,8 @@ class Guard:
                         "GET,POST,PATCH,DELETE,OPTIONS"
                     )
                     response.headers["Access-Control-Allow-Headers"] = (
-                        "Authorization,Content-Type,If-Match,Idempotency-Key,Last-Event-ID"
+                        "Authorization,Content-Type,If-Match,Idempotency-Key,Last-Event-ID,"
+                        "Mcp-Session-Id,MCP-Protocol-Version,MCP-Method,MCP-Name"
                     )
                 await response(scope, receive, send)
                 return
@@ -132,12 +137,19 @@ class Guard:
                             (b"cache-control", b"no-store"),
                         ]
                     )
+                    if message["status"] == 503 and not any(
+                        key.lower() == b"retry-after" for key, _ in response_headers
+                    ):
+                        response_headers.append((b"retry-after", b"1"))
                     if origin is not None:
                         response_headers.extend(
                             [
                                 (b"access-control-allow-origin", origin.encode()),
                                 (b"vary", b"Origin"),
-                                (b"access-control-expose-headers", b"ETag,Location,X-Request-ID"),
+                                (
+                                    b"access-control-expose-headers",
+                                    b"ETag,Location,X-Request-ID,Mcp-Session-Id",
+                                ),
                             ]
                         )
                     message["headers"] = response_headers

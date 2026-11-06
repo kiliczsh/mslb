@@ -2,7 +2,7 @@
 name = "mslb-api"
 version = "0.1.0"
 requires-python = ">=3.13,<3.14"
-dependencies = ["mslb-application", "mslb-persistence", "fastapi==0.162.0", "uvicorn==0.54.0", "python-multipart==0.0.33"]
+dependencies = ["mslb-application", "mslb-persistence", "fastapi==0.162.0", "uvicorn==0.54.0", "python-multipart==0.0.33", "mcp==2.3.0"]
 
 [tool.uv.sources]
 mslb-application = { workspace = true }

@@ -1,0 +1,1 @@
+{"$defs":{"RunId":{"format":"uuid","type":"string"}},"$schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"properties":{"run_id":{"$ref":"#/$defs/RunId"}},"required":["run_id"],"title":"RunReference","type":"object"}

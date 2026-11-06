@@ -15,6 +15,7 @@ from mslb_application.errors import OperationError
 from mslb_application.event_feed import EventFeed
 from mslb_application.files import ManagedFiles
 from mslb_application.queries import ArtifactName, ChartMetric, Queries
+from mslb_application.services import Services
 from mslb_application.submissions import Submissions
 from mslb_contracts.canonical import canonical_bytes
 from mslb_contracts.catalog import ServerView
@@ -29,7 +30,7 @@ from mslb_contracts.http import (
     SimulationCreate,
     StrategyView,
 )
-from mslb_contracts.inputs import InputError, ServerInput, normalize_identifier, read_servers
+from mslb_contracts.inputs import InputError, ServerInput, read_servers
 from mslb_contracts.queries import (
     ChartView,
     ComparisonView,
@@ -39,7 +40,6 @@ from mslb_contracts.queries import (
     RunView,
     ServerMetricView,
 )
-from mslb_contracts.runs import RunSettings
 from mslb_engine.models import SimulationError
 from mslb_persistence.catalog import Catalog
 from mslb_persistence.database import Database, StoreError
@@ -51,9 +51,11 @@ from starlette.datastructures import FormData, UploadFile
 from starlette.exceptions import HTTPException
 from starlette.formparsers import MultiPartException, MultiPartParser
 from starlette.responses import Response
+from starlette.routing import Route
 
 from mslb_api.errors import error_response
 from mslb_api.guard import Guard
+from mslb_api.mcp_adapter import McpAdapter
 from mslb_api.settings import Settings
 from mslb_api.streams import ArtifactResponse, EventResponse, finish
 
@@ -106,12 +108,15 @@ def create_app(
 ) -> FastAPI:
     catalog, jobs = Catalog(database), Jobs(database)
     submissions, queries = Submissions(catalog, inputs), Queries(database, outputs, signing_key)
+    services = Services(catalog, jobs, submissions, queries)
+    mcp = McpAdapter(services, settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         await catalog.seed_once(await asyncio.to_thread(seed))
         try:
-            yield
+            async with mcp.server.session_manager.run():
+                yield
         finally:
             if close_database:
                 await database.close()
@@ -125,6 +130,7 @@ def create_app(
         redoc_url=None,
     )
     app.add_middleware(Guard, settings=settings)
+    app.state.mcp = mcp
     responses: dict[int | str, dict[str, object]] = {
         status: {"model": ErrorEnvelope} for status in (401, 403, 404, 409, 413, 422, 429, 500, 503)
     }
@@ -203,7 +209,7 @@ def create_app(
                     complete_product=False,
                     capabilities=dict(
                         logical_rest="ready" if api_ready else "unavailable",
-                        mcp="not_implemented",
+                        mcp="ready",
                         dashboard="not_implemented",
                         docker_traffic="not_implemented",
                         telemetry="not_implemented",
@@ -216,22 +222,15 @@ def create_app(
         )
 
     async def server(server_id: str) -> ServerView:
-        try:
-            normalized = normalize_identifier(server_id)
-        except ValueError:
-            raise OperationError("VALIDATION_ERROR", "Invalid server identifier") from None
-        for value in await catalog.list_servers():
-            if value.id == normalized:
-                return value
-        raise OperationError("NOT_FOUND", "Server does not exist")
+        return await services.get_server(server_id)
 
     @router.get("/servers", response_model=Page[ServerView])
-    async def servers() -> Response:
-        return json_response(Page[ServerView](items=await catalog.list_servers()))
+    async def servers(limit: Limit = 100, cursor: Cursor = None) -> Response:
+        return json_response(await services.list_servers(limit, cursor))
 
     @router.post("/servers", status_code=201, response_model=ServerView)
     async def create_server(body: ServerInput) -> Response:
-        value = await catalog.create_server(body)
+        value = await services.create_server(body)
         return json_response(value, 201, {"ETag": f'"{value.version}"'})
 
     @router.get("/servers/{server_id:path}", response_model=ServerView)
@@ -242,16 +241,13 @@ def create_app(
     @router.patch("/servers/{server_id:path}", response_model=ServerView)
     async def patch_server(server_id: str, body: ServerPatch, request: Request) -> Response:
         expected = version(request)
-        previous = await server(server_id)
-        values = previous.model_dump(exclude={"version"}) | body.model_dump(exclude_unset=True)
-        value = await catalog.update_server(ServerInput.model_validate(values), expected)
+        value = await services.update_server(server_id, body, expected)
         return json_response(value, headers={"ETag": f'"{value.version}"'})
 
     @router.delete("/servers/{server_id:path}", status_code=204)
     async def delete_server(server_id: str, request: Request) -> Response:
         expected = version(request)
-        previous = await server(server_id)
-        await catalog.delete_server(previous.id, expected)
+        await services.delete_server(server_id, expected)
         return Response(status_code=204)
 
     @router.post(
@@ -306,26 +302,7 @@ def create_app(
 
     @router.get("/strategies", response_model=Page[StrategyView])
     async def strategies() -> Response:
-        values = [
-            dict(id=name, display_name=title, description=description)
-            for name, title, description in (
-                ("first_fit", "First Fit", "Choose the first eligible server in ID order."),
-                ("round_robin", "Round Robin", "Rotate through eligible servers in ID order."),
-                (
-                    "least_connections",
-                    "Least Connections",
-                    "Choose the eligible server with fewest active requests.",
-                ),
-                (
-                    "most_available_memory",
-                    "Most Available Memory",
-                    "Choose the eligible server with most free memory.",
-                ),
-            )
-        ]
-        return json_response(
-            Page[StrategyView](items=tuple(StrategyView.model_validate(value) for value in values))
-        )
+        return json_response(services.strategies())
 
     # Declare collection comparison before the parameter routes.
     @router.post("/simulations/compare", response_model=ComparisonView)
@@ -334,15 +311,11 @@ def create_app(
 
     @router.post("/simulations", status_code=202, response_model=SimulationAccepted)
     async def submit(body: SimulationCreate, request: Request) -> Response:
-        settings = RunSettings.model_validate(body.model_dump(exclude={"dataset_id"}))
-        run = await submissions.submit(
-            body.dataset_id, settings, request.headers.get("idempotency-key")
-        )
-        status = (await queries.run(run.id)).status
+        run = await services.submit(body, request.headers.get("idempotency-key"))
         return json_response(
-            SimulationAccepted(run_id=run.id, status=status, snapshot_digest=run.snapshot_digest),
+            run,
             202,
-            {"Location": f"/api/v1/simulations/{run.id}"},
+            {"Location": f"/api/v1/simulations/{run.run_id}"},
         )
 
     @router.get("/simulations", response_model=Page[RunView])
@@ -351,20 +324,11 @@ def create_app(
 
     @router.get("/simulations/{run_id}", response_model=RunDetail)
     async def detail(run_id: UUID) -> Response:
-        run = await queries.run(run_id)
-        validation = (await queries.completed(run_id))[1] if run.status == "completed" else None
-        value = RunDetail(
-            **run.model_dump(),
-            mode=run.configuration.mode,
-            strategy=run.configuration.strategy,
-            validation=validation,
-        )
-        return json_response(value)
+        return json_response(await services.detail(run_id))
 
     @router.post("/simulations/{run_id}/cancel", response_model=RunView)
     async def cancel(run_id: UUID) -> Response:
-        await jobs.cancel(run_id)
-        return json_response(await queries.run(run_id))
+        return json_response(await services.cancel(run_id))
 
     @router.get("/simulations/{run_id}/events", response_model=Page[PersistedEvent])
     async def events(
@@ -449,4 +413,12 @@ def create_app(
         )
 
     app.include_router(router)
+    app.router.routes.append(Route("/mcp", endpoint=mcp.app))
     return app
+
+
+def get_mcp(app: FastAPI) -> McpAdapter:
+    value = app.state.mcp
+    if not isinstance(value, McpAdapter):
+        raise OperationError("INVALID_STATE", "MCP adapter is not installed")
+    return value

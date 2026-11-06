@@ -57,7 +57,7 @@ try {
     $hostHealth = Invoke-WebRequest -Uri 'http://127.0.0.1:8000/api/v1/health/live' -TimeoutSec 5
     if ($hostHealth.StatusCode -ne 200) { throw 'Host loopback API health failed' }
     Write-Host 'Host loopback API connectivity verified'
-    foreach ($service in @('dependencies-check', 'migrate', 'python-checks', 'persistence-checks', 'frontend-checks', 'worker-check', 'api-check')) {
+    foreach ($service in @('dependencies-check', 'migrate', 'python-checks', 'persistence-checks', 'frontend-checks', 'worker-check', 'api-check', 'mcp-check')) {
         Invoke-CheckedDocker -DockerArguments @(
             'compose', '--profile', 'tools', 'run', '--rm', $service
         )
