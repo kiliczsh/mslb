@@ -12,6 +12,8 @@ from mslb_controller.errors import EngineError
 
 
 class ResourceClient:
+    """Read and validate bounded private resource evidence without general daemon access."""
+
     def __init__(
         self, *, token: str | None = None, transport: httpx.AsyncBaseTransport | None = None
     ) -> None:
@@ -30,6 +32,7 @@ class ResourceClient:
         )
 
     async def probe(self) -> ResourceProbe:
+        """Read a bounded validated resource frame from the authenticated private proxy."""
         try:
             async with (
                 asyncio.timeout(delay=5),

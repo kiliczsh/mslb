@@ -89,6 +89,8 @@ class ContainerObservation(DockerModel):
 
 
 class StaticReservation(DockerModel):
+    """Bind a static backend exclusively to a durable run resource slot."""
+
     deployment_id: UUID
     run_id: UUID
     resource_id: UUID

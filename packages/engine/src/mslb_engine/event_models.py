@@ -22,6 +22,8 @@ EVENT_PRIORITY = {
 
 @dataclass(frozen=True, slots=True)
 class ScaleDecision:
+    """Encode one deterministic scaling decision and its effective boundary."""
+
     t: int
     action: str
     trigger: tuple[str, ...]
@@ -47,6 +49,8 @@ class ScaleDecision:
 
 @dataclass(frozen=True, slots=True)
 class Event:
+    """Encode a canonical logical request lifecycle event without operational timestamps."""
+
     t: int
     event: EventKind
     request_id: str
@@ -67,6 +71,8 @@ class Event:
 
 @dataclass(frozen=True, slots=True)
 class ServerSample:
+    """Record exact allocated/consumed CPU and memory reservations for one interval."""
+
     server_id: str
     capacity: int
     memory_capacity: int
@@ -79,6 +85,8 @@ class ServerSample:
 
 @dataclass(frozen=True, slots=True)
 class TickFrame:
+    """Expose one deterministic interval or terminal boundary to metrics and artifact writers."""
+
     t: int
     duration_ticks: int
     events: tuple[Event, ...]

@@ -22,6 +22,8 @@ from mslb_persistence.orm_base import Base
 
 
 class DockerDeployment(Base):
+    """Persist the fingerprint and trusted definition of one approved deployment."""
+
     __tablename__ = "docker_deployments"
     id: Mapped[UUID] = MappedColumn[UUID](primary_key=True)
     fingerprint: Mapped[str] = MappedColumn[str](String(64), unique=True)
@@ -32,6 +34,8 @@ class DockerDeployment(Base):
 
 
 class DockerRunState(Base):
+    """Bind an operational run to its deployment, snapshot and terminal cleanup intent."""
+
     __tablename__ = "docker_run_state"
     __table_args__ = (
         CheckConstraint(
@@ -51,6 +55,8 @@ class DockerRunState(Base):
 
 
 class DockerControlSlot(Base):
+    """Retain exclusive controller ownership until cleanup resolves reservations."""
+
     __tablename__ = "docker_control_slot"
     __table_args__ = (
         CheckConstraint(
@@ -80,6 +86,8 @@ class DockerControlSlot(Base):
 
 
 class DockerResource(Base):
+    """Retain a fenced resource history and unique active slot until definitive resolution."""
+
     __tablename__ = "docker_resources"
     __table_args__ = (
         CheckConstraint("ordinal BETWEEN 1 AND 64 AND slot BETWEEN 0 AND 3", name="bounds"),
@@ -138,6 +146,8 @@ class DockerResource(Base):
 
 
 class DockerPublication(Base):
+    """Expose only the committed manifest of a verified operational result."""
+
     __tablename__ = "docker_publications"
     run_id: Mapped[UUID] = MappedColumn[UUID](
         ForeignKey("docker_run_state.run_id", ondelete="RESTRICT"), primary_key=True

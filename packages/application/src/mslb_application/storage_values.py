@@ -9,6 +9,8 @@ from mslb_application.errors import OperationError
 
 @dataclass(frozen=True, slots=True)
 class StorageLimits:
+    """Bound physical managed bytes, free-space reserve and directory entry count."""
+
     quota_bytes: int = 5 * 1024**3
     min_free_bytes: int = 2 * 1024**3
     max_entries: int = 100_000
@@ -23,6 +25,8 @@ class StorageLimits:
 
 @dataclass(frozen=True, slots=True)
 class FileReference:
+    """Bind a server-derived storage key to its exact byte length and SHA-256."""
+
     key: str
     sha256: str
     size_bytes: int

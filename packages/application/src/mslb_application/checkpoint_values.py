@@ -23,6 +23,8 @@ PREFIX_NAMES: tuple[PrefixName, ...] = (
 
 @dataclass(frozen=True, slots=True)
 class CheckpointArtifact:
+    """Reference a flushed interval checkpoint and its exact committed prefixes."""
+
     path: Path
     sha256: str
     size_bytes: int
@@ -34,6 +36,8 @@ class CheckpointArtifact:
 
 @dataclass(frozen=True, slots=True)
 class RestoredCheckpoint:
+    """Return verified engine, metric and prefix state ready for safe continuation."""
+
     simulation: Simulation
     metrics: MetricAccumulator
     prefixes: tuple[ArtifactPrefix, ...]

@@ -10,6 +10,8 @@ from mslb_contracts.runs import Digest, RunSettings
 
 
 class MetricsView(ReadModel):
+    """Expose exact cluster and selected-server metrics from verified saved artifacts."""
+
     run_id: UUID
     bundle_digest: Digest
     summary: dict[str, JsonValue]
@@ -17,11 +19,15 @@ class MetricsView(ReadModel):
 
 
 class ServerMetricView(ReadModel):
+    """Expose one server's exact resource and latency metrics."""
+
     id: Annotated[str, Field(min_length=1, max_length=128)]
     metrics: dict[str, JsonValue]
 
 
 class ChartView(ReadModel):
+    """Expose bounded saved chart buckets with exact source values."""
+
     run_id: UUID
     bundle_digest: Digest
     metric: Literal["cpu_utilization", "memory_utilization", "pending_depth", "active_requests"]
@@ -32,6 +38,8 @@ class ChartView(ReadModel):
 
 
 class ComparisonRun(ReadModel):
+    """Bind one strategy's exact metrics to its frozen comparison identity."""
+
     run_id: UUID
     bundle_digest: Digest
     configuration: RunSettings
@@ -40,5 +48,7 @@ class ComparisonRun(ReadModel):
 
 
 class ComparisonView(ReadModel):
+    """Compare compatible completed logical runs without mixing operational results."""
+
     baseline_run_id: UUID
     runs: Annotated[tuple[ComparisonRun, ...], Field(min_length=2, max_length=8)]

@@ -24,6 +24,7 @@ def _error(code: str, status: int) -> JSONResponse:
 
 
 def create_app(settings: Settings, backend: Backend | None = None) -> FastAPI:
+    """Compose bounded private health/work HTTP endpoints over the real CPU backend."""
     service = backend or Backend(settings)
 
     @asynccontextmanager
@@ -41,6 +42,7 @@ def create_app(settings: Settings, backend: Backend | None = None) -> FastAPI:
 
     @app.post("/work")
     async def work(request: Request) -> JSONResponse:
+        """Parse bounded private work and return actual backend execution outcomes."""
         if request.headers.get("content-type", "").split(";")[0].lower() != "application/json":
             return _error("UNSUPPORTED_MEDIA_TYPE", HTTPStatus.UNSUPPORTED_MEDIA_TYPE.value)
         raw = bytearray()

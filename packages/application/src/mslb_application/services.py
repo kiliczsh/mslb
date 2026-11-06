@@ -24,6 +24,8 @@ from mslb_application.submissions import Submissions
 
 
 class Services:
+    """Coordinate transport-neutral catalog, submission, cancellation and result use cases."""
+
     def __init__(
         self, catalog: Catalog, jobs: Jobs, submissions: Submissions, queries: Queries
     ) -> None:
@@ -35,6 +37,7 @@ class Services:
         )
 
     async def list_servers(self, limit: int = 100, cursor: str | None = None) -> Page[ServerView]:
+        """Return a byte-bounded versioned server page through the shared query policy."""
         check_limit(limit)
         point = self.queries.cursors.decode("servers", cursor)
         if point.id is not None or point.created_at is not None or point.sequence:
@@ -77,6 +80,7 @@ class Services:
 
     @staticmethod
     def strategies() -> Page[StrategyView]:
+        """Return the same four supported strategy identities for every transport."""
         return Page[StrategyView](
             items=tuple(
                 StrategyView(id=name, display_name=title, description=description)

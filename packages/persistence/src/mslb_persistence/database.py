@@ -18,6 +18,8 @@ from mslb_persistence.errors import StoreError as StoreError
 
 
 class Database:
+    """Own bounded PostgreSQL connections and repeatable-read transaction retries."""
+
     def __init__(self, url: str, schema: str = "public") -> None:
         if not re.fullmatch(r"[a-z][a-z0-9_]{0,62}", schema):
             raise StoreError("VALIDATION_ERROR", "Invalid database schema")

@@ -13,10 +13,12 @@ def register_health(*, app: FastAPI, database: Database) -> None:
 
     @app.get("/api/v1/health/live", include_in_schema=False)
     async def live() -> Response:
+        """Report process liveness without requiring dependent services."""
         return Response('{"live":true}', media_type="application/json")
 
     @app.get("/api/v1/health/ready", include_in_schema=False)
     async def ready() -> Response:
+        """Report logical dependency health and honest incomplete-product readiness."""
         api_ready = await database.ready()
         return Response(
             canonical_bytes(

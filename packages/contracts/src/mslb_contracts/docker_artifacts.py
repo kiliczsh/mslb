@@ -28,6 +28,8 @@ type ResourceState = Literal[
 
 
 class ScopeRecord(DockerModel):
+    """Bind an operational observation to run, fence, snapshot and real UTC time."""
+
     run_id: UUID
     fence: Annotated[int, Field(ge=1)]
     snapshot_digest: Digest
@@ -47,6 +49,8 @@ class HttpRecord(HttpEvent, ScopeRecord):
 
 
 class LifecycleRecord(ScopeRecord):
+    """Record a trusted resource definition and its observed operational lifecycle."""
+
     schema_version: Annotated[int, Field(ge=1, le=1)] = 1
     mode: Literal["docker"] = "docker"
     sequence: Annotated[int, Field(ge=1, le=1024)]
@@ -59,6 +63,7 @@ class LifecycleRecord(ScopeRecord):
 
     @model_validator(mode="after")
     def identity(self) -> Self:
+        """Reject resource observations that conflict with their trusted definition."""
         definition = self.definition
         if isinstance(definition, CreationIntent):
             if (
@@ -88,6 +93,8 @@ class LifecycleRecord(ScopeRecord):
 
 
 class RuntimeRecord(ScopeRecord):
+    """Bind bounded terminal HTTP accounting to its operational run scope."""
+
     schema_version: Annotated[int, Field(ge=1, le=1)] = 1
     mode: Literal["docker"] = "docker"
     traffic: TrafficSummary
@@ -95,6 +102,8 @@ class RuntimeRecord(ScopeRecord):
 
 
 class DockerManifest(DockerModel):
+    """Bind verified operational artifact references to one fenced publication."""
+
     schema_version: Annotated[int, Field(ge=1, le=1)] = 1
     mode: Literal["docker"] = "docker"
     run_id: UUID

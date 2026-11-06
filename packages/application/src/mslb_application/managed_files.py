@@ -84,6 +84,7 @@ class ManagedFiles:
 
     @contextmanager
     def _lock(self, name: str, wait: bool = True) -> Generator[None]:
+        """Retain scoped Linux writer admission with a bounded contention deadline."""
         if sys.platform != "linux":
             raise RuntimeError("Managed storage locking requires Linux containers")
         if self.read_only:
@@ -110,9 +111,11 @@ class ManagedFiles:
             os.close(descriptor)
 
     def _usage(self, root: Path | None = None) -> int:
+        """Measure physical bytes while rejecting unsafe or excessive directory entries."""
         entries = 0
 
         def measure(directory: Path, depth: int = 0) -> int:
+            """Walk accounted entries without following links or exceeding count/depth bounds."""
             nonlocal entries
             if depth > 8:
                 raise OperationError("STORAGE_LIMIT_EXCEEDED", "Managed directory depth exceeded")
@@ -176,6 +179,7 @@ class ManagedFiles:
     def _stage(
         self, chunks: Iterable[bytes], maximum: int, scope: str | None = None
     ) -> Generator[_Staged]:
+        """Account bounded physical writes before exposing an immutable candidate."""
         if self.read_only:
             raise OperationError("FORBIDDEN", "Storage is read-only")
         # Unbuffered writes make in-flight file bytes visible to other writers'
@@ -216,6 +220,7 @@ class ManagedFiles:
         return size, digest.hexdigest()
 
     def _publish(self, staged: _Staged, key: str) -> FileReference:
+        """Link an immutable candidate or verify identical existing bytes before fsync."""
         path = self.path(key)
         path.parent.mkdir(parents=True, exist_ok=True)
         try:

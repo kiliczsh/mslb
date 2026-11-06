@@ -48,6 +48,7 @@ async def _end_attempt(session: AsyncSession, job: Job, outcome: str, now: datet
 
 
 async def _expire(session: AsyncSession, slot: ExecutionSlot) -> None:
+    """Resolve expired ownership with cancellation priority and bounded retry attempts."""
     if slot.run_id is None:
         return
     job = await session.scalar(select(Job).where(Job.run_id == slot.run_id).with_for_update())
@@ -92,6 +93,8 @@ async def _expire(session: AsyncSession, slot: ExecutionSlot) -> None:
 
 
 class Jobs:
+    """Claim and transition durable logical jobs with leases, fencing and cancellation priority."""
+
     def __init__(self, database: Database) -> None:
         self.database = database
 
@@ -105,6 +108,7 @@ class Jobs:
         return await self.database.transaction(operation)
 
     async def claim(self, owner: str, lease_seconds: int = 30) -> Lease | None:
+        """Claim one logical job with a global slot, bounded attempts and a fresh fence."""
         if (
             not 1 <= len(owner.encode()) <= 128
             or type(lease_seconds) is not int
@@ -148,6 +152,7 @@ class Jobs:
         return await self.database.transaction(operation)
 
     async def renew(self, lease: Lease, lease_seconds: int = 30) -> JobRecord:
+        """Renew only the exact current owner before its authoritative lease expires."""
         if type(lease_seconds) is not int or not 1 <= lease_seconds <= 300:
             raise StoreError("VALIDATION_ERROR", "Invalid lease duration")
 
@@ -167,6 +172,7 @@ class Jobs:
     async def cancel(
         self, run_id: UUID, *, kind: Literal["logical", "docker"] = "logical"
     ) -> JobRecord:
+        """Persist cancellation with priority over subsequent completion or expired ownership."""
         if kind not in {"logical", "docker"}:
             raise StoreError("VALIDATION_ERROR", "Invalid run mode")
 
@@ -196,6 +202,7 @@ class Jobs:
         return await self._finish(lease, "INTERRUPTED", retryable=False, cancellation_only=True)
 
     async def fail(self, lease: Lease, error_code: str, retryable: bool = False) -> JobRecord:
+        """Record a safe failure or bounded retry only while the attempt fence remains valid."""
         allowed = {
             "INFRASTRUCTURE_FAILURE",
             "RESOURCE_PRESSURE",
@@ -214,6 +221,8 @@ class Jobs:
     async def _finish(
         self, lease: Lease, error_code: str, retryable: bool, cancellation_only: bool
     ) -> JobRecord:
+        """Apply a terminal or retry transition only for the current live job owner."""
+
         async def operation(session: AsyncSession) -> JobRecord:
             slot = await _slot(session)
             if slot is None or slot.run_id != lease.run_id:
@@ -265,6 +274,7 @@ class Jobs:
         await self.database.transaction(operation)
 
     async def pending_outbox(self, limit: int = 100) -> tuple[tuple[UUID, UUID], ...]:
+        """Read bounded durable wake-up IDs without transferring job authority to Redis."""
         if type(limit) is not int or not 1 <= limit <= 500:
             raise StoreError("VALIDATION_ERROR", "Invalid outbox page size")
 

@@ -22,6 +22,8 @@ from mslb_persistence.orm_base import Base
 
 
 class Run(Base):
+    """Persist immutable logical input/configuration identities separately from job execution."""
+
     __tablename__ = "runs"
     id: Mapped[UUID] = MappedColumn[UUID](primary_key=True)
     dataset_id: Mapped[UUID] = MappedColumn[UUID](ForeignKey("datasets.id", ondelete="RESTRICT"))
@@ -38,6 +40,8 @@ class Run(Base):
 
 
 class Job(Base):
+    """Store execution status, bounded attempts and current lease ownership."""
+
     __tablename__ = "jobs"
     __table_args__ = (
         CheckConstraint("kind IN ('logical','docker')", name="kind"),
@@ -75,6 +79,8 @@ class Job(Base):
 
 
 class Attempt(Base):
+    """Retain the owner and outcome associated with one monotonically fenced attempt."""
+
     __tablename__ = "attempts"
     __table_args__ = (UniqueConstraint("run_id", "fence"),)
     run_id: Mapped[UUID] = MappedColumn[UUID](
@@ -91,6 +97,8 @@ class Attempt(Base):
 
 
 class ExecutionSlot(Base):
+    """Admit one active logical job across all worker processes."""
+
     __tablename__ = "execution_slot"
     __table_args__ = (CheckConstraint("id = 1", name="singleton"),)
     id: Mapped[int] = MappedColumn[int](Integer, primary_key=True)
@@ -100,6 +108,8 @@ class ExecutionSlot(Base):
 
 
 class Outbox(Base):
+    """Persist a durable wake-up hint in the same transaction as submission."""
+
     __tablename__ = "outbox"
     id: Mapped[UUID] = MappedColumn[UUID](primary_key=True)
     run_id: Mapped[UUID] = MappedColumn[UUID](
@@ -114,6 +124,8 @@ class Outbox(Base):
 
 
 class IdempotencyRecord(Base):
+    """Bind a bounded-lived key and body digest to one durable run."""
+
     __tablename__ = "idempotency_records"
     scope: Mapped[str] = MappedColumn[str](String(128), primary_key=True)
     key_hash: Mapped[str] = MappedColumn[str](String(64), primary_key=True)

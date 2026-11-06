@@ -87,6 +87,7 @@ def _tmpfs(value: object) -> None:
 def _common(
     info: ContainerInfo, image: ImageInfo, net: NetworkInfo, *, name: str, memory: int, cpus: int
 ) -> None:
+    """Verify the complete approved container security and resource template, failing closed."""
     network(net)
     require(info.Image == image.Id and info.Name == "/" + name)
     config, host = info.Config, info.HostConfig
@@ -184,6 +185,7 @@ def _common(
 
 
 def static(info: ContainerInfo, image: ImageInfo, net: NetworkInfo, name: str) -> StaticBackend:
+    """Bind an inspected static backend to trusted deployment image/network/configuration."""
     require(name in {"backend-a", "backend-b"})
     _common(info, image, net, name=f"{PROJECT}-{name}-1", memory=128, cpus=500_000_000)
     config = info.Config
@@ -245,6 +247,7 @@ def static(info: ContainerInfo, image: ImageInfo, net: NetworkInfo, name: str) -
 def dynamic(
     info: ContainerInfo, image: ImageInfo, net: NetworkInfo, intent: CreationIntent
 ) -> None:
+    """Verify a dynamic container against the complete persisted creation intent."""
     require(intent.image_id == image.Id and intent.network_id == net.Id)
     _common(info, image, net, name=intent.name, memory=intent.memory_mb, cpus=intent.nano_cpus)
     body = intent.daemon_body()

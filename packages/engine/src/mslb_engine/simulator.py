@@ -83,6 +83,7 @@ class Simulation:
         return eligible[0]
 
     def _schedule(self, events: list[Event], starts: dict[str, int]) -> None:
+        """Assign stable pending order while enforcing memory, CPU and start eligibility."""
         waiting: list[Request] = []
         for request in self.pending:
             eligible = [
@@ -107,6 +108,7 @@ class Simulation:
         self.pending = waiting
 
     def _boundary(self) -> tuple[list[Event], dict[str, int]]:
+        """Process finishes, arrivals, expiry, starts and CPU in deterministic order."""
         events: list[Event] = []
         starts = dict.fromkeys(self.active, 0)
         for server in self.servers:

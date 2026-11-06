@@ -26,6 +26,8 @@ type HttpReason = Literal[
 
 
 class HttpEvent(DockerModel):
+    """Record one real HTTP admission or terminal outcome using monotonic elapsed seconds."""
+
     schema_version: Annotated[int, Field(ge=1, le=1)] = 1
     mode: Literal["docker"] = "docker"
     sequence: Annotated[int, Field(ge=1, le=30_000)]

@@ -14,6 +14,8 @@ type ImageId = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
 
 
 class DockerModel(BaseModel):
+    """Provide strict immutable operational contracts distinct from logical outputs."""
+
     model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
 
     def digest(self) -> str:

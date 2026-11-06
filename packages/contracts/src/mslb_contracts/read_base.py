@@ -13,4 +13,6 @@ type JobStatus = Literal[
 
 
 class ReadModel(BaseModel):
+    """Provide strict immutable response contracts with no live application behavior."""
+
     model_config = ConfigDict(strict=True, frozen=True, extra="forbid")

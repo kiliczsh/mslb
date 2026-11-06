@@ -82,6 +82,8 @@ def stream_chunks(stream: BinaryIO, length: int) -> Generator[bytes]:
 
 
 class Journal:
+    """Own one attempt's spools, committed prefixes, recovery and sealed publication."""
+
     def __init__(
         self,
         files: ManagedFiles,
@@ -130,6 +132,7 @@ class Journal:
             self.restore(recovery)
 
     def restore(self, recovery: RecoveryState) -> None:
+        """Verify committed prefixes and restore interval state or sealed finalization."""
         if (
             recovery.snapshot_digest != self.snapshot.snapshot_digest
             or recovery.engine_version != self.snapshot.engine_version
@@ -215,6 +218,7 @@ class Journal:
         self.records[name] += 1
 
     def append(self, frame: TickFrame) -> None:
+        """Append one observed frame to attempt-private spools and exact event indexes."""
         if self.metrics is None:
             raise OperationError("INVALID_STATE", "Sealed attempts cannot execute again")
         self.metrics.observe(frame)
@@ -260,6 +264,7 @@ class Journal:
         )
 
     def describe(self) -> ProgressCommit:
+        """Publish immutable contiguous chunks without making their suffix visible early."""
         self.check()
         simulation, metrics = self.simulation, self.metrics
         if simulation is None or metrics is None:
@@ -338,6 +343,7 @@ class Journal:
         )
 
     def commit(self) -> None:
+        """Commit a flushed safe boundary under the current attempt and fencing token."""
         data = self.describe()
         retired = on_loop(self.loop, self.repository.commit(self.lease, data))
         self.before = {prefix.name: prefix for prefix in data.prefixes}
@@ -351,6 +357,7 @@ class Journal:
                 self.files.remove(reference.key)
 
     def finalize(self) -> tuple[StoredFile, BundleManifest]:
+        """Validate sealed prefixes and publish completion only under current ownership."""
         self.check()
         seal = self.seal
         if seal is None:

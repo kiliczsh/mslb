@@ -115,6 +115,7 @@ def _capture(
     metrics: MetricAccumulator,
     streams: Mapping[str, BinaryIO],
 ) -> IntervalCheckpoint:
+    """Capture bounded completed-interval state with exact fractions and committed prefixes."""
     _require(set(streams) == set(PREFIX_NAMES), "All four checkpoint prefixes are required")
     pending = simulation.autoscaler.pending
     change = (
@@ -438,6 +439,7 @@ def _restore(snapshot: RunSnapshot, state: IntervalCheckpoint) -> RestoredCheckp
 def _restore_scaler(
     simulation: Simulation, state: IntervalCheckpoint, metrics: MetricAccumulator
 ) -> None:
+    """Reject inconsistent scaling windows and rebuild only the verified frozen policy state."""
     policy, saved = simulation.config.autoscaling, state.autoscaler
     pending = saved.pending
     if not policy.enabled:

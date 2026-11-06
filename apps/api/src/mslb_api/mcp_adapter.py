@@ -79,6 +79,8 @@ def correlation(*, context: ServerRequestContext[object]) -> str:
 
 
 class McpAdapter:
+    """Adapt bounded MCP callbacks to the same services used by REST."""
+
     def __init__(self, *, services: Services, settings: Settings) -> None:
         self.services = services
         self.calls = asyncio.Semaphore(value=8)
@@ -131,6 +133,7 @@ class McpAdapter:
     async def wait(
         self, *, context: ServerRequestContext[object], argument: WaitArguments
     ) -> BaseModel:
+        """Bound concurrent batch waits and retain progress-token ownership until settlement."""
         token = context.meta.get("progress_token") if context.meta is not None else None
         # SDK 2.3 creates request-scoped session facades, even within one retained
         # HTTP session. Use the validated transport session ID for that lifecycle.
@@ -180,6 +183,7 @@ class McpAdapter:
     async def list_tools(
         self, context: ServerRequestContext[object], params: PaginatedRequestParams | None
     ) -> ListToolsResult:
+        """Expose the strict registered tool inventory with its output contracts."""
         return ListToolsResult(
             tools=[
                 Tool(
@@ -198,6 +202,7 @@ class McpAdapter:
         )
 
     async def execute(self, *, name: str, argument: BaseModel) -> BaseModel:
+        """Dispatch validated tool arguments to transport-neutral services."""
         service = self.services
         if name == "list_servers" and isinstance(argument, PageArguments):
             return await service.list_servers(limit=argument.limit, cursor=argument.cursor)
@@ -254,6 +259,7 @@ class McpAdapter:
     async def call_tool(
         self, context: ServerRequestContext[object], params: CallToolRequestParams
     ) -> CallToolResult:
+        """Validate bounded arguments/results and translate safe operation failures."""
         identifier = correlation(context=context)
         try:
             contract = TOOL_BY_NAME.get(params.name)
@@ -313,6 +319,7 @@ class McpAdapter:
     async def read_resource(
         self, context: ServerRequestContext[object], params: ReadResourceRequestParams
     ) -> ReadResourceResult:
+        """Authorize and decode a registered resource URI before bounded shared reads."""
         identifier = correlation(context=context)
         try:
             async with self.admitted():
@@ -374,6 +381,7 @@ class McpAdapter:
     async def get_prompt(
         self, context: ServerRequestContext[object], params: GetPromptRequestParams
     ) -> GetPromptResult:
+        """Return bounded English workflow guidance with validated prompt arguments."""
         identifier = correlation(context=context)
         try:
             contract = next((entry for entry in PROMPTS if entry[0] == params.name), None)

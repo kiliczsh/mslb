@@ -39,6 +39,7 @@ def scoped(*, record: ScopeRecord, run_id: UUID, fence: int, snapshot: DockerSna
 def lifecycle_inventory(
     *, stream: BinaryIO, run_id: UUID, fence: int, snapshot: DockerSnapshot
 ) -> tuple[int, dict[str, tuple[int, int]]]:
+    """Verify resource history and derive approved capacities from scoped lifecycle records."""
     records: dict[UUID, LifecycleRecord] = {}
     capacities: dict[str, tuple[int, int]] = {}
     count = 0
@@ -109,6 +110,7 @@ def verify_docker_outputs(
     snapshot: DockerSnapshot,
     requests: tuple[RequestInput, ...],
 ) -> RuntimeRecord:
+    """Reopen immutable operational files and independently verify scope and terminal accounting."""
     require(
         condition=manifest.snapshot_digest == snapshot.digest()
         and manifest.total == len(requests)

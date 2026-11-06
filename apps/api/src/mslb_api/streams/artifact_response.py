@@ -18,6 +18,8 @@ from mslb_api.streams.zip_sink import _ZipSink
 
 
 class ArtifactResponse(StreamingResponse):
+    """Stream verified artifacts or an input ZIP while retaining transfer ownership."""
+
     def __init__(self, *, downloads: tuple[Download, ...], archive: bool = False) -> None:
         self.downloads, self.archive = downloads, archive
         self.stack = ExitStack()
@@ -40,6 +42,7 @@ class ArtifactResponse(StreamingResponse):
             self.files.append(self.stack.enter_context(cm=download.open()))
 
     async def chunks(self) -> AsyncGenerator[bytes]:
+        """Stream exact verified file ranges and stop when transfer ownership ends."""
         if not self.archive:
             while block := await finish(operation=lambda: self.files[0].read(64 * 1024)):
                 yield block
@@ -78,6 +81,7 @@ class ArtifactResponse(StreamingResponse):
     @override
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         # Read the public policy at call time without an import-time dependency cycle.
+        """Authorize stream setup and settle cleanup after success or disconnect."""
         from mslb_api import streams
 
         async def bounded_send(message: Message) -> None:

@@ -21,6 +21,8 @@ from mslb_persistence.orm_base import Base
 
 
 class OutputProgress(Base):
+    """Reference the latest fenced interval checkpoint or terminal seal."""
+
     __tablename__ = "output_progress"
     __table_args__ = (
         CheckConstraint("kind IN ('checkpoint','terminal') AND revision > 0", name="kind_revision"),
@@ -44,6 +46,8 @@ class OutputProgress(Base):
 
 
 class SavedCheckpoint(Base):
+    """Retain an immutable checkpoint reference with its attempt and fence."""
+
     __tablename__ = "saved_checkpoints"
     run_id: Mapped[UUID] = MappedColumn[UUID](
         ForeignKey("jobs.run_id", ondelete="RESTRICT"), primary_key=True
@@ -59,6 +63,8 @@ class SavedCheckpoint(Base):
 
 
 class CommittedChunk(Base):
+    """Index a contiguous immutable artifact prefix committed under current ownership."""
+
     __tablename__ = "committed_chunks"
     __table_args__ = (
         CheckConstraint(
@@ -81,6 +87,8 @@ class CommittedChunk(Base):
 
 
 class IndexedEvent(Base):
+    """Index one canonical request event without exposing an uncommitted suffix."""
+
     __tablename__ = "indexed_events"
     __table_args__ = (
         Index("ix_indexed_events_tick", "run_id", "t", "sequence"),
@@ -98,6 +106,8 @@ class IndexedEvent(Base):
 
 
 class PublishedArtifact(Base):
+    """Reference the final verified logical manifest committed with completion."""
+
     __tablename__ = "published_artifacts"
     run_id: Mapped[UUID] = MappedColumn[UUID](
         ForeignKey("jobs.run_id", ondelete="RESTRICT"), primary_key=True

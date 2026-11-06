@@ -47,6 +47,7 @@ class Engine:
         body: dict[str, object] | None = None,
         expected: tuple[int, ...] = (HTTPStatus.OK.value,),
     ) -> T | None:
+        """Bound daemon HTTP bytes/time and return safe status/schema failures."""
         try:
             async with (
                 asyncio.timeout(8),

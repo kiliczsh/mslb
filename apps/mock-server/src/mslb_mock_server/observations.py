@@ -15,6 +15,8 @@ def _number(path: str) -> int | None:
 
 
 class Measurements(TypedDict):
+    """Track bounded backend observations separately from logical simulation resources."""
+
     rss_bytes: int | None
     cgroup_memory_bytes: int | None
     cpu_usage_usec: int | None

@@ -13,11 +13,14 @@ from mslb_api.settings import Settings
 
 
 class Guard:
+    """Enforce access and bounded HTTP admission before framework body parsing."""
+
     def __init__(self, app: ASGIApp, settings: Settings) -> None:
         self.app, self.settings = app, settings
         self.active, self.streams, self.uploading = 0, 0, False
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Admit bounded HTTP work and release counters after streaming settles."""
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return

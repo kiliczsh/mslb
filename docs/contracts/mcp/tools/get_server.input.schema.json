@@ -1,1 +1,1 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"properties":{"server_id":{"maxLength":256,"minLength":1,"title":"Server Id","type":"string"}},"required":["server_id"],"title":"ServerReference","type":"object"}
+{"$schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"description":"Select an existing managed server by its normalized identity.","properties":{"server_id":{"maxLength":256,"minLength":1,"title":"Server Id","type":"string"}},"required":["server_id"],"title":"ServerReference","type":"object"}

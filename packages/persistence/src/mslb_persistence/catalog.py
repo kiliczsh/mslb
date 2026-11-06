@@ -44,10 +44,13 @@ def _check_version(expected: int, actual: int) -> None:
 
 
 class Catalog:
+    """Manage versioned servers, immutable datasets and idempotent logical submissions."""
+
     def __init__(self, database: Database) -> None:
         self.database = database
 
     async def seed_once(self, servers: tuple[ServerInput, ...]) -> None:
+        """Initialize supplied servers once without reseeding an intentionally empty catalog."""
         if not 1 <= len(servers) <= 64 or len({s.id for s in servers}) != len(servers):
             raise StoreError("VALIDATION_ERROR", "Invalid seed server population")
 
@@ -73,6 +76,8 @@ class Catalog:
         return await self.database.transaction(operation)
 
     async def create_server(self, server: ServerInput) -> ServerView:
+        """Create a normalized server and immutable first history version atomically."""
+
         async def operation(session: AsyncSession) -> ServerView:
             await _installation(session)
             if await session.get(ManagedServer, server.id) is not None:
@@ -91,6 +96,8 @@ class Catalog:
         return await self.database.transaction(operation)
 
     async def update_server(self, server: ServerInput, expected_version: int) -> ServerView:
+        """Require the expected version before recording changed future capacities."""
+
         async def operation(session: AsyncSession) -> ServerView:
             await _installation(session)
             row = await session.get(ManagedServer, server.id)
@@ -109,6 +116,8 @@ class Catalog:
         return await self.database.transaction(operation)
 
     async def delete_server(self, server_id: str, expected_version: int) -> None:
+        """Record version-checked deletion without rewriting historical snapshots."""
+
         async def operation(session: AsyncSession) -> None:
             await _installation(session)
             row = await session.get(ManagedServer, server_id)
@@ -122,6 +131,7 @@ class Catalog:
         await self.database.transaction(operation)
 
     async def register_dataset(self, data: DatasetRegistration) -> DatasetRecord:
+        """Reuse normalized identity while preserving actual upload provenance."""
         if data.latest_arrival < data.earliest_arrival or (
             (data.original_digest is None) != (data.source_size_bytes is None)
         ):
@@ -186,6 +196,7 @@ class Catalog:
         *,
         kind: Literal["logical", "docker"] = "logical",
     ) -> RunRecord | None:
+        """Return an unexpired matching submission or reject changed key/body identity."""
         if key is None:
             return None
         if (
@@ -233,6 +244,7 @@ class Catalog:
         key: str | None = None,
         scope: str = "local",
     ) -> RunRecord:
+        """Freeze a coherent catalog/dataset view and create run, job, key and outbox atomically."""
         verify_snapshot_identity(snapshot)
         if (
             not re.fullmatch(r"[0-9a-f]{64}", body_digest)

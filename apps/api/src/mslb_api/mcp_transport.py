@@ -11,10 +11,13 @@ DISCONNECTED = "mcp_disconnected"
 
 
 class DisconnectAware:
+    """Retain MCP admission until disconnected ASGI work has settled."""
+
     def __init__(self, *, app: ASGIApp) -> None:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Cancel disconnected protocol work and retain admission until settlement."""
         disconnected = asyncio.Event()
         scope.setdefault("state", {})[DISCONNECTED] = disconnected
 

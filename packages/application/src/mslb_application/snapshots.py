@@ -77,6 +77,7 @@ def domain_config(settings: StoredRunSettings) -> RunConfig:
 
 
 def settings_from_domain(config: RunConfig) -> RunSettings:
+    """Translate exact engine policy to strict transport settings without float conversion."""
     policy = config.autoscaling
     template = policy.server_template
     return RunSettings(

@@ -31,6 +31,8 @@ def valid_origin(origin: str) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class Settings:
+    """Validate explicit API authentication, origins, hosts and admission/session bounds."""
+
     auth_enabled: bool = False
     token: str = field(default="", repr=False)
     allowed_hosts: tuple[str, ...] = ("localhost:8000", "127.0.0.1:8000", "api:8000")
@@ -40,6 +42,7 @@ class Settings:
     mcp_session_idle_seconds: float = 60
 
     def __post_init__(self) -> None:
+        """Reject inconsistent service access or execution bounds at construction."""
         if (
             type(self.auth_enabled) is not bool
             or (self.auth_enabled and re.fullmatch(r"[A-Za-z0-9_-]{32,256}", self.token) is None)
@@ -65,6 +68,7 @@ class Settings:
 
     @classmethod
     def environment(cls) -> "Settings":
+        """Load and validate the service's explicit environment policy."""
         enabled = os.environ.get("AUTH_ENABLED", "false")
         if enabled not in {"true", "false"}:
             raise OperationError("VALIDATION_ERROR", "AUTH_ENABLED must be true or false")
@@ -86,6 +90,7 @@ class Settings:
 
 
 def cursor_secret(root: Path) -> bytes:
+    """Create or read private persistent signing bytes with Linux ownership checks."""
     if sys.platform != "linux":
         raise RuntimeError("API signing-key storage requires Linux containers")
     if root.is_symlink():

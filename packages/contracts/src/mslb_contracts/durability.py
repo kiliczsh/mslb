@@ -10,12 +10,16 @@ from mslb_contracts.runs import Digest
 
 
 class StoredFile(CheckpointModel):
+    """Bind a managed immutable file reference to length and digest."""
+
     key: Annotated[str, Field(min_length=1, max_length=256, pattern=r"^[a-z0-9][a-z0-9._/-]*$")]
     sha256: Digest
     size_bytes: Annotated[int, Field(ge=0, le=256 * 1024**2)]
 
 
 class OutputChunk(CheckpointModel):
+    """Describe one contiguous flushed chunk and its canonical event index."""
+
     name: PrefixName
     file: StoredFile
     first_sequence: Annotated[int, Field(ge=1, le=1_000_001)]
@@ -26,6 +30,8 @@ class OutputChunk(CheckpointModel):
 
 
 class PersistedEvent(CheckpointModel):
+    """Expose a committed logical event with its immutable replay sequence."""
+
     sequence: Annotated[int, Field(ge=1, le=30_000)]
     t: Tick
     event: Literal["REQUEST_ARRIVED", "REQUEST_STARTED", "REQUEST_FINISHED", "REQUEST_DROPPED"]
@@ -56,6 +62,8 @@ class PersistedEvent(CheckpointModel):
 
 
 class ProgressCommit(CheckpointModel):
+    """Commit a safe checkpoint or terminal seal with contiguous output references."""
+
     kind: Literal["checkpoint", "terminal"]
     reference: StoredFile
     snapshot_digest: Digest
@@ -69,6 +77,8 @@ class ProgressCommit(CheckpointModel):
 
 
 class RecoveryState(CheckpointModel):
+    """Return the latest committed prefixes and checkpoint or terminal-finalization state."""
+
     kind: Literal["checkpoint", "terminal"]
     reference: StoredFile
     snapshot_digest: Digest
@@ -81,6 +91,8 @@ class RecoveryState(CheckpointModel):
 
 
 class TerminalSeal(CheckpointModel):
+    """Freeze final output identities without inventing a resumable terminal interval."""
+
     schema_version: Annotated[int, Field(ge=1, le=1)] = 1
     snapshot_digest: Digest
     engine_version: Annotated[str, Field(min_length=1, max_length=64)]

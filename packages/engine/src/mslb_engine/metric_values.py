@@ -27,6 +27,8 @@ def exact_value(value: Fraction | None) -> JsonValue:
 
 @dataclass(frozen=True, slots=True)
 class Distribution:
+    """Report exact latency statistics without floating-point rounding."""
+
     count: int
     mean: Fraction | None
     minimum: int | None
@@ -67,6 +69,8 @@ def distribution(values: Sequence[int]) -> Distribution:
 
 @dataclass(slots=True)
 class ServerTotals:
+    """Accumulate exact per-server resource integrals and request outcomes."""
+
     cpu_units_per_tick: int = 0
     mem_mb: int = 0
     waits: list[int] = field(default_factory=list)
@@ -81,6 +85,7 @@ class ServerTotals:
     memory_capacity_mb_ticks: int = 0
 
     def to_data(self) -> dict[str, JsonValue]:
+        """Encode exact integrals and latency summaries into canonical metric values."""
         return {
             "cpu_units_per_tick": self.cpu_units_per_tick,
             "mem_mb": self.mem_mb,
@@ -116,6 +121,8 @@ class ChartSample:
 
 @dataclass(frozen=True, slots=True)
 class ComparisonIdentity:
+    """Identify the frozen dimensions that must match before comparing strategies."""
+
     dataset_digest: str
     server_snapshot_digest: str
     mode: str

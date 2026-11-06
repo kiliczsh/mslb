@@ -19,6 +19,7 @@ def _require(condition: bool, message: str) -> None:
 def _scan_prefix(
     name: PrefixName, stream: BinaryIO, expected: ArtifactPrefix | None = None
 ) -> ArtifactPrefix:
+    """Hash a bounded canonical prefix and retain its verified append position."""
     stream.seek(0)
     digest, size, records, last = hashlib.sha256(), 0, 0, b""
     maximum = expected.size_bytes if expected is not None else 256 * 1024 * 1024

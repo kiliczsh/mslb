@@ -18,6 +18,8 @@ from mslb_application.snapshots import make_snapshot
 
 
 class Submissions:
+    """Serialize input materialization and share bounded identical idempotent submissions."""
+
     def __init__(self, catalog: Catalog, files: ManagedFiles) -> None:
         self.catalog, self.files = catalog, files
         self.admission = MaterializationAdmission()
@@ -38,6 +40,7 @@ class Submissions:
     async def submit(
         self, dataset_id: UUID, settings: RunSettings, key: str | None = None, scope: str = "local"
     ) -> RunRecord:
+        """Share bounded identical in-flight keys while rejecting changed concurrent bodies."""
         digest = hashlib.sha256(
             canonical_bytes(
                 {"dataset_id": str(dataset_id), "settings": settings.model_dump(mode="json")}
@@ -79,6 +82,7 @@ class Submissions:
     async def _submit(
         self, dataset_id: UUID, settings: RunSettings, key: str | None, scope: str, digest: str
     ) -> RunRecord:
+        """Load validated input, freeze current server versions and enqueue immutable work."""
         dataset = await self.catalog.get_dataset(dataset_id)
         requests = await asyncio.to_thread(
             self.files.load_requests, dataset.digest, dataset.size_bytes

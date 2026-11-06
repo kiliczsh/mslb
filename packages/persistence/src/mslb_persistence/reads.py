@@ -33,6 +33,7 @@ def dataset_view(row: Dataset) -> DatasetView:
 
 def run_view(run: Run, job: Job, progress: OutputProgress | None) -> RunView:
     # JSON validation is explicit at the ORM boundary; no live entity or file key escapes.
+    """Build a coherent public run view without exposing ORM entities or storage keys."""
     configuration = run.configuration
     if configuration.get("mode") == "sequential_compat":
         configuration = public_settings(
@@ -82,6 +83,8 @@ def check_limit(limit: int) -> None:
 
 
 class Reads:
+    """Read coherent bounded catalog and run pages without exposing live ORM entities."""
+
     def __init__(self, database: Database) -> None:
         self.database = database
 
@@ -105,6 +108,8 @@ class Reads:
         return await self.database.transaction(operation=operation)
 
     async def run(self, run_id: UUID) -> RunView:
+        """Read frozen run data and committed progress coherently."""
+
         async def operation(session: AsyncSession) -> RunView:
             row = (
                 await session.execute(
@@ -123,6 +128,7 @@ class Reads:
     async def runs(
         self, after: tuple[datetime, UUID] | None = None, limit: int = 100
     ) -> tuple[RunView, ...]:
+        """Page durable history in stable creation-time/ID order."""
         check_limit(limit)
 
         async def operation(session: AsyncSession) -> tuple[RunView, ...]:
@@ -151,6 +157,7 @@ class Reads:
     async def datasets(
         self, after: tuple[datetime, UUID] | None = None, limit: int = 100
     ) -> tuple[DatasetView, ...]:
+        """Page immutable dataset metadata without reading uploaded file bodies."""
         check_limit(limit)
 
         async def operation(session: AsyncSession) -> tuple[DatasetView, ...]:

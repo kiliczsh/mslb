@@ -34,6 +34,7 @@ class RunWaiter:
         report: ProgressReporter | None = None,
     ) -> WaitResult:
         # Validate here too: internal callers cannot accidentally create unbounded waits.
+        """Wait within a bounded batch/time budget and preserve cancellation semantics."""
         arguments = WaitArguments(run_ids=run_ids, wait_seconds=wait_seconds)
         loop = asyncio.get_running_loop()
         deadline = loop.time() + arguments.wait_seconds
@@ -64,6 +65,7 @@ class RunWaiter:
         run_ids: tuple[UUID, ...],
         verified: dict[UUID, PublishedValidation],
     ) -> tuple[RunStatus, ...]:
+        """Read compact durable statuses and published receipts for one bounded batch."""
         rows = await self.queries.reads.runs_by_ids(run_ids=run_ids)
         result = []
         for row in rows:

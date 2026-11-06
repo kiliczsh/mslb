@@ -30,6 +30,8 @@ from mslb_application.worker_control import _Control as _Control
 
 
 class Worker:
+    """Supervise one logical attempt with independent lease, cancellation and deadline checks."""
+
     def __init__(
         self,
         database: Database,
@@ -70,6 +72,7 @@ class Worker:
                 self.dropped_notifications = min(self.dropped_notifications + 1, 1_000_000)
 
     def _execute(self, lease: Lease, loop: asyncio.AbstractEventLoop, control: _Control) -> None:
+        """Run or restore one immutable attempt outside the async supervision loop."""
         run = on_loop(loop, self.catalog.get_run(lease.run_id))
         snapshot = self.inputs.load_snapshot(run.snapshot_key, run.snapshot_digest)
         recovery = on_loop(loop, self.durable.recovery(lease))
@@ -119,6 +122,7 @@ class Worker:
     def _retired_spools(
         self, lease: Lease, loop: asyncio.AbstractEventLoop, control: _Control
     ) -> None:
+        """Remove only unreferenced exact spools from retired attempts."""
         directory = self.outputs.path(f"runs/{lease.run_id}")
         if not directory.is_dir():
             return
@@ -146,6 +150,7 @@ class Worker:
         shutdown: Event,
         claim_started: float,
     ) -> None:
+        """Renew ownership and observe cancellation independently of CPU execution."""
         next_renewal = claim_started + self.renewal_seconds
         deadline = claim_started + self.lease_seconds - min(1, self.lease_seconds / 4)
         control.deadline = deadline
@@ -206,6 +211,7 @@ class Worker:
             self.notify("ownership_unavailable", lease)
 
     async def run_once(self, shutdown: Event | None = None) -> bool:
+        """Claim one job, supervise execution and persist an honest terminal or retry outcome."""
         shutdown = shutdown or Event()
         if shutdown.is_set():
             return False

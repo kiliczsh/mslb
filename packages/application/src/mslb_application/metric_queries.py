@@ -29,6 +29,8 @@ def metric_report(
 ) -> tuple[dict[str, JsonValue], dict[str, JsonValue]]:
     # ijson's untyped parser is confined to this adapter. Validate decoded values
     # before they enter the typed result; do not materialize the entire server map.
+    """Read exact selected metrics without materializing unselected server histories."""
+
     def summary_events() -> Generator[tuple[str, str, object]]:
         events = cast(Iterator[tuple[str, str, object]], ijson.parse(stream))
         for prefix, event, value in events:
@@ -56,6 +58,7 @@ def metric_report(
 def server_metric_page(
     stream: BinaryIO, after: str | None, limit: int
 ) -> tuple[ServerMetricView, ...]:
+    """Read a stable bounded server-metric page from verified saved JSON."""
     members = cast(Iterator[tuple[str, object]], ijson.kvitems(stream, "servers"))
     selected: list[ServerMetricView] = []
     previous: str | None = None
@@ -80,6 +83,8 @@ type WireNumber = Annotated[int, Field(ge=0, le=2**53 - 1)] | FractionValue
 
 
 class TimelineSample(ReadModel):
+    """Decode one bounded saved server sample for result queries."""
+
     server_id: str
     active_ids: Annotated[tuple[str, ...], Field(max_length=10_000)]
     reserved_mem_mb: Annotated[int, Field(ge=0, le=64 * 10**9)]
@@ -91,6 +96,8 @@ class TimelineSample(ReadModel):
 
 
 class TimelineFrame(ReadModel):
+    """Decode saved interval membership and request IDs for persisted playback."""
+
     t: Annotated[int, Field(ge=0, le=1_000_000)]
     duration_ticks: Annotated[int, Field(ge=0, le=1_000_000)]
     terminal: bool
@@ -100,6 +107,7 @@ class TimelineFrame(ReadModel):
 
 
 def chart_samples(stream: BinaryIO, metric: str, server_id: str | None) -> Generator[ChartSample]:
+    """Yield exact saved samples for one selected metric and optional server."""
     found = server_id is None
     for index in range(1_000_002):
         line = stream.readline(8 * 1024**2 + 1)
@@ -151,6 +159,7 @@ def compare_reports(
     first: dict[str, JsonValue],
     second: dict[str, JsonValue],
 ) -> dict[str, JsonValue]:
+    """Compare exact completed reports using compatible frozen identities."""
     identity, other = comparison_identity(baseline), comparison_identity(candidate)
     # Validate identity even when a report contains only null latency values.
     compare_values(identity, other, Fraction(), Fraction())

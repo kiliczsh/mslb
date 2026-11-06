@@ -68,6 +68,8 @@ class HostMemoryEvidence(DockerModel):
 
 
 class ServiceMemory(DockerModel):
+    """Report one approved service's measured memory, health and OOM observations."""
+
     service: ServiceName
     container_id: DockerId | None
     limit_bytes: Annotated[int, Field(ge=1, le=16 * 1024**3)]
@@ -89,6 +91,8 @@ class ServiceMemory(DockerModel):
 
 
 class ResourceProbe(DockerModel):
+    """Bind bounded engine, service and optional host measurements to trusted UTC time."""
+
     schema_version: Annotated[int, Field(ge=1, le=1)] = 1
     measured_at: AwareDatetime
     engine_memory_bytes: Annotated[int, Field(ge=1, le=2**63 - 1)]
@@ -118,6 +122,8 @@ class ResourceProbe(DockerModel):
 
 
 class ResourceDecision(DockerModel):
+    """Report explicit admission/stopping policy and its measured headroom requirement."""
+
     admit: bool
     stop_running: bool
     reason: ResourceReason | None
@@ -166,6 +172,7 @@ def host_memory_headroom(*, probe: ResourceProbe) -> int:
 
 
 def safe_to_admit(*, probe: ResourceProbe, now: datetime | None = None) -> bool:
+    """Require measured service/engine/host headroom and healthy bounded consumers."""
     caps, reserve, headroom = memory_bounds(probe=probe)
     return (
         probe.engine_memory_bytes >= 8 * 1024**3

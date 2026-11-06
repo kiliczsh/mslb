@@ -12,6 +12,9 @@ from mslb_contracts.runs import BundleManifest, Digest, RunSettings
 
 
 class ServerPatch(ReadModel):
+    """Change at least one capacity while retaining the managed server identity."""
+
+    model_config = ConfigDict(json_schema_extra={"examples": [{"mem_mb": 128}]})
     cpu_units_per_tick: PositiveValue | None = None
     mem_mb: PositiveValue | None = None
     rate_limit_per_sec: PositiveValue | None = None
@@ -26,6 +29,8 @@ class ServerPatch(ReadModel):
 
 
 class SimulationCreate(RunSettings):
+    """Submit a registered dataset with validated deterministic execution settings."""
+
     model_config = ConfigDict(
         json_schema_extra={
             "examples": [
@@ -44,24 +49,32 @@ class SimulationCreate(RunSettings):
 
 
 class SimulationAccepted(ReadModel):
+    """Acknowledge durable queued work with its frozen snapshot identity."""
+
     run_id: UUID
     status: JobStatus
     snapshot_digest: Digest
 
 
 class RunDetail(RunView):
+    """Expose frozen run policy, durable progress and published validation results."""
+
     mode: str
     strategy: str
     validation: BundleManifest | None
 
 
 class StrategyView(ReadModel):
+    """Describe one supported deterministic scheduling strategy."""
+
     id: str
     display_name: str
     description: str
 
 
 class CompareRequest(ReadModel):
+    """Select a bounded set of completed logical runs for compatibility-checked comparison."""
+
     run_ids: Annotated[
         tuple[Annotated[UUID, Field(strict=False)], ...],
         Field(min_length=2, max_length=8, strict=False),
@@ -69,16 +82,36 @@ class CompareRequest(ReadModel):
 
 
 class FieldError(ReadModel):
+    """Describe a bounded validation field/reason without echoing raw input."""
+
     field: Annotated[str, Field(max_length=256)]
     reason: Annotated[str, Field(max_length=128)]
 
 
 class ErrorInfo(ReadModel):
+    """Expose a stable safe error code, message and bounded field details."""
+
     code: str
     message: str
     details: Annotated[tuple[FieldError, ...], Field(max_length=32)] = ()
 
 
 class ErrorEnvelope(ReadModel):
+    """Bind a safe operation failure to the existing request identifier."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "error": {
+                        "code": "CONFLICT",
+                        "message": "Server version changed",
+                        "details": [],
+                    },
+                    "request_id": "example-request-id",
+                }
+            ]
+        }
+    )
     error: ErrorInfo
     request_id: str

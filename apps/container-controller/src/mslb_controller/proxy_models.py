@@ -9,6 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class LeaseRef(BaseModel):
+    """Accept a controller identity while reading authoritative expiry from PostgreSQL."""
+
     model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
     run_id: UUID
     fence: Annotated[int, Field(ge=1, le=9223372036854775807)]
@@ -27,4 +29,6 @@ class LeaseRef(BaseModel):
 
 
 class Empty(BaseModel):
+    """Require an empty strict body for semantic proxy operations without parameters."""
+
     model_config = ConfigDict(strict=True, extra="forbid")

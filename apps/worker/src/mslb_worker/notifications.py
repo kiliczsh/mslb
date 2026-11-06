@@ -8,6 +8,8 @@ from mslb_persistence.records import Lease
 
 
 class Notifications:
+    """Emit bounded operational hints without changing canonical execution."""
+
     def __init__(self) -> None:
         self.messages: queue.Queue[dict[str, str | int]] = queue.Queue(maxsize=64)
         self.done = Event()
@@ -15,6 +17,7 @@ class Notifications:
         self.thread.start()
 
     def observe(self, phase: str, lease: Lease, tick: int) -> None:
+        """Enqueue a bounded safe hint without blocking or changing deterministic execution."""
         try:
             self.messages.put_nowait(
                 item={

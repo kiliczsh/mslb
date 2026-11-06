@@ -19,6 +19,8 @@ from mslb_application.managed_files import ManagedFiles
 
 
 class DockerSubmissions:
+    """Freeze trusted operational inputs and enqueue durable Docker work."""
+
     def __init__(self, *, catalog: Catalog, docker: DockerCatalog, files: ManagedFiles) -> None:
         self.catalog, self.docker, self.files = catalog, docker, files
         self.admission = MaterializationAdmission()
@@ -32,6 +34,7 @@ class DockerSubmissions:
         key: str | None = None,
         scope: str = "local",
     ) -> RunRecord:
+        """Serialize bounded operational materialization and preserve idempotent identity."""
         checked = DockerSettings.model_validate(obj=settings.model_dump())
         digest = hashlib.sha256(
             string=canonical_bytes(
@@ -62,6 +65,7 @@ class DockerSubmissions:
         key: str | None,
         scope: str,
     ) -> RunRecord:
+        """Freeze trusted operational inputs and enqueue only a matching dataset."""
         dataset = await self.catalog.get_dataset(dataset_id=dataset_id)
         # The adapter supplies a server-enrolled deployment, never caller daemon definitions.
         deployment = await self.docker.deployment(deployment_id=deployment_id)

@@ -39,6 +39,8 @@ class _Budget:
 
 
 class _Artifact:
+    """Stream one bounded artifact while accounting for the shared bundle byte budget."""
+
     def __init__(self, path: Path, budget: _Budget, stack: ExitStack) -> None:
         self.stream = stack.enter_context(path.open("wb", buffering=256 * 1024))
         self.budget = budget
@@ -84,6 +86,7 @@ def _rows(artifact: _Artifact, rows: Iterable[Iterable[str | int]]) -> None:
 
 
 def timeline_record(frame: TickFrame) -> dict[str, object]:
+    """Encode exact interval membership, reservations and resource samples."""
     return {
         "t": frame.t,
         "duration_ticks": frame.duration_ticks,

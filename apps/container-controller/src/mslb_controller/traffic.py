@@ -23,6 +23,8 @@ from mslb_controller.traffic_protocols import EventSink as EventSink
 
 @dataclass(slots=True, kw_only=True)
 class TrafficDriver:
+    """Schedule bounded real HTTP arrivals using monotonic time and owned reservations."""
+
     configuration: DockerSettings
     specs: tuple[BackendSpec, ...]
     http: BackendHttp
@@ -45,6 +47,7 @@ class TrafficDriver:
     )
 
     def __post_init__(self) -> None:
+        """Reject inconsistent traffic policy before owning tasks or reservations."""
         settings = self.configuration
         if settings.physical_scaling.enabled:
             raise ValueError("The fixed-inventory driver does not yet support physical scaling")
@@ -91,6 +94,7 @@ class TrafficDriver:
         reason: HttpReason | None = None,
         result: WorkCompleted | None = None,
     ) -> None:
+        """Append a contiguous real-time event without inventing a logical finish."""
         self.sequence += 1
         event = HttpEvent.model_validate(
             obj={
@@ -108,6 +112,7 @@ class TrafficDriver:
             self.counts[kind] += 1
 
     async def collect(self) -> None:
+        """Settle completed HTTP tasks and release only their owned reservations."""
         for task in tuple(self.inflight):
             if not task.done():
                 continue
@@ -150,6 +155,7 @@ class TrafficDriver:
         return await self.http.work(reservation=reservation)
 
     async def dispatch(self) -> None:
+        """Recheck stop/age limits before issuing one bounded real HTTP call."""
         while self.pending and self.halt() is None:
             request = self.pending[0]
             if self.elapsed() - request.t >= self.configuration.pending_timeout_seconds:
@@ -191,6 +197,7 @@ class TrafficDriver:
                     reservation.release()
 
     async def cancel_calls(self, *, reason: HttpReason) -> None:
+        """Bound cancellation settlement while retaining unresolved reservations."""
         tasks = tuple(self.inflight)
         for task in tasks:
             task.cancel()
@@ -214,6 +221,7 @@ class TrafficDriver:
                 reservation.release()
 
     async def execute(self, *, requests: tuple[RequestInput, ...]) -> TrafficSummary:
+        """Replay arrivals with bounded pending/inflight work and explicit terminal accounting."""
         if self.used:
             raise ValueError("Real HTTP traffic is single-use and must never be replayed")
         if (

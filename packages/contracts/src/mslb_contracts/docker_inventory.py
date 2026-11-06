@@ -12,6 +12,8 @@ from mslb_contracts.runs import Digest
 
 
 class StaticBackend(DockerModel):
+    """Freeze the inspected identity and approved capacities of a static backend."""
+
     name: Literal["backend-a", "backend-b"]
     container_id: DockerId
     logical_admission_mem_mb: PositiveValue = 1024
@@ -37,6 +39,8 @@ class DeploymentSpec(DockerModel):
 
 
 class DockerSnapshot(DockerModel):
+    """Freeze deployment, dataset and real-time policy for an operational run."""
+
     schema_version: Annotated[int, Field(ge=1, le=1)] = 1
     controller_version: Literal["0.1.0"] = "0.1.0"
     dataset_id: UUID

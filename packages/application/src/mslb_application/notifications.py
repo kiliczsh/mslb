@@ -27,6 +27,8 @@ class NotificationOutbox(Protocol):
 
 
 class OutboxNotifications:
+    """Deliver durable wake-up IDs through bounded hints with database fallback."""
+
     def __init__(self, *, jobs: NotificationOutbox, hints: WakeupHints) -> None:
         self.jobs, self.hints = jobs, hints
 

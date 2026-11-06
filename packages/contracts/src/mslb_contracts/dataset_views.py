@@ -11,6 +11,8 @@ from mslb_contracts.runs import Digest
 
 
 class DatasetView(ReadModel):
+    """Expose immutable dataset identity, counts and upload provenance without storage keys."""
+
     id: UUID
     digest: Digest
     source_filename: Annotated[str, Field(min_length=1, max_length=255)]

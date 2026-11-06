@@ -31,6 +31,7 @@ def register_results(*, router: APIRouter, queries: Queries, database: Database)
         start_tick: Tick = 0,
         end_tick: Tick = 1_000_000,
     ) -> Response:
+        """Page committed events within inclusive logical tick bounds."""
         return json_response(await queries.events(run_id, limit, cursor, start_tick, end_tick))
 
     @router.get("/simulations/{run_id}/metrics", response_model=MetricsView | ChartView)
@@ -42,6 +43,7 @@ def register_results(*, router: APIRouter, queries: Queries, database: Database)
         max_points: Annotated[int, Query(ge=1, le=2000)] = 2000,
         server_id: Annotated[str | None, Query(max_length=128)] = None,
     ) -> Response:
+        """Read exact saved summaries or bounded chart buckets without execution."""
         if metric is not None:
             return json_response(
                 await queries.chart(run_id, metric, start_tick, end_tick, max_points, server_id)
@@ -52,6 +54,7 @@ def register_results(*, router: APIRouter, queries: Queries, database: Database)
 
     @router.get("/simulations/{run_id}/metrics/servers", response_model=Page[ServerMetricView])
     async def server_metrics(run_id: UUID, limit: Limit = 100, cursor: Cursor = None) -> Response:
+        """Page exact persisted server metrics without loading all histories."""
         return json_response(await queries.server_metrics(run_id, limit, cursor))
 
     @router.get("/simulations/{run_id}/playback", response_model=PlaybackView)
@@ -63,6 +66,7 @@ def register_results(*, router: APIRouter, queries: Queries, database: Database)
         server_id: Annotated[str | None, Query(max_length=128)] = None,
         request_offset: Annotated[int, Query(ge=0, le=10_000)] = 0,
     ) -> Response:
+        """Read bounded saved membership and request slices at a logical tick."""
         return json_response(
             await queries.playback(
                 run_id,
@@ -88,6 +92,7 @@ def register_results(*, router: APIRouter, queries: Queries, database: Database)
         },
     )
     async def artifact(run_id: UUID, name: ArtifactName = "run.jsonl") -> Response:
+        """Stream one authorized completed artifact after verifying its identity."""
         return ArtifactResponse(downloads=(await queries.download(run_id=run_id, name=name),))
 
     @router.get(
@@ -100,6 +105,7 @@ def register_results(*, router: APIRouter, queries: Queries, database: Database)
         },
     )
     async def run_inputs(run_id: UUID) -> Response:
+        """Download normalized inputs, frozen settings and a manifest as one ZIP."""
         downloads = tuple(
             [
                 await queries.download(run_id=run_id, name=name)
@@ -116,6 +122,7 @@ def register_results(*, router: APIRouter, queries: Queries, database: Database)
         },
     )
     async def stream(run_id: UUID, request: Request) -> Response:
+        """Replay committed IDs and bounded ephemeral progress through SSE."""
         last = request.headers.get("last-event-id", "0")
         if not last.isascii() or not last.isdecimal() or len(last) > 5:
             raise OperationError("VALIDATION_ERROR", "Invalid Last-Event-ID")

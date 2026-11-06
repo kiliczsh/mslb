@@ -14,6 +14,8 @@ from mslb_application.errors import OperationError
 
 
 class EventFeed:
+    """Replay committed events and bounded progress frames without blocking the worker."""
+
     def __init__(self, database: Database, run_id: UUID, after_sequence: int = 0) -> None:
         if type(after_sequence) is not int or not 0 <= after_sequence <= 30_000:
             raise OperationError("VALIDATION_ERROR", "Invalid Last-Event-ID")
@@ -34,6 +36,7 @@ class EventFeed:
         return True
 
     async def produce(self, initial: RunView) -> None:
+        """Replay durable events and bounded ephemeral progress until terminal or overflow."""
         previous = ""
         run = initial
         try:
@@ -81,6 +84,7 @@ class EventFeed:
             self.closed.set()
 
     async def stream(self, initial: RunView) -> AsyncGenerator[bytes]:
+        """Own producer cancellation and release retained frames when the consumer disconnects."""
         producer = asyncio.create_task(self.produce(initial))
         try:
             while not self.closed.is_set() or not self.queue.empty():

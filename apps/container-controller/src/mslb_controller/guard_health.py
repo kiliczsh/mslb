@@ -26,6 +26,7 @@ def write_health() -> None:
 
 
 def healthy() -> bool:
+    """Fail closed unless bounded private publisher heartbeat/evidence is current."""
     if sys.platform != "linux":
         return False
     try:

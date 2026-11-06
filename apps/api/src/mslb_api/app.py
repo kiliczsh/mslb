@@ -9,6 +9,7 @@ from pathlib import Path
 from fastapi import APIRouter, FastAPI, Request, Security
 from fastapi.exceptions import RequestValidationError
 from fastapi.security import HTTPBearer
+from mslb_application.diagnostics import report_failure
 from mslb_application.errors import OperationError
 from mslb_application.managed_files import ManagedFiles
 from mslb_application.queries import Queries
@@ -32,6 +33,7 @@ from starlette.formparsers import MultiPartException
 from starlette.responses import Response
 from starlette.routing import Route
 
+from mslb_api.documentation import configure_routes
 from mslb_api.errors import error_response
 from mslb_api.guard import Guard
 from mslb_api.mcp_adapter import McpAdapter
@@ -62,6 +64,7 @@ def create_app(
     signing_key: bytes,
     close_database: bool = False,
 ) -> FastAPI:
+    """Compose shared services, access/error boundaries, REST routes and MCP lifespan."""
     catalog, jobs = Catalog(database), Jobs(database)
     submissions, queries = Submissions(catalog, inputs), Queries(database, outputs, signing_key)
     services = Services(catalog, jobs, submissions, queries)
@@ -106,6 +109,7 @@ def create_app(
     )
 
     async def failure(request: Request, error: Exception) -> Response:
+        """Translate safe bounded errors while retaining the existing request ID."""
         identifier = str(getattr(request.state, "request_id", "unavailable"))
         if isinstance(error, (OperationError, StoreError, SimulationError)):
             return error_response(error.code, str(error), identifier)
@@ -141,11 +145,15 @@ def create_app(
         if isinstance(error, (MultiPartException, MultipartParseError)):
             return error_response("VALIDATION_ERROR", "Malformed multipart upload", identifier)
         if isinstance(error, (DBAPIError, OSError, TimeoutError)):
+            report_failure(
+                error=error, code="RESOURCE_PRESSURE", source="rest", request_id=identifier
+            )
             return error_response(
                 "RESOURCE_PRESSURE",
                 "A required dependency or managed file is unavailable",
                 identifier,
             )
+        report_failure(error=error, code="INTERNAL_ERROR", source="rest", request_id=identifier)
         return error_response("INTERNAL_ERROR", "The operation could not be completed", identifier)
 
     for exception in (
@@ -170,6 +178,7 @@ def create_app(
     register_datasets(router=router, submissions=submissions, queries=queries)
     register_simulations(router=router, services=services, queries=queries)
     register_results(router=router, queries=queries, database=database)
+    configure_routes(router=router, auth_enabled=settings.auth_enabled)
     app.include_router(router)
     app.router.routes.append(Route("/mcp", endpoint=mcp.app))
     return app

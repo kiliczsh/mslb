@@ -7,6 +7,8 @@ from mslb_engine.validation import _identifier, _integer
 
 @dataclass(frozen=True, slots=True)
 class Server:
+    """Describe immutable logical CPU, memory and start-rate capacity."""
+
     id: str
     cpu_units_per_tick: int
     mem_mb: int
@@ -20,6 +22,8 @@ class Server:
 
 @dataclass(frozen=True, slots=True)
 class Request:
+    """Describe an immutable arrival, positive work and full-duration memory reservation."""
+
     t: int
     request_id: str
     work_units: int

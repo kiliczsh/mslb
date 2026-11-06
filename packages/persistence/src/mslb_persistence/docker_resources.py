@@ -61,6 +61,8 @@ def _capacity(
 
 
 class DockerResources:
+    """Persist fenced static reservations and dynamic intents before daemon mutations."""
+
     def __init__(self, database: Database) -> None:
         self.database = database
 
@@ -97,6 +99,8 @@ class DockerResources:
         return await self.database.transaction(operation)
 
     async def reserve_static(self, lease: ControlLease, name: str) -> ResourceRecord:
+        """Reserve verified static backends exclusively under the active control fence."""
+
         async def operation(session: AsyncSession) -> ResourceRecord:
             _slot, job, state = await current(session, lease)
             execution(lease, job)
@@ -149,6 +153,7 @@ class DockerResources:
     async def prepare_dynamic(
         self, lease: ControlLease, intent_id: UUID | None = None
     ) -> ResourceRecord:
+        """Reserve a slot and immutable creation intent before any daemon create call."""
         stable_id = intent_id or uuid4()
 
         async def operation(session: AsyncSession) -> ResourceRecord:
@@ -227,6 +232,8 @@ class DockerResources:
     async def observe_dynamic(
         self, lease: ControlLease, resource_id: UUID, observed: ContainerObservation
     ) -> ResourceRecord:
+        """Adopt an inspected immutable ID only when it matches the trusted intent."""
+
         async def operation(session: AsyncSession) -> ResourceRecord:
             await current(session, lease)
             row = await _row(session, lease, resource_id)
@@ -299,6 +306,8 @@ class DockerResources:
     async def release_static(
         self, lease: ControlLease, resource_id: UUID, container_id: str, observed: BackendHealth
     ) -> ResourceRecord:
+        """Release the exact owned static reservation after lifecycle resolution."""
+
         async def operation(session: AsyncSession) -> ResourceRecord:
             await current(session, lease)
             row = await _row(session, lease, resource_id)

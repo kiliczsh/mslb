@@ -33,6 +33,8 @@ def server_input(server: ManagedServer) -> ServerInput:
 
 @dataclass(frozen=True, slots=True)
 class DatasetRecord:
+    """Return immutable dataset metadata without exposing a live database entity."""
+
     id: UUID
     digest: str
     storage_key: str
@@ -64,6 +66,8 @@ class DatasetRecord:
 
 @dataclass(frozen=True, slots=True)
 class RunRecord:
+    """Return frozen run identities and configuration for application execution."""
+
     id: UUID
     snapshot_digest: str
     snapshot_key: str
@@ -85,6 +89,8 @@ class RunRecord:
 
 @dataclass(frozen=True, slots=True)
 class Lease:
+    """Carry the logical-job owner, attempt, expiry and fencing token."""
+
     run_id: UUID
     attempt: int
     fence: int
@@ -94,6 +100,8 @@ class Lease:
 
 @dataclass(frozen=True, slots=True)
 class JobRecord:
+    """Return a durable job state and safe operational error code."""
+
     run_id: UUID
     status: str
     attempts: int

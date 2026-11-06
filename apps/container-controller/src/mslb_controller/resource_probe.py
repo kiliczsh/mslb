@@ -54,7 +54,10 @@ def available_memory() -> int:
 
 
 class ProbeEngine(Engine):
+    """Read only approved daemon capacity and service-memory measurements."""
+
     async def service(self, *, service: ServiceName) -> ServiceMemory:
+        """Verify approved service identity before reading bounded daemon memory statistics."""
         if service not in SERVICE_LIMITS_MB:
             raise EngineError(code="INVALID_REFERENCE")
         name = f"{PROJECT}-{service}-1"
@@ -116,6 +119,7 @@ class ProbeEngine(Engine):
         )
 
     async def probe(self) -> ResourceProbe:
+        """Collect approved service/engine measurements and optional host evidence."""
         gate = asyncio.Semaphore(value=2)
 
         async def sample(*, service: ServiceName) -> ServiceMemory:

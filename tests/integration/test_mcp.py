@@ -227,7 +227,7 @@ def test_official_client_discovers_and_exercises_all_tools_resources_and_prompts
 
 
 def test_tool_and_resource_failures_redact_dependency_details_and_leave_rest_usable(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     async def broken(self: Services, run_id: UUID) -> RunDetail:
         raise DBAPIError("private-query", {}, OSError("private-value"), False)
@@ -271,6 +271,19 @@ def test_tool_and_resource_failures_redact_dependency_details_and_leave_rest_usa
                 ) as rest:
                     assert (await rest.get("/api/v1/servers")).status_code == HTTPStatus.OK.value
                 assert not await get_mcp(app).services.queries.reads.runs()
+                records = [
+                    record
+                    for record in caplog.records
+                    if record.name == "mslb_application.diagnostics"
+                ]
+                assert len(records) == 2
+                for record in records:
+                    assert record.exc_info is None and "private-" not in record.getMessage()
+                    assert (
+                        "source=application code=RESOURCE_PRESSURE error_type=DBAPIError"
+                        in record.getMessage()
+                    )
+                    assert "request_id=unavailable" not in record.getMessage()
 
     asyncio.run(scenario())
 

@@ -10,6 +10,7 @@ from mslb_application.metric_queries import TimelineFrame
 
 
 def _frame(timeline: BinaryIO, tick: int) -> tuple[TimelineFrame, set[str] | None]:
+    """Read the saved interval covering a tick without retaining timeline history."""
     previous_end = 0
     previous_ids: set[str] | None = None
     for _ in range(1_000_001):
@@ -49,6 +50,7 @@ def read_playback(
     server_id: str | None,
     request_offset: int,
 ) -> PlaybackView:
+    """Read bounded persisted membership/request slices without replaying engine execution."""
     frame, previous_ids = _frame(timeline, tick)
     ids = [member.id for member in frame.membership]
     samples = {sample.server_id: sample for sample in frame.servers}

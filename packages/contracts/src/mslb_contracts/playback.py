@@ -16,6 +16,8 @@ type ExactValue = Annotated[int, Field(ge=0, le=2**53 - 1)] | FractionValue
 
 
 class PlaybackServer(ServerInput):
+    """Expose one server's saved membership, reservations and interval activity."""
+
     active_count: Annotated[int, Field(ge=0, le=10_000)]
     reserved_mem_mb: Annotated[int, Field(ge=0, le=10**9)] | None
     allocated_cpu: ExactValue | None
@@ -24,6 +26,8 @@ class PlaybackServer(ServerInput):
 
 
 class PlaybackDecision(ReadModel):
+    """Expose the saved simulated scaling decision at a playback boundary."""
+
     t: Tick
     action: Literal["none", "scale_out", "scale_in"]
     trigger: Annotated[tuple[Annotated[str, Field(max_length=64)], ...], Field(max_length=8)]
@@ -34,6 +38,8 @@ class PlaybackDecision(ReadModel):
 
 
 class PlaybackView(ReadModel):
+    """Expose bounded persisted playback slices without re-executing the simulation."""
+
     run_id: UUID
     bundle_digest: Digest
     tick: Tick

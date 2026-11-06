@@ -9,10 +9,14 @@ from mslb_contracts.runs import Digest
 
 
 class ServerView(ServerInput):
+    """Expose editable server capacities and the version required for future mutations."""
+
     version: Annotated[int, Field(ge=1)]
 
 
 class DatasetRegistration(BaseModel):
+    """Register validated normalized input with exact byte and source provenance."""
+
     model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
     digest: Digest
     source_filename: Annotated[str, Field(min_length=1, max_length=255)]

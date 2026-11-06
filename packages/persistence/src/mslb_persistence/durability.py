@@ -93,6 +93,7 @@ async def _guard(session: AsyncSession, lease: Lease) -> None:
 async def _verify_index(
     session: AsyncSession, run_id: UUID, prefixes: dict[str, ArtifactPrefix]
 ) -> None:
+    """Verify canonical indexed events match the exact committed chunk accounting."""
     trace, drops, count = hashlib.sha256(), hashlib.sha256(), 0
     rows = await session.stream_scalars(
         select(IndexedEvent).where(IndexedEvent.run_id == run_id).order_by(IndexedEvent.sequence),
@@ -140,6 +141,7 @@ async def _verify_index(
 def _validate(
     lease: Lease, data: ProgressCommit, previous: OutputProgress | None, run: Run
 ) -> None:
+    """Reject noncontiguous prefixes and inconsistent checkpoint/seal accounting before commit."""
     _owned(lease, data.reference)
     _require(
         data.snapshot_digest == run.snapshot_digest and data.engine_version == run.engine_version,
@@ -246,6 +248,8 @@ def _recovery(row: OutputProgress, run: Run) -> RecoveryState:
 
 
 class Durability:
+    """Commit checkpoint, chunk and publication references under a current logical-job fence."""
+
     def __init__(self, database: Database) -> None:
         self.database = database
 
@@ -382,6 +386,7 @@ class Durability:
     async def chunks(
         self, run_id: UUID, name: PrefixName, after_sequence: int = 0, limit: int = 500
     ) -> tuple[OutputChunk, ...]:
+        """Read a bounded ordered chunk page from committed output references."""
         if (
             type(limit) is not int
             or not 1 <= limit <= 500
@@ -428,6 +433,7 @@ class Durability:
         start_tick: int = 0,
         end_tick: int = 1_000_000,
     ) -> tuple[PersistedEvent, ...]:
+        """Read only committed canonical events in ascending sequence."""
         if any(
             type(value) is not int for value in (after_sequence, limit, start_tick, end_tick)
         ) or not (
@@ -562,6 +568,8 @@ class Durability:
         return await self.database.transaction(operation)
 
     async def published(self, run_id: UUID) -> StoredFile:
+        """Return only the final manifest reference associated with durable completion."""
+
         async def operation(session: AsyncSession) -> StoredFile:
             job = await session.get(Job, run_id)
             if job is None:

@@ -12,6 +12,8 @@ from mslb_engine.run_config import AutoscalingPolicy
 
 @dataclass(frozen=True, slots=True)
 class Observation:
+    """Record one exact simulated scaling-window observation."""
+
     ending_tick: int
     cpu_utilization: Fraction
     drops: int
@@ -19,6 +21,8 @@ class Observation:
 
 
 class Autoscaler:
+    """Apply exact observation windows and defer membership changes to the next boundary."""
+
     def __init__(
         self, policy: AutoscalingPolicy, initial_ids: frozenset[str], bit_limit: int
     ) -> None:
@@ -40,6 +44,7 @@ class Autoscaler:
     def observe(
         self, ending_tick: int, consumed: Fraction, capacity: int, drops: int, arrivals: int
     ) -> None:
+        """Accumulate exact bounded windows and decide a future membership change."""
         if self.policy.enabled:
             self.history.append(
                 Observation(
@@ -128,6 +133,7 @@ class Autoscaler:
     def activate(
         self, tick: int, servers: tuple[Server, ...], idle_ids: frozenset[str]
     ) -> tuple[Server, ...]:
+        """Apply the already-decided membership action at its effective boundary."""
         if self.pending is None:
             return servers
         change = self.pending

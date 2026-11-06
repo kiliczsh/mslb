@@ -44,6 +44,7 @@ def _duration(seconds: int) -> None:
 async def current(
     session: AsyncSession, lease: ControlLease
 ) -> tuple[DockerControlSlot, Job, DockerRunState]:
+    """Require the exact current control owner, phase and unexpired database lease."""
     slot = await session.scalar(
         select(DockerControlSlot)
         .where(
@@ -105,6 +106,8 @@ def execution(lease: ControlLease, job: Job) -> None:
 
 
 class DockerControl:
+    """Serialize Docker ownership, interruption and bounded cleanup through one durable slot."""
+
     def __init__(self, database: Database) -> None:
         self.database = database
 
@@ -112,6 +115,7 @@ class DockerControl:
         return await Jobs(self.database).cancel(run_id, kind="docker")
 
     async def claim(self, owner: str, lease_seconds: int = 30) -> ControlLease | None:
+        """Obtain exclusive ownership or claim expired work for cleanup, never blind replay."""
         _duration(lease_seconds)
         if not 1 <= len(owner.encode()) <= 128:
             raise StoreError("VALIDATION_ERROR", "Invalid controller identity")
@@ -190,6 +194,7 @@ class DockerControl:
         return await self.database.transaction(operation)
 
     async def renew(self, lease: ControlLease, lease_seconds: int = 30) -> ControlLease:
+        """Renew the exact active controller fence using authoritative database time."""
         _duration(lease_seconds)
 
         async def operation(session: AsyncSession) -> ControlLease:
@@ -223,6 +228,7 @@ class DockerControl:
         outcome: Literal["completed", "failed", "cancelled"],
         error_code: str | None = None,
     ) -> ControlLease:
+        """Persist terminal intent while retaining ownership of unresolved resources."""
         if (
             outcome not in {"completed", "failed", "cancelled"}
             or (outcome == "failed" and error_code not in FAILURES)
@@ -276,6 +282,7 @@ class DockerControl:
     async def finish_cleanup(
         self, lease: ControlLease, manifest: DockerManifest | None = None
     ) -> JobRecord:
+        """Release the slot only after bounded cleanup and definitive resource resolution."""
         if manifest is not None:
             manifest = DockerManifest.model_validate_json(
                 canonical_bytes(manifest.model_dump(mode="json"))

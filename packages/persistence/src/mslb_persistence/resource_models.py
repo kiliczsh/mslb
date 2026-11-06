@@ -17,6 +17,8 @@ from mslb_persistence.orm_base import Base
 
 
 class ResourceEvidence(Base):
+    """Retain one fenced publisher report and its verified content digest."""
+
     __tablename__ = "resource_evidence"
     __table_args__ = (
         CheckConstraint(

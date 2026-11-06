@@ -14,6 +14,8 @@ from mslb_application.resource_policy import ResourcePolicy
 
 
 class ResourcePublisher:
+    """Publish bounded measured admission decisions without owning workload execution."""
+
     def __init__(
         self,
         *,

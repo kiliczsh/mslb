@@ -67,6 +67,7 @@ class Router:
                 state.healthy = False
 
     def reserve(self, request: WorkRequest) -> Reservation:
+        """Choose an eligible backend and reserve memory, starts and inflight atomically."""
         if sum(state.inflight for state in self.states.values()) >= self.max_inflight:
             raise TrafficError(code="GLOBAL_INFLIGHT_LIMIT")
         elapsed = self.clock() - self.started

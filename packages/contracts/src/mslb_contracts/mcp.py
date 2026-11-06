@@ -22,11 +22,15 @@ class NoArguments(ReadModel):
 
 
 class PageArguments(ReadModel):
+    """Select a bounded MCP page using an opaque continuation cursor."""
+
     limit: Limit = 100
     cursor: Cursor | None = None
 
 
 class ServerReference(ReadModel):
+    """Select an existing managed server by its normalized identity."""
+
     server_id: Annotated[str, Field(min_length=1, max_length=256)]
 
     @field_validator("server_id")
@@ -36,29 +40,41 @@ class ServerReference(ReadModel):
 
 
 class ServerUpdate(ServerReference):
+    """Submit capacity changes with the expected current server version."""
+
     expected_version: Annotated[int, Field(ge=1, le=2**31 - 1)]
     changes: ServerPatch
 
 
 class ServerDelete(ServerReference):
+    """Require the expected version before deleting future server configuration."""
+
     expected_version: Annotated[int, Field(ge=1, le=2**31 - 1)]
 
 
 class ServerDeleted(ReadModel):
+    """Acknowledge removal from future configuration without altering frozen runs."""
+
     server_id: str
     deleted: Literal[True] = True
 
 
 class RunReference(ReadModel):
+    """Select one durable run by its opaque identifier."""
+
     run_id: RunId
 
 
 class RunCommand(ReadModel):
+    """Submit deterministic work through the shared durable application service."""
+
     simulation: SimulationCreate
     idempotency_key: Annotated[str, Field(min_length=1, max_length=256)] | None = None
 
 
 class WaitArguments(ReadModel):
+    """Bound a batch wait, timeout and optional progress reporting."""
+
     run_ids: Annotated[tuple[RunId, ...], Field(min_length=1, max_length=8)]
     wait_seconds: Annotated[int, Field(ge=0, le=25)] = 20
 
@@ -71,11 +87,15 @@ class WaitArguments(ReadModel):
 
 
 class EventArguments(RunReference, PageArguments):
+    """Select a committed event page within inclusive logical tick bounds."""
+
     start_tick: Annotated[int, Field(ge=0, le=1_000_000)] = 0
     end_tick: Annotated[int, Field(ge=0, le=1_000_000)] = 1_000_000
 
 
 class MetricArguments(RunReference):
+    """Select exact summary metrics or a bounded chart range."""
+
     metric: (
         Literal["cpu_utilization", "memory_utilization", "pending_depth", "active_requests"] | None
     ) = None
@@ -86,17 +106,23 @@ class MetricArguments(RunReference):
 
 
 class ServerResource(ReadModel):
+    """Return one managed server through a typed MCP resource."""
+
     page: Page[ServerView]
     follow_on_tool: Literal["list_servers"] = "list_servers"
     guidance: str = "Use page.next_cursor with the follow-on tool for continuation."
 
 
 class EventResource(ReadModel):
+    """Return one bounded committed event page through an MCP resource."""
+
     page: Page[PersistedEvent]
     follow_on_tool: Literal["get_simulation_events"] = "get_simulation_events"
     guidance: str = "Use run_id and page.next_cursor with the follow-on tool for continuation."
 
 
 class CompareStrategiesArguments(ReadModel):
+    """Select a bounded set of compatible completed runs for MCP comparison."""
+
     dataset_id: RunId
     mode: Literal["concurrent", "sequential"] = "sequential"

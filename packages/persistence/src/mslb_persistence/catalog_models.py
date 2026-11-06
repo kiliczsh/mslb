@@ -19,6 +19,8 @@ from mslb_persistence.orm_base import Base
 
 
 class Installation(Base):
+    """Record one-time seeding and serialize coherent catalog revision changes."""
+
     __tablename__ = "installation"
     __table_args__ = (CheckConstraint("id = 1", name="singleton"),)
     id: Mapped[int] = MappedColumn[int](Integer, primary_key=True)
@@ -27,6 +29,8 @@ class Installation(Base):
 
 
 class ManagedServer(Base):
+    """Store the editable current version of a logical server."""
+
     __tablename__ = "managed_servers"
     __table_args__ = (
         CheckConstraint("version > 0", name="version_positive"),
@@ -45,6 +49,8 @@ class ManagedServer(Base):
 
 
 class ServerHistory(Base):
+    """Retain immutable capacity versions after later edits or deletion."""
+
     __tablename__ = "server_history"
     server_id: Mapped[str] = MappedColumn[str](String(128), primary_key=True)
     version: Mapped[int] = MappedColumn[int](Integer, primary_key=True)
@@ -58,6 +64,8 @@ class ServerHistory(Base):
 
 
 class Dataset(Base):
+    """Reference immutable normalized input and optional original-upload provenance."""
+
     __tablename__ = "datasets"
     __table_args__ = (
         CheckConstraint(

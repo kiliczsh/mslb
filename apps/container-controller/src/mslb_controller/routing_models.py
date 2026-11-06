@@ -42,6 +42,8 @@ class BackendSpec:
 
 @dataclass(slots=True)
 class BackendState:
+    """Track live eligibility and logical reservations for one HTTP backend."""
+
     spec: BackendSpec
     healthy: bool = False
     draining: bool = False

@@ -62,6 +62,8 @@ type ChartMetric = Literal[
 
 
 class Queries:
+    """Read committed history and verified artifacts within response and concurrency budgets."""
+
     def __init__(
         self,
         database: Database,
@@ -82,6 +84,7 @@ class Queries:
         return value
 
     async def _file_call[T](self, operation: Callable[[], T]) -> T:
+        """Retain the bounded file-query slot until a cancelled thread operation settles."""
         async with self.file_queries:
             task = asyncio.create_task(asyncio.to_thread(operation))
             try:
@@ -106,6 +109,7 @@ class Queries:
     def _page[T: BaseModel](
         self, rows: tuple[T, ...], limit: int, context: object, position: Callable[[T], Position]
     ) -> Page[T]:
+        """Fit an encoded page budget without skipping the first unreturned item."""
         items: list[T] = []
         for row in rows:
             trial = Page[T](
@@ -172,6 +176,7 @@ class Queries:
         start_tick: int = 0,
         end_tick: int = 1_000_000,
     ) -> Page[PersistedEvent]:
+        """Read committed ascending events with cursor-bound inclusive tick filters."""
         check_limit(limit)
         run = await self.reads.run(run_id)
         context = ["events", str(run_id), run.snapshot_digest, start_tick, end_tick]
@@ -182,6 +187,7 @@ class Queries:
         return self._page(rows, limit, context, lambda row: Position(sequence=row.sequence))
 
     def _manifest(self, run: RunView, pointer: FileReference) -> BundleManifest:
+        """Require a completed run and its verified published manifest."""
         if not pointer.key.startswith(f"runs/{run.id}/attempt-") or pointer.size_bytes > 1024**2:
             raise OperationError("VALIDATION_FAILED", "Published manifest reference is invalid")
         with self.outputs.verified_stream(pointer) as stream:
@@ -210,6 +216,7 @@ class Queries:
         return run, manifest, reference
 
     async def download(self, run_id: UUID, name: str = "run.jsonl") -> Download:
+        """Authorize a named artifact through its committed manifest and exact reference."""
         if name not in ARTIFACT_NAMES | {"manifest.json"}:
             raise OperationError("VALIDATION_ERROR", "Unknown artifact type")
         _, manifest, pointer = await self.completed(run_id)
@@ -235,6 +242,7 @@ class Queries:
             return metric_report(stream, server_ids)
 
     async def metrics(self, run_id: UUID, server_ids: tuple[str, ...] = ()) -> MetricsView:
+        """Read exact persisted summary metrics within the shared response budget."""
         if (
             type(server_ids) is not tuple
             or len(server_ids) > 32
@@ -277,6 +285,7 @@ class Queries:
         max_points: int = 2000,
         server_id: str | None = None,
     ) -> ChartView:
+        """Query bounded persisted buckets without executing the engine."""
         if (
             metric
             not in {"cpu_utilization", "memory_utilization", "pending_depth", "active_requests"}
@@ -313,6 +322,7 @@ class Queries:
     async def server_metrics(
         self, run_id: UUID, limit: int = 100, cursor: str | None = None
     ) -> Page[ServerMetricView]:
+        """Page exact saved server metrics with a filter-bound cursor."""
         check_limit(limit)
         _, manifest, _ = await self.completed(run_id)
         context = ["server_metrics", str(run_id), manifest.bundle_digest]
@@ -337,6 +347,7 @@ class Queries:
         server_id: str | None = None,
         request_offset: int = 0,
     ) -> PlaybackView:
+        """Read bounded saved membership/request slices at a logical tick."""
         if (
             any(type(value) is not int for value in (tick, server_offset, request_offset))
             or not 0 <= tick <= 1_000_000
@@ -373,6 +384,7 @@ class Queries:
         return self._bounded(await self._file_call(read))
 
     async def compare(self, run_ids: tuple[UUID, ...]) -> ComparisonView:
+        """Reject incompatible identities before comparing completed logical results."""
         if not 2 <= len(run_ids) <= 8 or len(set(run_ids)) != len(run_ids):
             raise OperationError("VALIDATION_ERROR", "Compare 2–8 distinct completed logical runs")
         baseline = await self.reads.run(run_ids[0])

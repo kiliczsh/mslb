@@ -60,6 +60,7 @@ class BackendHttp:
         )
 
     async def health(self, spec: BackendSpec) -> BackendHealth:
+        """Verify actual backend identity and configured admission before routing."""
         try:
             async with (
                 asyncio.timeout(delay=self.health_seconds),
@@ -84,6 +85,7 @@ class BackendHttp:
             raise TrafficError(code="CONNECTION_FAILED", backend_id=spec.id) from None
 
     async def work(self, reservation: Reservation) -> WorkCompleted:
+        """Send bounded real work and require a matching successful backend response."""
         spec, payload = reservation.backend.spec, reservation.request
         try:
             async with (

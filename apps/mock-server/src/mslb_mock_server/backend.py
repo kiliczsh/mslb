@@ -31,6 +31,7 @@ class Backend:
         self.closed = False
 
     async def run(self, payload: WorkRequest) -> WorkCompleted:
+        """Execute bounded real CPU work with explicit duration and cancellation outcomes."""
         if (
             self.closed
             or self.inflight >= self.settings.max_inflight

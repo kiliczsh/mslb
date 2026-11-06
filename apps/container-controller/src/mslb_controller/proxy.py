@@ -69,6 +69,7 @@ def create_app(
     guard_token: str | None = None,
     probe_engine: ProbeEngine | None = None,
 ) -> FastAPI:
+    """Compose the authenticated semantic proxy without exposing general daemon requests."""
     daemon, http = engine or Engine(), BackendHttp()
     inspector = probe_engine or ProbeEngine()
     lifecycle = Lifecycle(database=database, engine=daemon, http=http)
@@ -94,6 +95,7 @@ def create_app(
     async def admission(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
+        """Enforce private host/origin/authentication and bounded request admission."""
         nonlocal active
         if request.headers.get("host") not in {"docker-proxy:8081", "127.0.0.1:8081"}:
             return JSONResponse(
@@ -146,11 +148,13 @@ def create_app(
     ) -> JSONResponse:
         # The single process keeps a sent mutation alive even if its HTTP caller disconnects.
         # No waiter queue: the slot is held until the task settles, including error receipts.
+        """Retain a sent control action until bounded settlement despite caller cancellation."""
         owning = probing if readonly else pending
         if owning:
             raise Refusal(HTTPStatus.TOO_MANY_REQUESTS.value, "CONTROL_BUSY")
 
         async def bounded() -> JSONResponse:
+            """Translate safe control failures while retaining the owned operation slot."""
             try:
                 async with asyncio.timeout(delay=45):
                     return await operation()

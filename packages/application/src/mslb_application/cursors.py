@@ -17,6 +17,8 @@ from mslb_application.errors import OperationError
 
 
 class Position(ReadModel):
+    """Represent one signed cursor position without retaining a whole result collection."""
+
     created_at: datetime | None = None
     id: UUID | None = None
     sequence: Annotated[int, Field(ge=0, le=30_000)] = 0
@@ -24,6 +26,8 @@ class Position(ReadModel):
 
 
 class _Cursor(ReadModel):
+    """Bind an expiring continuation position to its collection and filter identity."""
+
     version: Annotated[int, Field(ge=1, le=1)] = 1
     context: Annotated[str, Field(min_length=64, max_length=64)]
     expires: int
@@ -31,6 +35,8 @@ class _Cursor(ReadModel):
 
 
 class Cursors:
+    """Authenticate bounded expiring cursors bound to collection/filter identity."""
+
     def __init__(self, secret: bytes) -> None:
         if not isinstance(secret, bytes) or not 32 <= len(secret) <= 256:
             raise OperationError("VALIDATION_ERROR", "Cursor signing key must contain 32–256 bytes")
@@ -47,6 +53,7 @@ class Cursors:
         return base64.urlsafe_b64encode(signature + payload).decode().rstrip("=")
 
     def decode(self, context: object, token: str | None) -> Position:
+        """Verify cursor authentication, expiry and collection/filter identity before use."""
         if token is None:
             return Position()
         try:

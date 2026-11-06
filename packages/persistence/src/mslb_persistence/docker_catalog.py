@@ -23,6 +23,7 @@ from mslb_persistence.records import RunRecord
 async def _prune_deployments(
     *, session: AsyncSession, keep_recent: int = 2, limit: int = 16
 ) -> int:
+    """Prune only bounded expired enrollments that no run/resource still references."""
     retained = (
         select(DockerDeployment.id)
         .order_by(DockerDeployment.created_at.desc(), DockerDeployment.id.desc())
@@ -51,6 +52,8 @@ async def _prune_deployments(
 
 
 class DockerCatalog:
+    """Freeze trusted deployment inputs and enqueue distinct operational Docker jobs."""
+
     def __init__(self, database: Database) -> None:
         self.database = database
 
@@ -114,6 +117,8 @@ class DockerCatalog:
         return await self.database.transaction(operation)
 
     async def snapshot(self, run_id: UUID) -> DockerSnapshot:
+        """Read one coherent trusted deployment and dataset view for operational submission."""
+
         async def operation(session: AsyncSession) -> DockerSnapshot:
             state = await session.get(DockerRunState, run_id)
             run = await session.get(Run, run_id)
@@ -132,6 +137,7 @@ class DockerCatalog:
     async def enqueue(
         self, snapshot: DockerSnapshot, key: str | None = None, scope: str = "local"
     ) -> RunRecord:
+        """Validate frozen operational inputs and enqueue one durable Docker job atomically."""
         if not 1 <= len(scope.encode()) <= 128 or (
             key is not None and not 1 <= len(key.encode()) <= 128
         ):

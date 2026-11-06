@@ -57,6 +57,7 @@ def _hash_file(path: Path, maximum: int) -> tuple[int, str]:
 def _original_validation(
     directory: Path, snapshot: RunSnapshot
 ) -> Literal["passed", "not_applicable"]:
+    """Verify evaluator identity and validate only applicable static sequential traces."""
     if snapshot.configuration.mode == "concurrent" or snapshot.configuration.autoscaling.enabled:
         return "not_applicable"
     if _hash_file(ORIGINAL_VALIDATOR, 256 * 1024)[1] != ORIGINAL_VALIDATOR_DIGEST:

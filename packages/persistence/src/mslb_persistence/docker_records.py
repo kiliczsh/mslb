@@ -20,6 +20,8 @@ class DeploymentRecord:
 
 @dataclass(frozen=True, slots=True)
 class ControlLease:
+    """Carry the controller owner, phase, expiry and fencing token for guarded mutations."""
+
     run_id: UUID
     fence: int
     owner: str
@@ -29,6 +31,8 @@ class ControlLease:
 
 @dataclass(frozen=True, slots=True)
 class ResourceRecord:
+    """Return an immutable persisted resource definition and observed lifecycle state."""
+
     id: UUID
     ordinal: int
     slot: int
@@ -40,6 +44,7 @@ class ResourceRecord:
 
 
 def resource_record(row: DockerResource) -> ResourceRecord:
+    """Decode trusted stored resource definitions into immutable application values."""
     raw = canonical_bytes(row.definition)
     definition = (
         CreationIntent.model_validate_json(raw)

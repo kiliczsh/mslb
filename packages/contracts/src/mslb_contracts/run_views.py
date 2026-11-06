@@ -11,6 +11,8 @@ from mslb_contracts.runs import Digest, RunSettings
 
 
 class RunProgress(ReadModel):
+    """Expose only committed interval or terminal progress and event counts."""
+
     revision: Annotated[int, Field(ge=1)]
     kind: Literal["checkpoint", "terminal"]
     next_tick: Annotated[int, Field(ge=0, le=1_000_000)]
@@ -19,6 +21,8 @@ class RunProgress(ReadModel):
 
 
 class RunView(ReadModel):
+    """Expose coherent durable status and frozen configuration without internal storage paths."""
+
     id: UUID
     dataset_id: UUID
     snapshot_digest: Digest
@@ -43,6 +47,8 @@ class PublishedValidation(ReadModel):
 
 
 class RunStatus(ReadModel):
+    """Return compact durable progress and published validation for bounded waits."""
+
     run_id: UUID
     status: JobStatus
     attempts: Annotated[int, Field(ge=0, le=3)]
@@ -52,6 +58,8 @@ class RunStatus(ReadModel):
 
 
 class WaitResult(ReadModel):
+    """Return a bounded status batch with explicit terminal and timeout outcomes."""
+
     statuses: Annotated[tuple[RunStatus, ...], Field(min_length=1, max_length=8)]
     all_terminal: bool
     timed_out: bool

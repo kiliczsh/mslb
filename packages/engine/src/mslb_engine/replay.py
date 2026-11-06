@@ -21,6 +21,8 @@ _PRIORITY = {
 
 @dataclass(frozen=True)
 class ReplaySummary:
+    """Return independently verified terminal request accounting."""
+
     arrived: int
     started: int
     finished: int
@@ -31,6 +33,8 @@ class ReplaySummary:
 
 @dataclass(frozen=True)
 class _Record:
+    """Track one request's independently reconstructed lifecycle during replay."""
+
     t: int
     kind: str
     rid: str
@@ -38,6 +42,7 @@ class _Record:
 
 
 def _records(stream: BinaryIO, count: int, horizon: int) -> Iterator[_Record]:
+    """Parse bounded canonical lifecycle records without trusting simulator state."""
     previous: tuple[int, int, str, str] | None = None
     for index in range(3 * count + 1):
         raw = stream.readline(2049)

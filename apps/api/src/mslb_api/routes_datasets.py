@@ -41,6 +41,7 @@ def register_datasets(*, router: APIRouter, submissions: Submissions, queries: Q
         },
     )
     async def upload(request: Request) -> Response:
+        """Stream one bounded CSV and preserve provenance before registration."""
         if not request.headers.get("content-type", "").startswith("multipart/form-data;"):
             raise OperationError("VALIDATION_ERROR", "Upload one multipart CSV file named file")
         parser = _Multipart(
@@ -64,8 +65,10 @@ def register_datasets(*, router: APIRouter, submissions: Submissions, queries: Q
 
     @router.get("/datasets", response_model=Page[DatasetView])
     async def datasets(limit: Limit = 100, cursor: Cursor = None) -> Response:
+        """List immutable dataset metadata with bounded cursor pagination."""
         return json_response(await queries.datasets(limit, cursor))
 
     @router.get("/datasets/{dataset_id}", response_model=DatasetView)
     async def dataset(dataset_id: UUID) -> Response:
+        """Read immutable dataset identity, counts and upload provenance."""
         return json_response(await queries.dataset(dataset_id))

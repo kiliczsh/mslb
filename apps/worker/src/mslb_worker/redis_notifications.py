@@ -18,6 +18,8 @@ return 1
 
 
 class RedisHints:
+    """Exchange bounded expiring wake-up IDs while PostgreSQL remains authoritative."""
+
     def __init__(self, *, url: str, namespace: str) -> None:
         if not re.fullmatch(pattern=r"[a-z][a-z0-9_]{0,62}", string=namespace):
             raise ValueError("Invalid Redis hint namespace")
@@ -42,6 +44,7 @@ class RedisHints:
             return False
 
     async def wait(self) -> None:
+        """Wait for an expiring wake-up hint while retaining database polling fallback."""
         loop = asyncio.get_running_loop()
         deadline = loop.time() + 0.25
         try:

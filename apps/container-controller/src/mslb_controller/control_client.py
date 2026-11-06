@@ -17,6 +17,8 @@ from mslb_controller.proxy_models import LeaseRef
 
 
 class ControlClient:
+    """Call only semantic private control operations with bounded authenticated responses."""
+
     def __init__(
         self, token: str | None = None, transport: httpx.AsyncBaseTransport | None = None
     ) -> None:
@@ -34,6 +36,7 @@ class ControlClient:
         )
 
     async def _post[T: BaseModel](self, path: str, payload: str, model: type[T]) -> T:
+        """Send a bounded authenticated semantic operation without following redirects."""
         try:
             async with (
                 asyncio.timeout(52),
@@ -66,6 +69,7 @@ class ControlClient:
         identifier: UUID,
         action: Literal["create", "inspect", "start", "cleanup"],
     ) -> ResourceReply:
+        """Validate one bounded resource receipt from the private control API."""
         reference = LeaseRef(
             run_id=lease.run_id, fence=lease.fence, owner=lease.owner, phase=lease.phase
         )

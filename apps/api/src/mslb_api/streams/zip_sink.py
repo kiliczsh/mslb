@@ -11,6 +11,8 @@ from mslb_application.errors import OperationError
 
 
 class _ZipSink(io.RawIOBase):
+    """Bridge bounded ZIP output to an owned streaming transfer with backpressure."""
+
     def __init__(self, *, pending: queue.Queue[bytes], stopped: Event) -> None:
         super().__init__()
         self.pending, self.stopped = pending, stopped

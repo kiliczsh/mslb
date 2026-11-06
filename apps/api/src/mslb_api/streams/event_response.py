@@ -10,6 +10,8 @@ from starlette.types import Message, Receive, Scope, Send
 
 
 class EventResponse(StreamingResponse):
+    """Send bounded SSE frames with deadlines and deterministic disconnect cleanup."""
+
     def __init__(
         self, *, source: AsyncGenerator[bytes], media_type: str, headers: dict[str, str]
     ) -> None:

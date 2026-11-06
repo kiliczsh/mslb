@@ -18,6 +18,8 @@ from mslb_controller.routing_models import BackendSpec
 
 
 class Lifecycle:
+    """Reconcile trusted container identity before creating, starting or cleaning resources."""
+
     def __init__(self, database: Database, engine: Engine, http: BackendHttp) -> None:
         self.catalog = DockerCatalog(database)
         self.resources = DockerResources(database)
@@ -31,6 +33,7 @@ class Lifecycle:
         return await self.catalog.enroll(inspection.deployment(image, net, first, second))
 
     async def _verify(self, record: ResourceRecord, info: ContainerInfo) -> None:
+        """Inspect complete trusted identity before allowing a privileged lifecycle action."""
         definition = record.definition
         approved = (await self.catalog.deployment(definition.deployment_id)).definition
         net = await self.engine.network()
@@ -48,6 +51,7 @@ class Lifecycle:
     async def observe(
         self, lease: ControlLease, identifier: UUID
     ) -> tuple[ResourceRecord, ContainerInfo]:
+        """Reconcile the persisted exact resource with its actual daemon observation."""
         record = await self.resources.get(lease, identifier)
         if record.state in {"prepared", "removed", "abandoned", "released"}:
             raise EngineError("INVALID_STATE")
@@ -71,6 +75,7 @@ class Lifecycle:
         return record, info
 
     async def create(self, lease: ControlLease, identifier: UUID) -> ResourceRecord:
+        """Reconcile a persisted deterministic intent before creating or adopting its container."""
         record = await self.resources.get(lease, identifier)
         inspection.require(isinstance(record.definition, CreationIntent))
         # Revalidate the current deployment before granting new work. Old images remain usable
@@ -101,6 +106,7 @@ class Lifecycle:
         return record
 
     async def start(self, lease: ControlLease, identifier: UUID) -> ResourceRecord:
+        """Start only the inspected resource named by the current trusted reservation."""
         record, info = await self.observe(lease, identifier)
         inspection.require(isinstance(record.definition, CreationIntent))
         if record.state == "observed":
@@ -115,6 +121,7 @@ class Lifecycle:
         return record
 
     async def cleanup(self, lease: ControlLease, identifier: UUID) -> ResourceRecord:
+        """Resolve owned resources while retaining uncertain intents for bounded reconciliation."""
         record = await self.resources.get(lease, identifier)
         if record.state in {"removed", "abandoned", "released"}:
             return record

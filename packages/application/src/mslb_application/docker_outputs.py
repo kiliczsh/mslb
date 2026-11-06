@@ -27,6 +27,8 @@ from mslb_application.work_file import WorkFile
 
 
 class DockerOutputs:
+    """Write bounded operational spools and publish independently verified Docker candidates."""
+
     def __init__(
         self,
         *,
@@ -98,6 +100,7 @@ class DockerOutputs:
         await self.run(operation=lambda: self.write_resource(resource=resource))
 
     def write_resource(self, *, resource: ResourceRecord) -> None:
+        """Append a scoped lifecycle observation from its trusted persisted definition."""
         if self.lifecycle is None:
             raise OperationError(code="INVALID_STATE", message="Docker lifecycle spool is not open")
         event = LifecycleRecord.model_validate(
@@ -122,6 +125,7 @@ class DockerOutputs:
         return await self.run(operation=lambda: self.publish(summary=summary))
 
     def publish(self, *, summary: TrafficSummary) -> DockerManifest:
+        """Verify terminal accounting and return candidates for fenced database publication."""
         if self.http is None or self.lifecycle is None:
             raise OperationError(code="INVALID_STATE", message="Docker output spool is not open")
         self.http.sync()

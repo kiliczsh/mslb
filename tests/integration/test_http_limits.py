@@ -89,7 +89,7 @@ def test_invalid_and_chunked_oversized_uploads_leave_no_dataset_or_staging(tmp_p
 
 
 def test_dependency_error_envelope_redacts_sql_and_private_values(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     async def broken(
         self: Reads, after: tuple[datetime, UUID] | None = None, limit: int = 100
@@ -124,6 +124,18 @@ def test_dependency_error_envelope_redacts_sql_and_private_values(
                     assert response.json()["error"]["code"] == "RESOURCE_PRESSURE"
                     assert "private-" not in response.text
                     assert response.headers["x-request-id"] == response.json()["request_id"]
+                    records = [
+                        record
+                        for record in caplog.records
+                        if record.name == "mslb_application.diagnostics"
+                    ]
+                    assert len(records) == 1 and records[0].exc_info is None
+                    assert "private-" not in records[0].getMessage()
+                    assert response.json()["request_id"] in records[0].getMessage()
+                    assert (
+                        "source=rest code=RESOURCE_PRESSURE error_type=DBAPIError"
+                        in records[0].getMessage()
+                    )
 
     asyncio.run(scenario())
 

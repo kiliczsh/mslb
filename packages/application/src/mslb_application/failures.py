@@ -7,10 +7,12 @@ from mslb_persistence.database import StoreError
 from pydantic import ValidationError
 from sqlalchemy.exc import DBAPIError
 
+from mslb_application.diagnostics import report_failure
 from mslb_application.errors import OperationError
 
 
 def failure(error: Exception, request_id: str) -> ErrorEnvelope:
+    """Translate ordinary failures safely; cancellation/control signals stay outside this API."""
     code, message, details = "INTERNAL_ERROR", "The operation could not be completed", ()
     if isinstance(error, (OperationError, StoreError, SimulationError)):
         code, message = error.code, str(error)
@@ -27,6 +29,13 @@ def failure(error: Exception, request_id: str) -> ErrorEnvelope:
         )
     elif isinstance(error, (DBAPIError, OSError, TimeoutError)):
         code, message = "RESOURCE_PRESSURE", "A required dependency or managed file is unavailable"
+        report_failure(
+            error=error, code="RESOURCE_PRESSURE", source="application", request_id=request_id
+        )
+    else:
+        report_failure(
+            error=error, code="INTERNAL_ERROR", source="application", request_id=request_id
+        )
     return ErrorEnvelope(
         error=ErrorInfo(code=code, message=message, details=details), request_id=request_id
     )

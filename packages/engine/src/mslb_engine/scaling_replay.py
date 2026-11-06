@@ -51,6 +51,7 @@ class ScalingReplay:
         running: dict[str, dict[str, Fraction]],
         memory: dict[str, int],
     ) -> None:
+        """Apply only the independently checked membership change at its boundary."""
         if self.pending_at is None:
             return
         if self.pending_at != tick:
@@ -76,6 +77,7 @@ class ScalingReplay:
         running: dict[str, dict[str, Fraction]],
         pending_count: int,
     ) -> None:
+        """Recompute exact policy evidence and reject mismatched scaling decisions."""
         if not self.policy.enabled or tick < self.available_at:
             return
         cpu_sum, error_sum = Fraction(), Fraction()

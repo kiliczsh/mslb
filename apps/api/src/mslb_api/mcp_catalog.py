@@ -41,6 +41,8 @@ CONTRACT_VERSION = "2.0.0"
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ToolContract:
+    """Bind one MCP tool name to its strict arguments, output schema and annotations."""
+
     name: str
     description: str
     input: type[BaseModel]

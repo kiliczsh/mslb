@@ -44,3 +44,9 @@ generate-mcp-schemas:
 
 check-mcp-schemas:
     python scripts/mcp_schemas.py check
+
+generate-openapi-schemas:
+    python scripts/openapi_schemas.py generate
+
+check-openapi-schemas:
+    python scripts/openapi_schemas.py check

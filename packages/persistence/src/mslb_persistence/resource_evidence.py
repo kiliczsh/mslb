@@ -24,6 +24,8 @@ from mslb_persistence.resource_models import ResourceEvidence
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class EvidenceLease:
+    """Carry the resource publisher's fencing token and optimistic revision."""
+
     owner: str
     fence: int
     expires_at: datetime
@@ -32,6 +34,8 @@ class EvidenceLease:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class EvidenceRecord:
+    """Return current verified measurements and an explicit admission or refusal decision."""
+
     revision: int
     received_at: datetime | None
     probe: ResourceProbe | None
@@ -75,6 +79,7 @@ def validate_budget(
 
 
 def decode(*, row: ResourceEvidence, now: datetime) -> EvidenceRecord:
+    """Reject stale/inconsistent stored frames with an explicit unavailable decision."""
     if row.decision is None or row.digest is None or row.received_at is None:
         return unavailable(revision=row.revision)
     try:
@@ -111,10 +116,13 @@ def decode(*, row: ResourceEvidence, now: datetime) -> EvidenceRecord:
 
 
 class ResourceEvidenceStore:
+    """Fence resource publishers and expose only current, verified admission evidence."""
+
     def __init__(self, *, database: Database) -> None:
         self.database = database
 
     async def claim(self, *, owner: str) -> EvidenceLease | None:
+        """Fence one resource publisher and invalidate the prior owner's report."""
         if not 1 <= len(owner.encode()) <= 128:
             raise StoreError(code="VALIDATION_ERROR", message="Invalid evidence publisher identity")
 
@@ -148,6 +156,7 @@ class ResourceEvidenceStore:
         probe: ResourceProbe | None,
         decision: ResourceDecision,
     ) -> EvidenceRecord:
+        """Verify freshness/budget invariants and publish through an optimistic fence."""
         if type(expected_revision) is not int or expected_revision < 0:
             raise StoreError(code="VALIDATION_ERROR", message="Invalid resource evidence revision")
         decision = ResourceDecision.model_validate(obj=decision.model_dump())

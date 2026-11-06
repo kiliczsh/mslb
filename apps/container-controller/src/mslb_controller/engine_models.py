@@ -11,11 +11,15 @@ class EngineModel(BaseModel):
 
 
 class ImageInfo(EngineModel):
+    """Decode an inspected immutable image identity and its approved configuration."""
+
     Id: ImageId
     Config: dict[str, object]
 
 
 class NetworkInfo(EngineModel):
+    """Decode the inspected immutable network identity and isolation properties."""
+
     Id: DockerId
     Name: Annotated[str, Field(max_length=128)]
     Driver: Annotated[str, Field(max_length=64)]
@@ -25,6 +29,8 @@ class NetworkInfo(EngineModel):
 
 
 class ContainerInfo(EngineModel):
+    """Decode the inspected identity and security/resource configuration of a container."""
+
     Id: DockerId
     Image: ImageId
     Name: Annotated[str, Field(max_length=128)]
@@ -36,5 +42,7 @@ class ContainerInfo(EngineModel):
 
 
 class Created(EngineModel):
+    """Decode the immutable ID returned by an approved daemon create operation."""
+
     Id: DockerId
     Warnings: Annotated[list[str], Field(max_length=16)] | None = None

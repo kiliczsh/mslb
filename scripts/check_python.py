@@ -8,6 +8,7 @@ def main() -> None:
     commands = [
         ["just", "check"],
         ["just", "check-mcp-schemas"],
+        ["just", "check-openapi-schemas"],
         ["pytest"],
         [
             "python",

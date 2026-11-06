@@ -13,16 +13,16 @@ from mslb_application.notifications import OutboxNotifications
 from mslb_application.storage_values import StorageLimits
 from mslb_application.worker import Worker
 from mslb_persistence.database import Database
-from mslb_persistence.errors import StoreError
 from mslb_persistence.jobs import Jobs
-from sqlalchemy.exc import DBAPIError
 
 from mslb_worker.health import healthy, write_health
 from mslb_worker.notifications import Notifications as Notifications
+from mslb_worker.polling import poll
 from mslb_worker.redis_notifications import RedisHints
 
 
 async def main(*, once: bool) -> None:
+    """Run supervised durable polling with bounded Redis hints and coordinated shutdown."""
     database = Database(
         url=os.environ["DATABASE_URL"], schema=os.environ.get("DATABASE_SCHEMA", "public")
     )
@@ -66,18 +66,7 @@ async def main(*, once: bool) -> None:
     health = asyncio.create_task(coro=heartbeat())
     delivery = asyncio.create_task(coro=outbox.run(done=health_done))
     try:
-        while not shutdown.is_set():
-            try:
-                found = await worker.run_once(shutdown=shutdown)
-            except (StoreError, DBAPIError, OSError, TimeoutError):
-                if once:
-                    raise
-                await asyncio.sleep(delay=1)
-                continue
-            if once:
-                break
-            if not found:
-                await hints.wait()
+        await poll(worker=worker, hints=hints, shutdown=shutdown, once=once)
     finally:
         health_done.set()
         delivery.cancel()

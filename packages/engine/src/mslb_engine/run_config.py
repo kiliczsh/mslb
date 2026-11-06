@@ -18,6 +18,8 @@ STRATEGIES = ("first_fit", "round_robin", "least_connections", "most_available_m
 
 @dataclass(frozen=True, slots=True)
 class ServerTemplate:
+    """Freeze capacities used to create deterministic simulated servers."""
+
     cpu_units_per_tick: int
     mem_mb: int
     rate_limit_per_sec: int
@@ -29,6 +31,8 @@ class ServerTemplate:
 
 @dataclass(frozen=True, slots=True)
 class AutoscalingPolicy:
+    """Bound exact simulated scaling thresholds, windows and membership changes."""
+
     enabled: bool = False
     window_ticks: int = 5
     scale_out_cpu_threshold: Fraction = Fraction(4, 5)
@@ -43,6 +47,7 @@ class AutoscalingPolicy:
     server_template: ServerTemplate | None = None
 
     def __post_init__(self) -> None:
+        """Validate exact thresholds, finite bounds and enabled-template requirements."""
         if type(self.enabled) is not bool:
             raise SimulationError("VALIDATION_ERROR", "Scaling enabled must be boolean")
         _integer(self.window_ticks, 1, 10_000)
@@ -86,6 +91,8 @@ class AutoscalingPolicy:
 
 @dataclass(frozen=True, slots=True)
 class RunConfig:
+    """Freeze deterministic execution policy and supported arithmetic/sample limits."""
+
     mode: Mode = "sequential"
     strategy: Strategy = "first_fit"
     queue_timeout_ticks: int | None = None

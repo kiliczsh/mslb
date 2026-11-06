@@ -17,6 +17,7 @@ from mslb_controller.resource_client import ResourceClient
 
 
 async def main() -> None:
+    """Run the fenced resource publisher with its independent health heartbeat."""
     database = Database(url=os.environ["DATABASE_URL"])
     client = ResourceClient()
     stopped = asyncio.Event()

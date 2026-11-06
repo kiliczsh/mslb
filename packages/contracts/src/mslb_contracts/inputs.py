@@ -47,7 +47,16 @@ def normalize_identifier(*, value: str) -> str:
 class ServerInput(BaseModel):
     """A static logical server specification; not an ORM or managed version."""
 
-    model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
+    model_config = ConfigDict(
+        strict=True,
+        frozen=True,
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {"id": "edge-a", "cpu_units_per_tick": 8, "mem_mb": 64, "rate_limit_per_sec": 4}
+            ]
+        },
+    )
     id: Annotated[str, Field(max_length=256)]
     cpu_units_per_tick: PositiveValue
     mem_mb: PositiveValue
@@ -106,6 +115,8 @@ def read_servers(stream: BinaryIO) -> tuple[ServerInput, ...]:
 
 
 class _BoundedLines(Iterator[str]):
+    """Decode CSV lines while enforcing field/row budgets before parser allocation."""
+
     def __init__(self, stream: BinaryIO) -> None:
         self.stream = stream
         self.total = 0

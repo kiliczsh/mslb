@@ -13,6 +13,8 @@ type Digest = Annotated[str, Field(min_length=64, max_length=64, pattern=r"^[0-9
 
 
 class TemplateSettings(BaseModel):
+    """Validate the logical capacity template frozen for simulated scaling."""
+
     model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
     cpu_units_per_tick: PositiveValue
     mem_mb: PositiveValue
@@ -20,6 +22,8 @@ class TemplateSettings(BaseModel):
 
 
 class ScalingSettings(BaseModel):
+    """Validate exact simulated scaling thresholds and bounded observation windows."""
+
     model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
     enabled: bool = False
     window_ticks: Annotated[int, Field(ge=1, le=10_000)] = 5
@@ -42,6 +46,8 @@ class ScalingSettings(BaseModel):
 
 
 class ExecutionSettings(BaseModel):
+    """Validate deterministic scheduling, queue, horizon and arithmetic limits."""
+
     model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
     strategy: Literal["first_fit", "round_robin", "least_connections", "most_available_memory"] = (
         "first_fit"
@@ -56,6 +62,8 @@ class ExecutionSettings(BaseModel):
 
 
 class RunSettings(ExecutionSettings):
+    """Select public logical policy with sequential execution as the default."""
+
     mode: Literal["concurrent", "sequential"] = "sequential"
 
 
@@ -77,6 +85,8 @@ def public_settings(*, settings: StoredRunSettings) -> RunSettings:
 
 
 class RunSnapshot(BaseModel):
+    """Bind sorted immutable inputs, expanded policy and engine version to canonical digests."""
+
     model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
     schema_version: Annotated[int, Field(ge=1, le=1)] = 1
     engine_version: Annotated[str, Field(min_length=1, max_length=64)]
@@ -89,6 +99,8 @@ class RunSnapshot(BaseModel):
 
 
 class ArtifactMetadata(BaseModel):
+    """Describe an artifact's exact immutable byte length and SHA-256."""
+
     model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
     size_bytes: Annotated[int, Field(ge=0, le=256 * 1024 * 1024)]
     sha256: Digest
@@ -113,6 +125,8 @@ def verify_snapshot_identity(snapshot: RunSnapshot) -> None:
 
 
 class BundleManifest(BaseModel):
+    """Bind canonical artifact identities to independent and supplied-validator provenance."""
+
     model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
     schema_version: Annotated[int, Field(ge=1, le=1)] = 1
     engine_version: Annotated[str, Field(min_length=1, max_length=64)]

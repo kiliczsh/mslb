@@ -24,6 +24,7 @@ def save_docker_snapshot(*, files: ManagedFiles, snapshot: DockerSnapshot) -> Fi
 
 
 def load_docker_snapshot(*, files: ManagedFiles, key: str, expected_digest: str) -> DockerSnapshot:
+    """Verify bounded canonical operational snapshot bytes and their recorded identity."""
     if key != f"docker/snapshots/{expected_digest}.json":
         raise OperationError(code="VALIDATION_FAILED", message="Docker snapshot namespace differs")
     try:

@@ -14,12 +14,15 @@ from mslb_contracts.resources import (
 
 @dataclass(slots=True, kw_only=True)
 class ResourcePolicy:
+    """Evaluate conservative headroom with pressure stopping and recovery hysteresis."""
+
     held: bool = True
     cool_samples: int = 0
     last_measurement: datetime | None = None
     last_host_measurement: datetime | None = None
 
     def evaluate(self, *, probe: ResourceProbe | None, now: datetime) -> ResourceDecision:
+        """Refuse stale/unsafe measurements and apply recovery hysteresis before admission."""
         if now.utcoffset() is None:
             raise ValueError("Resource evaluation requires an aware server clock")
         caps, reserve, headroom = memory_bounds(probe=probe)

@@ -9,6 +9,8 @@ from mslb_contracts.inputs import PositiveValue
 
 
 class PhysicalScaling(DockerModel):
+    """Bound operational scaling samples and cooldown in real seconds."""
+
     enabled: bool = False
     evaluation_seconds: Annotated[int, Field(ge=1, le=1)] = 1
     pending_samples: Annotated[int, Field(ge=2, le=10)] = 2
@@ -17,6 +19,8 @@ class PhysicalScaling(DockerModel):
 
 
 class DockerSettings(DockerModel):
+    """Freeze real HTTP, replica and container resource limits independently of logical ticks."""
+
     mode: Literal["docker"] = "docker"
     strategy: Literal["first_fit", "round_robin", "least_connections", "most_available_memory"] = (
         "first_fit"
