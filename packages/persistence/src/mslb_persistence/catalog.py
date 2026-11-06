@@ -3,6 +3,7 @@
 import hashlib
 import re
 from datetime import datetime, timedelta
+from typing import Literal
 from uuid import UUID, uuid4
 
 from mslb_contracts.catalog import DatasetRegistration, ServerView
@@ -185,21 +186,26 @@ class Catalog:
         return await self.database.transaction(operation)
 
     async def find_idempotent(
-        self, key: str | None, body_digest: str, scope: str = "local"
+        self,
+        key: str | None,
+        body_digest: str,
+        scope: str = "local",
+        *,
+        kind: Literal["logical", "docker"] = "logical",
     ) -> RunRecord | None:
         if key is None:
             return None
         if (
             not 1 <= len(key.encode()) <= 128
             or not 1 <= len(scope.encode()) <= 128
-            or not re.fullmatch(r"[0-9a-f]{64}", body_digest)
+            or not re.fullmatch(pattern=r"[0-9a-f]{64}", string=body_digest)
         ):
             raise StoreError("VALIDATION_ERROR", "Invalid idempotency identity")
-        key_hash = hashlib.sha256(key.encode()).hexdigest()
+        key_hash = hashlib.sha256(string=key.encode()).hexdigest()
 
         async def operation(session: AsyncSession) -> RunRecord | None:
             previous = await session.scalar(
-                select(IdempotencyRecord).where(
+                statement=select(IdempotencyRecord).where(
                     IdempotencyRecord.scope == scope,
                     IdempotencyRecord.key_hash == key_hash,
                     IdempotencyRecord.expires_at > func.clock_timestamp(),
@@ -208,16 +214,22 @@ class Catalog:
             if previous is None:
                 return None
             if previous.body_digest != body_digest:
-                raise StoreError("CONFLICT", "Idempotency key belongs to a different request")
-            row = await session.get(Run, previous.run_id)
+                raise StoreError(
+                    code="CONFLICT", message="Idempotency key belongs to a different request"
+                )
+            row = await session.get(entity=Run, ident=previous.run_id)
             if row is None:
-                raise StoreError("NOT_READY", "Idempotency record references missing run")
-            job = await session.get(Job, previous.run_id)
-            if job is None or job.kind != "logical":
-                raise StoreError("CONFLICT", "Idempotency key belongs to a different run mode")
-            return RunRecord.from_model(row)
+                raise StoreError(
+                    code="NOT_READY", message="Idempotency record references missing run"
+                )
+            job = await session.get(entity=Job, ident=previous.run_id)
+            if job is None or job.kind != kind:
+                raise StoreError(
+                    code="CONFLICT", message="Idempotency key belongs to a different run mode"
+                )
+            return RunRecord.from_model(row=row)
 
-        return await self.database.transaction(operation)
+        return await self.database.transaction(operation=operation)
 
     async def enqueue(
         self,

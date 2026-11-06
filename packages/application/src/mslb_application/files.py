@@ -206,7 +206,13 @@ class ManagedFiles:
     @staticmethod
     def run_scope(key: str) -> str | None:
         parts = key.split("/")
-        return "/".join(parts[:2]) if len(parts) >= 3 and parts[0] == "runs" else None
+        if len(parts) >= 3 and (
+            parts[0] == "runs"
+            or parts[0] == "docker"
+            and re.fullmatch(pattern=r"[0-9a-f]{32}", string=parts[1])
+        ):
+            return "/".join(parts[:2])
+        return None
 
     @contextmanager
     def _stage(

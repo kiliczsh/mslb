@@ -21,6 +21,7 @@ from mslb_persistence.docker_control import DockerControl
 from mslb_persistence.docker_records import ControlLease
 from mslb_persistence.docker_resources import DockerResources
 
+from scripts.check_docker_outputs import check_outputs
 from tests.integration.helpers import scratch
 from tests.integration.test_docker_control import expire
 from tests.integration.test_persistence import prepare
@@ -258,6 +259,9 @@ async def main() -> None:
                         "Interrupted outcome incorrect",
                     )
                 # Static IDs remain live and identical throughout all destructive dynamic checks.
+                await check_outputs(
+                    database=database, client=client, backend=backend, engine=engine
+                )
                 final = await Lifecycle(database, engine, backend).enroll()
                 require(
                     final.definition == deployment.definition,
