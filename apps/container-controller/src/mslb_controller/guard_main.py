@@ -12,6 +12,7 @@ from mslb_persistence.resource_evidence import EvidenceRecord, ResourceEvidenceS
 
 from mslb_controller.engine import EngineError
 from mslb_controller.guard_health import write_health
+from mslb_controller.host_memory import read_host_memory
 from mslb_controller.resource_client import ResourceClient
 
 
@@ -25,7 +26,12 @@ async def main() -> None:
 
     async def measure() -> ResourceProbe | None:
         try:
-            return await client.probe()
+            probe = await client.probe()
+            if probe.desktop_engine:
+                probe = probe.model_copy(
+                    update={"host_memory": await asyncio.to_thread(read_host_memory)}
+                )
+            return probe
         except EngineError:
             return None
 

@@ -28,6 +28,8 @@ type ResourceReason = Literal[
     "RESOURCE_PRESSURE",
     "WARMING_UP",
     "HOST_MEMORY_UNAVAILABLE",
+    "HOST_MEMORY_STALE",
+    "HOST_MEMORY_HEADROOM",
 ]
 
 SERVICE_LIMITS_MB: dict[ServiceName, int] = {
@@ -44,6 +46,25 @@ SERVICE_LIMITS_MB: dict[ServiceName, int] = {
 }
 MIB = 1024**2
 STARTUP_AND_DYNAMIC_BYTES = (128 + 64 + 256) * MIB
+HOST_WRITER_BYTES = 64 * MIB
+
+
+class HostMemoryEvidence(DockerModel):
+    """Physical Windows memory, sampled outside the Docker Desktop VM."""
+
+    schema_version: Annotated[int, Field(ge=1, le=1)] = 1
+    measured_at: AwareDatetime
+    total_memory_bytes: Annotated[int, Field(ge=1, le=2**63 - 1)]
+    available_memory_bytes: Annotated[int, Field(ge=0, le=2**63 - 1)]
+
+    @model_validator(mode="after")
+    def counters(self) -> Self:
+        offset = self.measured_at.utcoffset()
+        if offset is None or offset.total_seconds() != 0:
+            raise ValueError("Host resource evidence must use UTC")
+        if self.available_memory_bytes > self.total_memory_bytes:
+            raise ValueError("Host available memory cannot exceed physical memory")
+        return self
 
 
 class ServiceMemory(DockerModel):
@@ -73,6 +94,7 @@ class ResourceProbe(DockerModel):
     engine_memory_bytes: Annotated[int, Field(ge=1, le=2**63 - 1)]
     available_memory_bytes: Annotated[int, Field(ge=0, le=2**63 - 1)]
     desktop_engine: bool
+    host_memory: HostMemoryEvidence | None = None
     services: Annotated[tuple[ServiceMemory, ...], Field(min_length=10, max_length=10)]
 
     @field_validator("measured_at")
@@ -115,20 +137,46 @@ def memory_bounds(*, probe: ResourceProbe | None) -> tuple[int, int, int]:
     caps = (
         0
         if probe is None
-        else sum(item.limit_bytes for item in probe.services) + STARTUP_AND_DYNAMIC_BYTES
+        else sum(item.limit_bytes for item in probe.services)
+        + STARTUP_AND_DYNAMIC_BYTES
+        + (HOST_WRITER_BYTES if probe.desktop_engine else 0)
     )
     working = 0 if probe is None else sum(item.working_set_bytes for item in probe.services)
     reserve = max(2 * 1024**3, 0 if probe is None else probe.engine_memory_bytes // 4)
     return caps, reserve, max(0, caps - working) + reserve
 
 
-def safe_to_admit(*, probe: ResourceProbe) -> bool:
+def host_memory_fresh(*, probe: ResourceProbe, now: datetime) -> bool:
+    """Check the independent host clock against the current trusted reader clock."""
+    return not probe.desktop_engine or (
+        probe.host_memory is not None
+        and 0 <= (now - probe.host_memory.measured_at).total_seconds() <= 3
+    )
+
+
+def host_memory_headroom(*, probe: ResourceProbe) -> int:
+    """Reserve Windows memory plus remaining bounded project growth, without swap."""
+    caps, _reserve, _headroom = memory_bounds(probe=probe)
+    growth = max(0, caps - sum(item.working_set_bytes for item in probe.services))
+    host_reserve = max(
+        2 * 1024**3,
+        0 if probe.host_memory is None else probe.host_memory.total_memory_bytes // 10,
+    )
+    return host_reserve + growth
+
+
+def safe_to_admit(*, probe: ResourceProbe, now: datetime | None = None) -> bool:
     caps, reserve, headroom = memory_bounds(probe=probe)
     return (
-        not probe.desktop_engine
-        and probe.engine_memory_bytes >= 8 * 1024**3
+        probe.engine_memory_bytes >= 8 * 1024**3
         and caps + reserve <= probe.engine_memory_bytes
         and probe.available_memory_bytes >= headroom
+        and host_memory_fresh(probe=probe, now=probe.measured_at if now is None else now)
+        and (
+            not probe.desktop_engine
+            or probe.host_memory is not None
+            and probe.host_memory.available_memory_bytes >= host_memory_headroom(probe=probe)
+        )
         and all(
             item.healthy
             and item.container_id is not None

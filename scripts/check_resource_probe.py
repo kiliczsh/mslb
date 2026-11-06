@@ -1,19 +1,34 @@
 """Real private read-only resource evidence and strict credential-role separation."""
 
+import asyncio
 import os
 from datetime import UTC, datetime
 
 from mslb_application.resource_policy import ResourcePolicy
+from mslb_contracts.resources import ResourceProbe
 from mslb_controller.control_client import ControlClient
+from mslb_controller.engine import EngineError
 from mslb_controller.resource_client import ResourceClient
 from mslb_persistence.database import Database
 from mslb_persistence.resource_evidence import ResourceEvidenceStore
 
 
+async def diagnostic_probe(*, guard: ResourceClient) -> ResourceProbe:
+    """Allow a finite diagnostic retry only for the private sampler's busy response."""
+    for attempt in range(4):
+        try:
+            return await guard.probe()
+        except EngineError as error:
+            if error.status != 429 or attempt == 3:
+                raise
+            await asyncio.sleep(delay=0.2)
+    raise RuntimeError("Diagnostic measurement retry exhausted")
+
+
 async def check_resource_probe() -> None:
     guard, controller = ResourceClient(), ControlClient()
     try:
-        probe = await guard.probe()
+        probe = await diagnostic_probe(guard=guard)
         current = [sample for sample in probe.services if sample.container_id is not None]
         if len(current) < 8 or not all(
             sample.healthy and sample.limit_bytes > 0 for sample in current
@@ -27,13 +42,15 @@ async def check_resource_probe() -> None:
         database = Database(url=os.environ["TEST_DATABASE_URL"])
         try:
             report = await ResourceEvidenceStore(database=database).read()
-            if report.probe is None or report.decision.admit or not report.decision.stop_running:
+            if (
+                report.received_at is None
+                or report.decision.admit
+                or not report.decision.stop_running
+            ):
                 raise RuntimeError(
                     "Default guard did not publish a fresh explicit readiness refusal"
                 )
-            service = next(
-                item for item in report.probe.services if item.service == "resource-guard"
-            )
+            service = next(item for item in probe.services if item.service == "resource-guard")
             if service.container_id is None or service.limit_bytes != 128 * 1024**2:
                 raise RuntimeError("Default guard identity/cap was not measured")
         finally:

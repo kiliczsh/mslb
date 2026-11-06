@@ -487,12 +487,14 @@ source = { editable = "apps/worker" }
 dependencies = [
     { name = "mslb-application" },
     { name = "mslb-persistence" },
+    { name = "redis" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "mslb-application", editable = "packages/application" },
     { name = "mslb-persistence", editable = "packages/persistence" },
+    { name = "redis", specifier = "==8.1.0" },
 ]
 
 [[package]]

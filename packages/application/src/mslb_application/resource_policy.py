@@ -3,7 +3,13 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-from mslb_contracts.resources import ResourceDecision, ResourceProbe, memory_bounds
+from mslb_contracts.resources import (
+    ResourceDecision,
+    ResourceProbe,
+    host_memory_fresh,
+    host_memory_headroom,
+    memory_bounds,
+)
 
 
 @dataclass(slots=True, kw_only=True)
@@ -11,6 +17,7 @@ class ResourcePolicy:
     held: bool = True
     cool_samples: int = 0
     last_measurement: datetime | None = None
+    last_host_measurement: datetime | None = None
 
     def evaluate(self, *, probe: ResourceProbe | None, now: datetime) -> ResourceDecision:
         if now.utcoffset() is None:
@@ -37,14 +44,35 @@ class ResourcePolicy:
             reason, stop_running = "RESOURCE_PRESSURE", True
         elif probe.available_memory_bytes < headroom:
             reason, stop_running = "MEMORY_HEADROOM", True
-        elif probe.desktop_engine:
+        elif probe.desktop_engine and probe.host_memory is None:
             reason, stop_running = "HOST_MEMORY_UNAVAILABLE", True
+        elif not host_memory_fresh(probe=probe, now=now) or (
+            probe.desktop_engine
+            and probe.host_memory is not None
+            and self.last_host_measurement is not None
+            and probe.host_memory.measured_at < self.last_host_measurement
+        ):
+            reason, stop_running = "HOST_MEMORY_STALE", True
+        elif (
+            probe.desktop_engine
+            and probe.host_memory is not None
+            and probe.host_memory.available_memory_bytes < host_memory_headroom(probe=probe)
+        ):
+            reason, stop_running = "HOST_MEMORY_HEADROOM", True
         elif any(item.working_set_bytes * 100 >= item.limit_bytes * 70 for item in probe.services):
             reason = "RESOURCE_PRESSURE"
         if reason is not None:
             self.held, self.cool_samples = True, 0
         elif self.held:
-            if probe is not None and probe.measured_at != self.last_measurement:
+            if (
+                probe is not None
+                and probe.measured_at != self.last_measurement
+                and (
+                    not probe.desktop_engine
+                    or probe.host_memory is not None
+                    and probe.host_memory.measured_at != self.last_host_measurement
+                )
+            ):
                 self.cool_samples = (
                     self.cool_samples + 1
                     if all(
@@ -59,10 +87,22 @@ class ResourcePolicy:
                 reason = "WARMING_UP"
         if (
             probe is not None
-            and (reason != "MEASUREMENTS_STALE")
+            and reason not in {"MEASUREMENTS_STALE", "HOST_MEMORY_STALE"}
             and (self.last_measurement is None or probe.measured_at > self.last_measurement)
         ):
             self.last_measurement = probe.measured_at
+        if (
+            probe is not None
+            and probe.desktop_engine
+            and probe.host_memory is not None
+            and host_memory_fresh(probe=probe, now=now)
+            and reason not in {"MEASUREMENTS_STALE", "HOST_MEMORY_STALE"}
+            and (
+                self.last_host_measurement is None
+                or probe.host_memory.measured_at > self.last_host_measurement
+            )
+        ):
+            self.last_host_measurement = probe.host_memory.measured_at
         return ResourceDecision(
             admit=not self.held,
             stop_running=stop_running,

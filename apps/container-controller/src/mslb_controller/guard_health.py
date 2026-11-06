@@ -1,6 +1,7 @@
 """Cheap stdlib-only publication liveness; importing this never imports the sampler stack."""
 
 import json
+import math
 import os
 import stat
 import sys
@@ -33,10 +34,14 @@ def healthy() -> bool:
         if len(raw) > 1024:
             return False
         updated: object = json.loads(s=raw).get("updated")
-        if isinstance(updated, bool) or not isinstance(updated, (int, float)):
+        if (
+            isinstance(updated, bool)
+            or not isinstance(updated, (int, float))
+            or not math.isfinite(updated)
+        ):
             return False
         return 0 <= time.monotonic() - updated <= 8
-    except (OSError, ValueError, AttributeError):
+    except (OSError, ValueError, AttributeError, OverflowError):
         return False
 
 

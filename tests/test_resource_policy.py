@@ -4,7 +4,15 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from mslb_application.resource_policy import ResourcePolicy
-from mslb_contracts.resources import MIB, SERVICE_LIMITS_MB, ResourceProbe, ServiceMemory
+from mslb_contracts.resources import (
+    MIB,
+    SERVICE_LIMITS_MB,
+    HostMemoryEvidence,
+    ResourceProbe,
+    ServiceMemory,
+    host_memory_headroom,
+    safe_to_admit,
+)
 from pydantic import ValidationError
 
 EPOCH = datetime(year=2026, month=11, day=6, tzinfo=UTC)
@@ -37,6 +45,69 @@ def warm(*, policy: ResourcePolicy) -> None:
         value = probe(second=second)
         result = policy.evaluate(probe=value, now=value.measured_at)
         assert result.admit is (second == 2)
+
+
+def desktop_probe(*, second: int = 0, host_second: int | None = None) -> ResourceProbe:
+    return probe(second=second).model_copy(
+        update={
+            "desktop_engine": True,
+            "host_memory": HostMemoryEvidence(
+                measured_at=EPOCH
+                + timedelta(seconds=second if host_second is None else host_second),
+                total_memory_bytes=32 * 1024**3,
+                available_memory_bytes=10 * 1024**3,
+            ),
+        }
+    )
+
+
+def test_desktop_requires_distinct_host_samples_and_independent_host_headroom() -> None:
+    policy = ResourcePolicy()
+    for second in range(3):
+        value = desktop_probe(second=second, host_second=0)
+        assert not policy.evaluate(probe=value, now=value.measured_at).admit
+    for second in (3, 4):
+        value = desktop_probe(second=second)
+        decision = policy.evaluate(probe=value, now=value.measured_at)
+    assert decision.admit and decision.cap_sum_bytes == 3712 * MIB
+    assert safe_to_admit(probe=value)
+    assert value.host_memory is not None
+    required = host_memory_headroom(probe=value)
+    for offset, expected in ((-1, "HOST_MEMORY_HEADROOM"), (0, "WARMING_UP")):
+        current = value.model_copy(
+            update={
+                "host_memory": value.host_memory.model_copy(
+                    update={"available_memory_bytes": required + offset}
+                )
+            }
+        )
+        decision = ResourcePolicy().evaluate(probe=current, now=current.measured_at)
+        assert decision.reason == expected
+        assert safe_to_admit(probe=current) is (offset == 0)
+
+
+@pytest.mark.parametrize(argnames="host_second", argvalues=[-4, 1])
+def test_host_age_is_independent_from_fresh_vm_evidence(host_second: int) -> None:
+    value = desktop_probe(host_second=host_second)
+    decision = ResourcePolicy().evaluate(probe=value, now=value.measured_at)
+    assert decision.reason == "HOST_MEMORY_STALE" and decision.stop_running
+    assert not safe_to_admit(probe=value)
+
+
+def test_future_host_clock_cannot_poison_valid_host_recovery() -> None:
+    policy = ResourcePolicy()
+    forged = desktop_probe(host_second=1000)
+    assert policy.evaluate(probe=forged, now=EPOCH).reason == "HOST_MEMORY_STALE"
+    assert policy.last_measurement is None and policy.last_host_measurement is None
+    for second in range(3):
+        value = desktop_probe(second=second)
+        assert policy.evaluate(probe=value, now=value.measured_at).admit is (second == 2)
+
+
+def test_host_sampler_may_finish_after_vm_sampler_but_not_after_reader_clock() -> None:
+    value = desktop_probe(host_second=1)
+    assert not safe_to_admit(probe=value)
+    assert safe_to_admit(probe=value, now=EPOCH + timedelta(seconds=1))
 
 
 def test_desktop_vm_evidence_cannot_replace_host_headroom() -> None:

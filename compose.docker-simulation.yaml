@@ -46,7 +46,7 @@ services:
     pids_limit: 32
     environment:
       DATABASE_URL: postgresql://mslb:local-demo-only@postgres/mslb
-    volumes: ["guard-auth:/run/guard-auth:ro"]
+    volumes: ["guard-auth:/run/guard-auth:ro", "host-memory:/run/host-memory:ro"]
     networks: [docker-control, control-data]
     depends_on:
       docker-proxy: {condition: service_healthy}
@@ -64,6 +64,26 @@ services:
         max-file: "2"
         mode: non-blocking
         max-buffer-size: 1m
+  host-memory-writer:
+    profiles: [tools]
+    image: mslb-python-tools:local
+    command: [python, -m, mslb_controller.host_memory]
+    user: "0:0"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 64m
+    memswap_limit: 64m
+    cpus: 0.25
+    pids_limit: 16
+    network_mode: none
+    stdin_open: true
+    volumes: ["host-memory:/run/host-memory"]
+    logging:
+      driver: json-file
+      options:
+        max-size: 1m
+        max-file: "1"
   control-init:
     image: mslb-python-tools:local
     command: [python, -m, mslb_controller.credentials, --all]
@@ -158,3 +178,4 @@ networks:
 volumes:
   controller-auth:
   guard-auth:
+  host-memory:

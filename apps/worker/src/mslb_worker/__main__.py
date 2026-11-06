@@ -13,10 +13,14 @@ from pathlib import Path
 from threading import Event, Thread
 
 from mslb_application.files import ManagedFiles, StorageLimits
+from mslb_application.notifications import OutboxNotifications
 from mslb_application.worker import Worker
 from mslb_persistence.database import Database, StoreError
+from mslb_persistence.jobs import Jobs
 from mslb_persistence.records import Lease
 from sqlalchemy.exc import DBAPIError
+
+from mslb_worker.redis_notifications import RedisHints
 
 HEALTH = Path(tempfile.gettempdir()) / "mslb-worker" / "health.json"
 
@@ -49,7 +53,7 @@ class Notifications:
             except queue.Empty:
                 continue
             try:
-                print(json.dumps(message, separators=(",", ":")), flush=True)
+                print(json.dumps(obj=message, separators=(",", ":")), flush=True)
             except (OSError, ValueError):
                 return
 
@@ -60,8 +64,8 @@ class Notifications:
 
 def healthy() -> bool:
     try:
-        with HEALTH.open("rb") as stream:
-            record = json.loads(stream.read(1024))
+        with HEALTH.open(mode="rb") as stream:
+            record = json.loads(s=stream.read(1024))
         value = record.get("updated")
         return isinstance(value, (float, int)) and 0 <= time.monotonic() - value < 10
     except (OSError, ValueError):
@@ -76,59 +80,72 @@ def write_health() -> None:
     if metadata.st_uid != os.getuid() or metadata.st_mode & 0o077:
         raise ValueError("Worker health directory must be private")
     temporary = HEALTH.with_suffix(".tmp")
-    temporary.write_text(json.dumps(dict(updated=time.monotonic())))
-    temporary.replace(HEALTH)
+    temporary.write_text(data=json.dumps(obj=dict(updated=time.monotonic())))
+    temporary.replace(target=HEALTH)
 
 
-async def main(once: bool) -> None:
-    database = Database(os.environ["DATABASE_URL"], os.environ.get("DATABASE_SCHEMA", "public"))
+async def main(*, once: bool) -> None:
+    database = Database(
+        url=os.environ["DATABASE_URL"], schema=os.environ.get("DATABASE_SCHEMA", "public")
+    )
     limits = StorageLimits(
         min_free_bytes=int(os.environ.get("STORAGE_MIN_FREE_BYTES", str(2 * 1024**3)))
     )
     inputs = await asyncio.to_thread(
-        ManagedFiles, Path(os.environ.get("INPUT_ROOT", "/data/inputs")), limits, True
+        ManagedFiles,
+        root=Path(os.environ.get("INPUT_ROOT", "/data/inputs")),
+        limits=limits,
+        read_only=True,
     )
     outputs = await asyncio.to_thread(
-        ManagedFiles, Path(os.environ.get("OUTPUT_ROOT", "/data/outputs")), limits
+        ManagedFiles, root=Path(os.environ.get("OUTPUT_ROOT", "/data/outputs")), limits=limits
     )
     notifications, shutdown, health_done = Notifications(), Event(), asyncio.Event()
     loop = asyncio.get_running_loop()
     for code in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(code, shutdown.set)
     worker = Worker(
-        database,
-        inputs,
-        outputs,
+        database=database,
+        inputs=inputs,
+        outputs=outputs,
         lease_seconds=int(os.environ.get("WORKER_LEASE_SECONDS", "30")),
         renewal_seconds=float(os.environ.get("WORKER_RENEW_SECONDS", "5")),
         observer=notifications.observe,
     )
+    hints = RedisHints(
+        url=os.environ.get("REDIS_URL", "redis://redis:6379/0"), namespace=database.schema
+    )
+    outbox = OutboxNotifications(jobs=Jobs(database=database), hints=hints)
 
     async def heartbeat() -> None:
         while not health_done.is_set():
             await asyncio.to_thread(write_health)
             try:
-                await asyncio.wait_for(health_done.wait(), timeout=1)
+                await asyncio.wait_for(fut=health_done.wait(), timeout=1)
             except TimeoutError:
                 continue
 
-    health = asyncio.create_task(heartbeat())
+    health = asyncio.create_task(coro=heartbeat())
+    delivery = asyncio.create_task(coro=outbox.run(done=health_done))
     try:
         while not shutdown.is_set():
             try:
-                found = await worker.run_once(shutdown)
+                found = await worker.run_once(shutdown=shutdown)
             except (StoreError, DBAPIError, OSError, TimeoutError):
                 if once:
                     raise
-                await asyncio.sleep(1)
+                await asyncio.sleep(delay=1)
                 continue
             if once:
                 break
             if not found:
-                await asyncio.sleep(0.25)
+                await hints.wait()
     finally:
         health_done.set()
+        delivery.cancel()
+        await asyncio.gather(delivery, return_exceptions=True)
         await health
+        await hints.close()
         await database.close()
         await asyncio.to_thread(notifications.close)
 
@@ -140,4 +157,4 @@ if __name__ == "__main__":
     arguments = parser.parse_args()
     if arguments.command == "health":
         sys.exit(0 if healthy() else 1)
-    asyncio.run(main(bool(arguments.once)))
+    asyncio.run(main(once=bool(arguments.once)))

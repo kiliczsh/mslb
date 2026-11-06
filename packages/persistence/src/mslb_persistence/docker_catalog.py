@@ -25,6 +25,36 @@ from mslb_persistence.models import (
 from mslb_persistence.records import RunRecord
 
 
+async def _prune_deployments(
+    *, session: AsyncSession, keep_recent: int = 2, limit: int = 16
+) -> int:
+    retained = (
+        select(DockerDeployment.id)
+        .order_by(DockerDeployment.created_at.desc(), DockerDeployment.id.desc())
+        .limit(keep_recent)
+        .correlate(None)
+    )
+    referenced = (
+        select(DockerRunState.run_id)
+        .where(DockerRunState.deployment_id == DockerDeployment.id)
+        .exists()
+    )
+    candidates = (
+        select(DockerDeployment.id)
+        .where(DockerDeployment.id.not_in(retained), ~referenced)
+        .order_by(DockerDeployment.created_at, DockerDeployment.id)
+        .limit(limit)
+    )
+    removed = tuple(
+        await session.scalars(
+            statement=delete(DockerDeployment)
+            .where(DockerDeployment.id.in_(candidates), ~referenced)
+            .returning(DockerDeployment.id)
+        )
+    )
+    return len(removed)
+
+
 class DockerCatalog:
     def __init__(self, database: Database) -> None:
         self.database = database
@@ -33,7 +63,7 @@ class DockerCatalog:
         """Enroll only trusted inspect-adapter output; there is no public enrollment API."""
 
         async def operation(session: AsyncSession) -> DeploymentRecord:
-            await _installation(session)
+            await _installation(session=session)
             existing = await session.scalar(
                 select(DockerDeployment).where(DockerDeployment.fingerprint == definition.digest())
             )
@@ -42,6 +72,11 @@ class DockerCatalog:
                     raise StoreError("CONFLICT", "Deployment fingerprint conflicts")
                 return DeploymentRecord(existing.id, definition)
             count = await session.scalar(select(func.count()).select_from(DockerDeployment))
+            if count is not None and count >= 16:
+                await _prune_deployments(session=session)
+                count = await session.scalar(
+                    statement=select(func.count()).select_from(DockerDeployment)
+                )
             if count is not None and count >= 16:
                 raise StoreError("RATE_LIMITED", "Deployment history requires explicit retention")
             row = DockerDeployment(
@@ -54,6 +89,22 @@ class DockerCatalog:
             return DeploymentRecord(row.id, definition)
 
         return await self.database.transaction(operation)
+
+    async def prune_deployments(self, *, keep_recent: int = 2, limit: int = 16) -> int:
+        """Remove only unused old enrollment rows, under the registration serialization lock."""
+        if (
+            type(keep_recent) is not int
+            or not 1 <= keep_recent <= 16
+            or type(limit) is not int
+            or not 1 <= limit <= 16
+        ):
+            raise StoreError(code="VALIDATION_ERROR", message="Invalid deployment retention bounds")
+
+        async def operation(session: AsyncSession) -> int:
+            await _installation(session=session)
+            return await _prune_deployments(session=session, keep_recent=keep_recent, limit=limit)
+
+        return await self.database.transaction(operation=operation)
 
     async def deployment(self, deployment_id: UUID) -> DeploymentRecord:
         async def operation(session: AsyncSession) -> DeploymentRecord:

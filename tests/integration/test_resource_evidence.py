@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from mslb_application.resource_policy import ResourcePolicy
-from mslb_contracts.resources import ResourceDecision, ResourceProbe
+from mslb_contracts.resources import HostMemoryEvidence, ResourceDecision, ResourceProbe
 from mslb_persistence import resource_evidence
 from mslb_persistence.database import StoreError
 from mslb_persistence.models import ResourceEvidence
@@ -209,5 +209,53 @@ def test_real_database_expiry_during_publication_rolls_back_report(
                     statement=select(ResourceEvidence).where(ResourceEvidence.id == 1)
                 )
                 assert row is not None and row.decision is None and row.received_at is None
+
+    asyncio.run(main=run())
+
+
+def test_desktop_host_evidence_is_rechecked_with_database_clock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def run() -> None:
+        async with scratch() as database:
+            store = ResourceEvidenceStore(database=database)
+            lease = await store.claim(owner="desktop-guard")
+            assert lease is not None
+            policy = ResourcePolicy()
+            now = datetime.now(tz=UTC)
+            for offset in (2, 1, 0):
+                current = now - timedelta(seconds=offset)
+                probe = synthetic_probe().model_copy(
+                    update={
+                        "measured_at": current,
+                        "desktop_engine": True,
+                        "host_memory": HostMemoryEvidence(
+                            measured_at=current - timedelta(seconds=2),
+                            total_memory_bytes=32 * 1024**3,
+                            available_memory_bytes=10 * 1024**3,
+                        ),
+                    }
+                )
+                decision = policy.evaluate(probe=probe, now=current)
+            assert decision.admit
+            saved = await store.publish(
+                lease=lease, expected_revision=lease.revision, probe=probe, decision=decision
+            )
+            assert saved.decision.admit
+            original = resource_evidence._clock
+
+            async def later_clock(*, session: AsyncSession) -> datetime:
+                return await original(session=session) + timedelta(seconds=2)
+
+            monkeypatch.setattr(target=resource_evidence, name="_clock", value=later_clock)
+            # VM evidence remains <3s old while independent host evidence is >3s old.
+            assert (await store.read()).decision.reason == "MEASUREMENTS_STALE"
+            with pytest.raises(expected_exception=StoreError, match="current host evidence"):
+                await store.publish(
+                    lease=lease,
+                    expected_revision=saved.revision,
+                    probe=probe,
+                    decision=decision,
+                )
 
     asyncio.run(main=run())

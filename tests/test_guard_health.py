@@ -16,7 +16,7 @@ def test_guard_liveness_writer_and_unsafe_frames(
     assert not guard_health.healthy()
     guard_health.write_health()
     assert guard_health.healthy()
-    for value in (True, None, "100", 101, 91, float("nan")):
+    for value in (True, None, "100", 101, 91, float("nan"), float("inf"), 10**900):
         path.write_text(data=json.dumps(obj={"updated": value}))
         assert not guard_health.healthy()
     path.write_bytes(data=b"x" * 1025)

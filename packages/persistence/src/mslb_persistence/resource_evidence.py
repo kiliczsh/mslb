@@ -2,10 +2,16 @@
 
 import hashlib
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from mslb_contracts.canonical import canonical_bytes
-from mslb_contracts.resources import ResourceDecision, ResourceProbe, memory_bounds, safe_to_admit
+from mslb_contracts.resources import (
+    ResourceDecision,
+    ResourceProbe,
+    host_memory_fresh,
+    memory_bounds,
+    safe_to_admit,
+)
 from pydantic import ValidationError
 from sqlalchemy import DateTime, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,7 +55,18 @@ def unavailable(*, revision: int, stale: bool = False) -> EvidenceRecord:
 def validate_budget(
     *, probe: ResourceProbe | None, decision: ResourceDecision, code: str = "VALIDATION_ERROR"
 ) -> None:
-    if decision.admit and (probe is None or not safe_to_admit(probe=probe)):
+    # Clock freshness is checked separately by the SQL transaction/reader. Here only
+    # validate the independently derived capacity/headroom, allowing either sampler
+    # to finish first. A future host frame still cannot pass the database-clock check.
+    budget_time = (
+        datetime.now(tz=UTC)
+        if probe is None
+        else max(
+            probe.measured_at,
+            probe.measured_at if probe.host_memory is None else probe.host_memory.measured_at,
+        )
+    )
+    if decision.admit and (probe is None or not safe_to_admit(probe=probe, now=budget_time)):
         raise StoreError(code=code, message="Admission requires actual safe evidence")
     caps, _reserve, headroom = memory_bounds(probe=probe)
     if (decision.cap_sum_bytes, decision.required_headroom_bytes) != (caps, headroom):
@@ -79,7 +96,11 @@ def decode(*, row: ResourceEvidence, now: datetime) -> EvidenceRecord:
         or row.lease_expires_at <= now
         or not 0 <= (now - row.received_at).total_seconds() <= 3
         or probe is not None
-        and not 0 <= (now - probe.measured_at).total_seconds() <= 3
+        and (
+            not 0 <= (now - probe.measured_at).total_seconds() <= 3
+            or decision.admit
+            and not host_memory_fresh(probe=probe, now=now)
+        )
     ):
         return unavailable(revision=row.revision, stale=True)
     return EvidenceRecord(
@@ -144,6 +165,10 @@ class ResourceEvidenceStore:
             if probe is not None and not 0 <= (now - probe.measured_at).total_seconds() <= 3:
                 raise StoreError(
                     code="VALIDATION_ERROR", message="Evidence timestamp is not current server time"
+                )
+            if probe is not None and decision.admit and not host_memory_fresh(probe=probe, now=now):
+                raise StoreError(
+                    code="VALIDATION_ERROR", message="Admission requires current host evidence"
                 )
             statement = (
                 update(ResourceEvidence)
