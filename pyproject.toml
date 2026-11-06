@@ -26,7 +26,7 @@ dev = ["ruff", "ty", "pytest", "asyncpg", "redis", "httpx==0.28.1", "jsonschema=
 [tool.ruff]
 target-version = "py313"
 line-length = 100
-extend-exclude = ["scripts/validate_run.py"]
+extend-exclude = ["scripts/validate_run.py", "docs/assignment/test-data"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC", "S", "ANN"]
@@ -43,7 +43,7 @@ line-ending = "lf"
 all = "error"
 
 [tool.ty.src]
-exclude = ["scripts/validate_run.py"]
+exclude = ["scripts/validate_run.py", "docs/assignment/test-data"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -9,16 +9,16 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
+from mcp import Client
+from mcp.client.streamable_http import streamable_http_client
+from mcp.server import ServerRequestContext
+from mcp.types import CallToolResult
 from mslb_api.mcp_adapter import McpAdapter
 from mslb_application import waiting
 from mslb_contracts.mcp import WaitArguments
 from mslb_contracts.queries import WaitResult
 from mslb_persistence.reads import Reads
 from mslb_persistence.records import Lease
-from mcp import Client
-from mcp.client.streamable_http import streamable_http_client
-from mcp.server import ServerRequestContext
-from mcp.types import CallToolResult
 from sqlalchemy import event
 from sqlalchemy.engine import Connection, ExecutionContext
 
@@ -158,6 +158,9 @@ def test_official_http_progress_precedes_result_and_only_reports_persisted_state
                 updates.append((loop.time(), progress, total, message))
 
             async with Client(server=streamable_http_client(url=workspace.url)) as client:
+                assert client.server_info is not None
+                assert client.server_info.name == "mslb"
+                assert client.server_info.version == "2.0.0"
                 task = asyncio.create_task(
                     coro=client.call_tool(
                         name="wait_for_simulations",

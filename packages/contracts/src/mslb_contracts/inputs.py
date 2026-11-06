@@ -185,6 +185,7 @@ def read_requests(stream: BinaryIO) -> tuple[RequestInput, ...]:
 
 def input_digest(records: tuple[ServerInput, ...] | tuple[RequestInput, ...]) -> str:
     """Hash already-normalized ordered records with explicit schema identity."""
+    # This versioned wire-format marker must stay stable for archived snapshot identities.
     digest = hashlib.sha256(b"load-balancer-input-v1\n")
     for record in records:
         digest.update(

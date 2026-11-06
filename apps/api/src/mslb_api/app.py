@@ -5,7 +5,7 @@ import re
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, Literal, override
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, FastAPI, Query, Request, Security
@@ -48,34 +48,22 @@ from mslb_persistence.jobs import Jobs
 from pydantic import BaseModel, ValidationError
 from python_multipart.exceptions import MultipartParseError
 from sqlalchemy.exc import DBAPIError
-from starlette.datastructures import FormData, UploadFile
+from starlette.datastructures import UploadFile
 from starlette.exceptions import HTTPException
-from starlette.formparsers import MultiPartException, MultiPartParser
+from starlette.formparsers import MultiPartException
 from starlette.responses import Response
 from starlette.routing import Route
 
 from mslb_api.errors import error_response
 from mslb_api.guard import Guard
 from mslb_api.mcp_adapter import McpAdapter
+from mslb_api.multipart import _Multipart as _Multipart
 from mslb_api.settings import Settings
-from mslb_api.streams import ArtifactResponse, EventResponse, finish
+from mslb_api.streams import ArtifactResponse, EventResponse
 
 type Limit = Annotated[int, Query(ge=1, le=500)]
 type Cursor = Annotated[str | None, Query(max_length=2048)]
 type Tick = Annotated[int, Query(ge=0, le=1_000_000)]
-
-
-class _Multipart(MultiPartParser):
-    @override
-    async def parse(self) -> FormData:
-        try:
-            return await super().parse()
-        except BaseException:
-            # Starlette closes these spools for its own multipart exceptions.
-            # Also close them when our receive budget or client cancellation fires.
-            for spool in self._files_to_close_on_error:
-                await finish(operation=spool.close)
-            raise
 
 
 def json_response(

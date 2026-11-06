@@ -4,17 +4,11 @@ import time
 from dataclasses import dataclass
 from threading import Event
 
+from mslb_mock_server.errors import WorkStopped as WorkStopped
+
 OPERATIONS_PER_UNIT = 2048
 MAX_OPERATIONS = 2_000_000
 WORK_TIMEOUT_SECONDS = 2.0
-
-
-class WorkStopped(Exception):
-    """Execution stopped without a completed outcome."""
-
-    def __init__(self, code: str) -> None:
-        self.code = code
-        super().__init__(code)
 
 
 @dataclass(frozen=True, slots=True)

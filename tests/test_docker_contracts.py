@@ -115,6 +115,15 @@ def test_deployment_and_artifact_namespaces_cannot_alias_logical_output() -> Non
     assert DeploymentSpec(
         image_id="sha256:" + "c" * 64, network_id="d" * 64, static=(a, b)
     ).digest()
+    with pytest.raises(expected_exception=ValidationError, match="project"):
+        DeploymentSpec.model_validate(
+            obj={
+                "project": "medsien-load-balancer",
+                "image_id": "sha256:" + "c" * 64,
+                "network_id": "d" * 64,
+                "static": [a.model_dump(), b.model_dump()],
+            }
+        )
     with pytest.raises(ValidationError):
         DeploymentSpec(image_id="sha256:" + "c" * 64, network_id="d" * 64, static=(b, a))
     identifier = uuid4()

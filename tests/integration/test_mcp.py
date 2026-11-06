@@ -7,6 +7,9 @@ from uuid import UUID
 import httpx
 import pytest
 from jsonschema import Draft202012Validator
+from mcp import Client, MCPError
+from mcp.client.streamable_http import streamable_http_client
+from mcp.types import TextContent, TextResourceContents
 from mslb_api.app import create_app, get_mcp
 from mslb_api.mcp_catalog import TOOLS, output_schema
 from mslb_api.settings import Settings
@@ -17,9 +20,6 @@ from mslb_contracts.canonical import canonical_bytes
 from mslb_contracts.catalog import ServerView
 from mslb_contracts.http import RunDetail
 from mslb_contracts.queries import JsonValue
-from mcp import Client, MCPError
-from mcp.client.streamable_http import streamable_http_client
-from mcp.types import TextContent, TextResourceContents
 from pydantic import TypeAdapter
 from sqlalchemy.exc import DBAPIError
 
@@ -429,6 +429,9 @@ def test_official_http_client_auth_origin_and_request_correlation(
                     async with Client(
                         streamable_http_client("http://testserver/mcp", http_client=http)
                     ) as client:
+                        assert client.server_info is not None
+                        assert client.server_info.name == "mslb"
+                        assert client.server_info.version == "2.0.0"
                         assert len((await client.list_tools()).tools) == 13
                         result = await client.call_tool("list_strategies", {})
                         assert not result.is_error and result.meta is not None

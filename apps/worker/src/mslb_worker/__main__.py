@@ -2,61 +2,22 @@
 
 import argparse
 import asyncio
-import json
 import os
-import queue
 import signal
 import sys
 from pathlib import Path
-from threading import Event, Thread
+from threading import Event
 
 from mslb_application.files import ManagedFiles, StorageLimits
 from mslb_application.notifications import OutboxNotifications
 from mslb_application.worker import Worker
 from mslb_persistence.database import Database, StoreError
 from mslb_persistence.jobs import Jobs
-from mslb_persistence.records import Lease
 from sqlalchemy.exc import DBAPIError
 
 from mslb_worker.health import healthy, write_health
+from mslb_worker.notifications import Notifications as Notifications
 from mslb_worker.redis_notifications import RedisHints
-
-
-class Notifications:
-    def __init__(self) -> None:
-        self.messages: queue.Queue[dict[str, str | int]] = queue.Queue(maxsize=64)
-        self.done = Event()
-        self.thread = Thread(target=self._write, daemon=True)
-        self.thread.start()
-
-    def observe(self, phase: str, lease: Lease, tick: int) -> None:
-        try:
-            self.messages.put_nowait(
-                dict(
-                    event=phase,
-                    run_id=str(lease.run_id),
-                    attempt=lease.attempt,
-                    fence=lease.fence,
-                    tick=tick,
-                )
-            )
-        except queue.Full:
-            return
-
-    def _write(self) -> None:
-        while not self.done.is_set() or not self.messages.empty():
-            try:
-                message = self.messages.get(timeout=0.1)
-            except queue.Empty:
-                continue
-            try:
-                print(json.dumps(obj=message, separators=(",", ":")), flush=True)
-            except (OSError, ValueError):
-                return
-
-    def close(self) -> None:
-        self.done.set()
-        self.thread.join(timeout=2)
 
 
 async def main(*, once: bool) -> None:

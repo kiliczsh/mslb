@@ -173,18 +173,19 @@ class DockerControl:
                 )
                 session.add(Attempt(run_id=job.run_id, number=1, fence=slot.fence, owner=owner))
             await session.flush()
+            expires_at = slot.lease_expires_at
             if (
                 slot.run_id is None
-                or slot.lease_expires_at is None
+                or expires_at is None
                 or slot.phase not in {"running", "cleanup"}
             ):
                 raise StoreError("NOT_READY", "Claim did not establish Docker ownership")
             return ControlLease(
-                slot.run_id,
-                slot.fence,
-                owner,
-                slot.lease_expires_at,
-                "running" if slot.phase == "running" else "cleanup",
+                run_id=slot.run_id,
+                fence=slot.fence,
+                owner=owner,
+                expires_at=expires_at,
+                phase="running" if slot.phase == "running" else "cleanup",
             )
 
         return await self.database.transaction(operation)

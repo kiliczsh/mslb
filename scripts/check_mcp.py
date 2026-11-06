@@ -7,10 +7,10 @@ from pathlib import Path
 
 import httpx
 import httpx2
-from mslb_api.mcp_catalog import TOOLS
-from mslb_contracts.queries import JsonValue
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
+from mslb_api.mcp_catalog import TOOLS
+from mslb_contracts.queries import JsonValue
 from pydantic import TypeAdapter
 
 

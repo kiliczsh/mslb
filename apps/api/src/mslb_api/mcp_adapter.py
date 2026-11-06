@@ -6,28 +6,6 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
-from mslb_application.errors import OperationError
-from mslb_application.failures import failure
-from mslb_application.services import Services
-from mslb_application.waiting import RunWaiter
-from mslb_contracts.canonical import canonical_bytes
-from mslb_contracts.http import CompareRequest
-from mslb_contracts.inputs import ServerInput
-from mslb_contracts.mcp import (
-    CompareStrategiesArguments,
-    EventArguments,
-    EventResource,
-    MetricArguments,
-    PageArguments,
-    RunCommand,
-    RunReference,
-    ServerDelete,
-    ServerDeleted,
-    ServerReference,
-    ServerResource,
-    ServerUpdate,
-    WaitArguments,
-)
 from mcp import MCPError
 from mcp.server import Server, ServerRequestContext
 from mcp.server.transport_security import TransportSecuritySettings
@@ -53,6 +31,28 @@ from mcp.types import (
     TextResourceContents,
     Tool,
     ToolAnnotations,
+)
+from mslb_application.errors import OperationError
+from mslb_application.failures import failure
+from mslb_application.services import Services
+from mslb_application.waiting import RunWaiter
+from mslb_contracts.canonical import canonical_bytes
+from mslb_contracts.http import CompareRequest
+from mslb_contracts.inputs import ServerInput
+from mslb_contracts.mcp import (
+    CompareStrategiesArguments,
+    EventArguments,
+    EventResource,
+    MetricArguments,
+    PageArguments,
+    RunCommand,
+    RunReference,
+    ServerDelete,
+    ServerDeleted,
+    ServerReference,
+    ServerResource,
+    ServerUpdate,
+    WaitArguments,
 )
 from pydantic import BaseModel
 from starlette.requests import Request
@@ -86,7 +86,7 @@ class McpAdapter:
         self.progress_tokens: set[tuple[str, str | int]] = set()
         self.waiter = RunWaiter(queries=services.queries)
         self.server: Server[object] = Server(
-            name="Load balancer",
+            name="mslb",
             version=CONTRACT_VERSION,
             instructions=(
                 "Use registered dataset IDs. run_simulation durably enqueues and returns promptly. "
@@ -271,7 +271,7 @@ class McpAdapter:
             reply = CallToolResult(
                 content=[TextContent(text="Structured result attached.")],
                 structured_content=result.model_dump(mode="json"),
-                meta={"request_id": identifier},
+                _meta={"request_id": identifier},
             )
             if len(reply.model_dump_json(by_alias=True).encode()) > RESPONSE_LIMIT:
                 raise OperationError(
@@ -285,7 +285,7 @@ class McpAdapter:
                 is_error=True,
                 content=[TextContent(text=envelope.model_dump_json())],
                 structured_content=envelope.model_dump(mode="json"),
-                meta={"request_id": identifier},
+                _meta={"request_id": identifier},
             )
 
     async def list_resources(
@@ -349,7 +349,7 @@ class McpAdapter:
                 contents=[
                     TextResourceContents(uri=params.uri, mime_type="application/json", text=payload)
                 ],
-                meta={"request_id": identifier},
+                _meta={"request_id": identifier},
             )
         except Exception as error:
             envelope = failure(error=error, request_id=identifier)
@@ -418,7 +418,7 @@ class McpAdapter:
             return GetPromptResult(
                 description=contract[1],
                 messages=[PromptMessage(role="user", content=TextContent(text=text))],
-                meta={"request_id": identifier},
+                _meta={"request_id": identifier},
             )
         except Exception as error:
             envelope = failure(error=error, request_id=identifier)

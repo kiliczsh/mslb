@@ -5,28 +5,14 @@ from typing import Literal
 from uuid import UUID
 
 import httpx
-from mslb_contracts.docker_runs import DeploymentSpec, DockerId
 from mslb_persistence.docker_records import ControlLease, DeploymentRecord
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ValidationError
 
+from mslb_controller.control_models import EnrollmentReply as EnrollmentReply
+from mslb_controller.control_models import ResourceReply as ResourceReply
 from mslb_controller.credentials import read_token
 from mslb_controller.engine import EngineError
 from mslb_controller.proxy import LeaseRef
-
-
-class ResourceReply(BaseModel):
-    model_config = ConfigDict(strict=True, extra="forbid")
-    id: UUID
-    state: str
-    name: str
-    container_id: DockerId | None
-    running: bool | None
-
-
-class EnrollmentReply(BaseModel):
-    model_config = ConfigDict(strict=True, extra="forbid")
-    id: UUID
-    definition: DeploymentSpec
 
 
 class ControlClient:

@@ -54,13 +54,22 @@ test.beforeAll(async ({ request }) => {
   ).toEqual(fixtureServers);
 });
 
-test("gateway serves built assets with isolation headers and rejects untrusted hosts/origins", async ({
+test("mslb gateway exposes product identity, isolation headers and host/origin restrictions", async ({
+  page,
   request,
 }) => {
   const response = await request.get("/");
   expect(response.status()).toBe(200);
   expect(response.headers()["content-security-policy"]).toContain("connect-src 'self'");
   expect(response.headers()["x-content-type-options"]).toBe("nosniff");
+  await page.goto("/");
+  await expect(page).toHaveTitle("mslb · Simulation workspace");
+  await expect(page.getByText("mslb", { exact: true })).toBeVisible();
+  const openapi = await request.get("/api/v1/openapi.json", { headers: fixtureHeaders });
+  expect(openapi.status()).toBe(200);
+  expect(
+    z.object({ info: z.object({ title: z.string() }) }).parse(await openapi.json()).info.title,
+  ).toBe("mslb API");
   expect(
     (
       await request.get("/api/v1/servers", { headers: { Host: "untrusted.example:8080" } })

@@ -1,0 +1,25 @@
+{
+  "include": ["apps", "packages", "scripts", "tests"],
+  "exclude": [
+    "scripts/validate_run.py",
+    "docs/assignment/test-data",
+    "**/node_modules",
+    "**/__pycache__"
+  ],
+  "pythonVersion": "3.13",
+  "pythonPlatform": "Linux",
+  "typeCheckingMode": "standard",
+  "venvPath": ".",
+  "venv": ".venv",
+  "extraPaths": [
+    ".",
+    "apps/api/src",
+    "apps/worker/src",
+    "apps/container-controller/src",
+    "apps/mock-server/src",
+    "packages/application/src",
+    "packages/contracts/src",
+    "packages/engine/src",
+    "packages/persistence/src"
+  ]
+}

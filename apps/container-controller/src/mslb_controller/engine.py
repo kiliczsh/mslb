@@ -2,58 +2,22 @@
 
 import asyncio
 import re
-from typing import Annotated
 
 import httpx
-from mslb_contracts.docker_runs import CreationIntent, DockerId, ImageId
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from mslb_contracts.docker_runs import CreationIntent
+from pydantic import BaseModel, ValidationError
+
+from mslb_controller.engine_models import ContainerInfo as ContainerInfo
+from mslb_controller.engine_models import Created as Created
+from mslb_controller.engine_models import EngineModel as EngineModel
+from mslb_controller.engine_models import ImageInfo as ImageInfo
+from mslb_controller.engine_models import NetworkInfo as NetworkInfo
+from mslb_controller.errors import EngineError as EngineError
 
 PROJECT = "mslb"
 IMAGE = "mslb-python-runtime:local"
 NETWORK = PROJECT + "_docker-traffic"
 API_VERSION = "/v1.53"
-
-
-class EngineError(Exception):
-    """Safe status only; daemon/transport error text can contain privileged host details."""
-
-    def __init__(self, code: str, status: int | None = None) -> None:
-        self.code, self.status = code, status
-        super().__init__(code)
-
-
-class EngineModel(BaseModel):
-    model_config = ConfigDict(strict=True, extra="ignore")
-
-
-class ImageInfo(EngineModel):
-    Id: ImageId
-    Config: dict[str, object]
-
-
-class NetworkInfo(EngineModel):
-    Id: DockerId
-    Name: Annotated[str, Field(max_length=128)]
-    Driver: Annotated[str, Field(max_length=64)]
-    Internal: bool
-    Scope: Annotated[str, Field(max_length=32)]
-    Labels: dict[str, str]
-
-
-class ContainerInfo(EngineModel):
-    Id: DockerId
-    Image: ImageId
-    Name: Annotated[str, Field(max_length=128)]
-    Config: dict[str, object]
-    HostConfig: dict[str, object]
-    State: dict[str, object]
-    NetworkSettings: dict[str, object]
-    Mounts: Annotated[list[dict[str, object]], Field(max_length=8)]
-
-
-class Created(EngineModel):
-    Id: DockerId
-    Warnings: Annotated[list[str], Field(max_length=16)] | None = None
 
 
 class Engine:

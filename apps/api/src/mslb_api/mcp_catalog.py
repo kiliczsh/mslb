@@ -34,7 +34,7 @@ from mslb_contracts.queries import ChartView, ComparisonView, MetricsView, Page,
 from pydantic import BaseModel
 
 DIALECT = "https://json-schema.org/draft/2020-12/schema"
-CONTRACT_VERSION = "1.1.0"
+CONTRACT_VERSION = "2.0.0"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

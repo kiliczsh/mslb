@@ -37,7 +37,7 @@ class DispatchRefused(TrafficError):
     """The owned task reached dispatch after its admission became unusable."""
 
     def __init__(self, *, reason: HttpReason) -> None:
-        self.reason = reason
+        self.reason: HttpReason = reason
         super().__init__(code=reason)
 
 
@@ -141,7 +141,7 @@ class TrafficDriver:
                 reason: HttpReason = (
                     error.code
                     if error.code
-                    in {"HTTP_STATUS", "CONNECTION_FAILED", "INVALID_RESPONSE", "HTTP_TIMEOUT"}
+                    in ("HTTP_STATUS", "CONNECTION_FAILED", "INVALID_RESPONSE", "HTTP_TIMEOUT")
                     else "HTTP_FAILURE"
                 )
                 reservation.backend.healthy = False

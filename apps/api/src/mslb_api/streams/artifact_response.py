@@ -1,65 +1,20 @@
-"""Verified bounded file and ZIP streams with deterministic resource cleanup."""
+"""Verified bounded artifact and ZIP responses with deterministic cleanup."""
 
 import asyncio
-import io
 import queue
-import time
 import zipfile
-from collections.abc import AsyncGenerator, Buffer, Callable
+from collections.abc import AsyncGenerator
 from contextlib import ExitStack
 from threading import Event
 from typing import BinaryIO, override
 
-from mslb_application.errors import OperationError
 from mslb_application.queries import Download
 from starlette.requests import ClientDisconnect
 from starlette.responses import StreamingResponse
 from starlette.types import Message, Receive, Scope, Send
 
-SEND_TIMEOUT_SECONDS = 5
-
-
-async def finish[T](*, operation: Callable[[], T]) -> T:
-    """Do not abandon bounded filesystem work or cleanup on repeated cancellation."""
-    task = asyncio.create_task(asyncio.to_thread(operation))
-    try:
-        return await asyncio.shield(task)
-    except asyncio.CancelledError:
-        drained = asyncio.gather(task, return_exceptions=True)
-        while not drained.done():
-            try:
-                await asyncio.shield(drained)
-            except asyncio.CancelledError:
-                continue
-        raise
-
-
-class _ZipSink(io.RawIOBase):
-    def __init__(self, *, pending: queue.Queue[bytes], stopped: Event) -> None:
-        super().__init__()
-        self.pending, self.stopped = pending, stopped
-
-    @override
-    def writable(self) -> bool:
-        return True
-
-    @override
-    def write(self, b: Buffer, /) -> int:
-        value = memoryview(b)
-        for offset in range(0, len(value), 64 * 1024):
-            deadline = time.monotonic() + 5
-            while not self.stopped.is_set():
-                try:
-                    self.pending.put(bytes(value[offset : offset + 64 * 1024]), timeout=0.1)
-                    break
-                except queue.Full:
-                    if time.monotonic() > deadline:
-                        raise OperationError(
-                            "INTERRUPTED", "Archive consumer stopped reading"
-                        ) from None
-            else:
-                raise OperationError("INTERRUPTED", "Archive stream closed")
-        return len(value)
+from mslb_api.streams.cleanup import finish
+from mslb_api.streams.zip_sink import _ZipSink
 
 
 class ArtifactResponse(StreamingResponse):
@@ -122,8 +77,11 @@ class ArtifactResponse(StreamingResponse):
 
     @override
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        # Read the public policy at call time without an import-time dependency cycle.
+        from mslb_api import streams
+
         async def bounded_send(message: Message) -> None:
-            await asyncio.wait_for(fut=send(message), timeout=SEND_TIMEOUT_SECONDS)
+            await asyncio.wait_for(fut=send(message), timeout=streams.SEND_TIMEOUT_SECONDS)
 
         try:
             await finish(operation=self.prepare)
@@ -136,24 +94,3 @@ class ArtifactResponse(StreamingResponse):
                 await self.source.aclose()
             finally:
                 await finish(operation=self.stack.close)
-
-
-class EventResponse(StreamingResponse):
-    def __init__(
-        self, *, source: AsyncGenerator[bytes], media_type: str, headers: dict[str, str]
-    ) -> None:
-        self.source = source
-        super().__init__(content=source, media_type=media_type, headers=headers)
-
-    @override
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        async def bounded_send(message: Message) -> None:
-            await asyncio.wait_for(fut=send(message), timeout=SEND_TIMEOUT_SECONDS)
-
-        try:
-            await super().__call__(scope, receive, bounded_send)
-        except (TimeoutError, ClientDisconnect):
-            # A full socket must release the stream slot, just like a disconnect.
-            return
-        finally:
-            await self.source.aclose()
