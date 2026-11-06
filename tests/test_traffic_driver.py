@@ -325,3 +325,84 @@ def test_runtime_events_cannot_claim_logical_or_unobserved_success() -> None:
     ):
         with pytest.raises(expected_exception=ValidationError):
             HttpEvent.model_validate(obj=base | change)
+
+
+@pytest.mark.parametrize(argnames="delayed_kind", argvalues=["arrived", "admitted"])
+@pytest.mark.parametrize(argnames="delay", argvalues=[0.9, 0.999, 1.0, 1.1])
+def test_event_write_delay_rechecks_pending_deadline_before_reservation_and_send(
+    delayed_kind: str, delay: float
+) -> None:
+    async def run() -> None:
+        http, clock = Transport(), FakeClock()
+        events: list[HttpEvent] = []
+
+        class DelayedSink:
+            async def append(self, *, event: HttpEvent) -> None:
+                events.append(event)
+                if event.kind == delayed_kind:
+                    clock.current += delay
+
+        driver = TrafficDriver(
+            configuration=DockerSettings(
+                initial_replicas=1, duration_seconds=3, pending_timeout_seconds=1
+            ),
+            specs=(BackendSpec(id="backend-a"),),
+            http=http,
+            sink=DelayedSink(),
+            clock=clock,
+        )
+        try:
+            summary = await driver.execute(requests=rows(count=1))
+            assert summary.peak_pending == 1
+            if delay < 0.98:
+                assert summary.completed == 1 and len(http.calls) == 1
+            else:
+                assert http.calls == [] and summary.completed == 0
+                assert events[-1].reason == "PENDING_TIMEOUT"
+                expired_before_reservation = delayed_kind == "arrived" and delay >= 1
+                assert events[-1].kind == (
+                    "dropped" if expired_before_reservation else "unexecuted"
+                )
+                assert summary.peak_inflight == (0 if expired_before_reservation else 1)
+            assert driver.router.states["backend-a"].inflight == 0
+            assert driver.router.states["backend-a"].reserved_mem_mb == 0
+        finally:
+            await http.close()
+
+    asyncio.run(main=run())
+
+
+def test_task_start_rechecks_expiry_if_other_arrival_recording_delays_dispatch() -> None:
+    async def run() -> None:
+        http, clock = Transport(), FakeClock()
+        events: list[HttpEvent] = []
+
+        class DelayedSink:
+            async def append(self, *, event: HttpEvent) -> None:
+                events.append(event)
+                if event.kind == "arrived" and event.request_id == "r-00001":
+                    clock.current += 1.1
+
+        driver = TrafficDriver(
+            configuration=DockerSettings(
+                initial_replicas=1, duration_seconds=3, pending_timeout_seconds=1
+            ),
+            specs=(BackendSpec(id="backend-a"),),
+            http=http,
+            sink=DelayedSink(),
+            clock=clock,
+        )
+        try:
+            summary = await driver.execute(requests=rows(count=2))
+            assert http.calls == []
+            assert summary.dropped == summary.unexecuted == 1
+            assert summary.completed == summary.failed == 0
+            assert [
+                event.reason for event in events if event.kind in {"dropped", "unexecuted"}
+            ] == ["PENDING_TIMEOUT", "PENDING_TIMEOUT"]
+            state = driver.router.states["backend-a"]
+            assert state.inflight == state.reserved_mem_mb == 0 and state.healthy
+        finally:
+            await http.close()
+
+    asyncio.run(main=run())

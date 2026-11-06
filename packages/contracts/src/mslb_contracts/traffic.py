@@ -18,7 +18,7 @@ class WorkRequest(BaseModel):
     @field_validator("request_id")
     @classmethod
     def normalize_id(cls, value: str) -> str:
-        return normalize_identifier(value)
+        return normalize_identifier(value=value)
 
 
 class WorkCompleted(BaseModel):

@@ -31,7 +31,7 @@ class ServerReference(ReadModel):
     @field_validator("server_id")
     @classmethod
     def normalized(cls, value: str) -> str:
-        return normalize_identifier(value)
+        return normalize_identifier(value=value)
 
 
 class ServerUpdate(ServerReference):

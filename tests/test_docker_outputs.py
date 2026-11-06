@@ -11,6 +11,7 @@ import pytest
 from mslb_application.docker_outputs import DockerOutputs, verify_docker_outputs
 from mslb_application.errors import OperationError
 from mslb_application.files import ManagedFiles, StorageLimits
+from mslb_contracts.canonical import canonical_bytes
 from mslb_contracts.docker_runs import (
     DockerManifest,
     DockerSettings,
@@ -18,6 +19,7 @@ from mslb_contracts.docker_runs import (
     StaticBackend,
     StaticReservation,
 )
+from mslb_contracts.docker_runtime import HttpEvent
 from mslb_contracts.durability import StoredFile
 from mslb_contracts.inputs import RequestInput, input_digest
 from mslb_controller.routing import BackendSpec
@@ -35,16 +37,23 @@ class Candidate:
     requests: tuple[RequestInput, ...]
 
 
-async def candidate(*, root: Path, release: bool = True) -> Candidate:
-    requests = rows(count=2)
+async def candidate(
+    *,
+    root: Path,
+    release: bool = True,
+    configuration: DockerSettings | None = None,
+    count: int = 2,
+    delay_kind: str | None = None,
+) -> Candidate:
+    requests = rows(count=count)
     snapshot = DockerSnapshot(
         dataset_id=uuid4(),
         dataset_digest=input_digest(records=requests),
-        request_count=2,
+        request_count=len(requests),
         latest_arrival=0,
         deployment_id=uuid4(),
         deployment_digest="a" * 64,
-        configuration=DockerSettings(initial_replicas=1, duration_seconds=1),
+        configuration=configuration or DockerSettings(initial_replicas=1, duration_seconds=1),
     )
     run_id, resource_id = uuid4(), uuid4()
     definition = StaticReservation(
@@ -71,12 +80,20 @@ async def candidate(*, root: Path, release: bool = True) -> Candidate:
             files=files, run_id=run_id, fence=3, snapshot=snapshot, requests=requests
         ) as output:
             await output.observe(resource=resource)
+            clock = FakeClock()
+
+            class DelayedSink:
+                async def append(self, *, event: HttpEvent) -> None:
+                    await output.append(event=event)
+                    if event.kind == delay_kind:
+                        clock.current += 1
+
             driver = TrafficDriver(
                 configuration=snapshot.configuration,
                 specs=(BackendSpec(id="backend-a"),),
                 http=http,
-                sink=output,
-                clock=FakeClock(),
+                sink=DelayedSink(),
+                clock=clock,
             )
             summary = await driver.execute(requests=requests)
             if release:
@@ -211,3 +228,59 @@ def test_hash_mismatch_and_scoped_candidate_quota_are_enforced(tmp_path: Path) -
             stream.write(data=b"x" * 33)
             stream.sync()
     assert not files.path(key=key).exists()
+
+
+@pytest.mark.parametrize(argnames="field", argvalues=["peak_pending", "peak_inflight"])
+@pytest.mark.parametrize(argnames="direction", argvalues=["lower", "higher"])
+def test_rehashed_summary_cannot_understate_or_overstate_observed_peaks(
+    tmp_path: Path, field: str, direction: str
+) -> None:
+    saved = asyncio.run(main=candidate(root=tmp_path))
+    original = saved.manifest.artifacts["runtime_summary.json"]
+    path = saved.files.path(key=original.key)
+    runtime = json.loads(s=path.read_bytes())
+    assert runtime["traffic"]["peak_pending"] == 1
+    assert runtime["traffic"]["peak_inflight"] == 2
+    runtime["traffic"][field] = 0 if direction == "lower" else runtime["traffic"][field] + 1
+    raw = canonical_bytes(value=runtime)
+    path.write_bytes(data=raw)
+    changed = StoredFile(
+        key=original.key, sha256=hashlib.sha256(string=raw).hexdigest(), size_bytes=len(raw)
+    )
+    manifest = saved.manifest.model_copy(
+        update={"artifacts": saved.manifest.artifacts | {"runtime_summary.json": changed}}
+    )
+    with pytest.raises(expected_exception=OperationError, match="observed peaks"):
+        verify(saved=saved, manifest=manifest)
+
+
+@pytest.mark.parametrize(argnames="variant", argvalues=["overflow", "arrived", "admitted"])
+def test_peak_replay_accounts_for_overflow_and_reserved_but_unsent_work(
+    tmp_path: Path, variant: str
+) -> None:
+    saved = asyncio.run(
+        main=candidate(
+            root=tmp_path,
+            configuration=DockerSettings(
+                initial_replicas=1,
+                duration_seconds=1,
+                global_inflight=1,
+                backend_inflight=1,
+                max_pending=1,
+            ),
+            count=4 if variant == "overflow" else 2,
+            delay_kind=None if variant == "overflow" else variant,
+        )
+    )
+    runtime = verify_docker_outputs(
+        files=saved.files,
+        manifest=saved.manifest,
+        snapshot=saved.snapshot,
+        requests=saved.requests,
+    )
+    assert runtime.traffic.peak_pending == 1
+    assert runtime.traffic.peak_inflight == (0 if variant == "arrived" else 1)
+    if variant == "overflow":
+        assert runtime.traffic.completed == 2 and runtime.traffic.dropped == 2
+    else:
+        assert runtime.traffic.unexecuted == 2 and runtime.traffic.completed == 0

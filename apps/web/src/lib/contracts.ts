@@ -16,12 +16,15 @@ export const serverInputSchema = z.strictObject({
     .transform((value) => value.normalize("NFC"))
     .refine(
       (value) =>
+        value !== "." &&
+        value !== ".." &&
+        !value.includes("\u0000") &&
         new TextEncoder().encode(value).length <= 128 &&
         Array.from(value).every((character) => {
           const point = character.codePointAt(0) ?? 0;
           return point < 0xd800 || point > 0xdfff;
         }),
-      "Server ID must contain 1–128 UTF-8 bytes",
+      "Server ID must contain 1–128 UTF-8 bytes, exclude NUL, and differ from . and ..",
     ),
   cpu_units_per_tick: capacity,
   mem_mb: capacity,

@@ -12,6 +12,12 @@ const emptyServer: ServerInput = {
   rate_limit_per_sec: 10,
 };
 
+type SaveRequest = {
+  body: ServerInput;
+  expectedVersion: number | null;
+  editSession: number;
+};
+
 export function ServerManager({ api }: { api: Api }) {
   const client = useQueryClient();
   const servers = useQuery({ queryKey: ["servers"], queryFn: ({ signal }) => api.servers(signal) });
@@ -23,12 +29,16 @@ export function ServerManager({ api }: { api: Api }) {
     if (deleting) keepServer.current?.focus();
   }, [deleting]);
   const [localError, setLocalError] = useState("");
+  const editSession = useRef(0);
   const save = useMutation({
-    mutationFn: (body: ServerInput) =>
-      editing ? api.updateServer(body, editing.version) : api.createServer(body),
-    onSuccess: async () => {
-      setDraft(emptyServer);
-      setEditing(null);
+    mutationFn: ({ body, expectedVersion }: SaveRequest) =>
+      expectedVersion === null ? api.createServer(body) : api.updateServer(body, expectedVersion),
+    onSuccess: async (_saved, request) => {
+      if (editSession.current === request.editSession) {
+        editSession.current += 1;
+        setDraft(emptyServer);
+        setEditing(null);
+      }
       await client.invalidateQueries({ queryKey: ["servers"] });
     },
   });
@@ -44,6 +54,7 @@ export function ServerManager({ api }: { api: Api }) {
     },
   });
   function edit(server: Server | null) {
+    editSession.current += 1;
     setEditing(server);
     setDraft(
       server
@@ -137,7 +148,12 @@ export function ServerManager({ api }: { api: Api }) {
             return;
           }
           setLocalError("");
-          save.mutate(parsed.data);
+          editSession.current += 1;
+          save.mutate({
+            body: parsed.data,
+            expectedVersion: editing?.version ?? null,
+            editSession: editSession.current,
+          });
         }}
       >
         <h3>{editing ? `Edit ${editing.id} · version ${editing.version}` : "Add a server"}</h3>
@@ -147,7 +163,7 @@ export function ServerManager({ api }: { api: Api }) {
             <input
               required
               maxLength={128}
-              disabled={editing !== null}
+              disabled={editing !== null || save.isPending}
               value={draft.id}
               onChange={(event) => setDraft({ ...draft, id: event.target.value })}
             />
@@ -163,6 +179,7 @@ export function ServerManager({ api }: { api: Api }) {
               }
               <input
                 type="number"
+                disabled={save.isPending}
                 required
                 min={1}
                 max={1_000_000_000}
@@ -184,7 +201,9 @@ export function ServerManager({ api }: { api: Api }) {
             <button
               type="button"
               onClick={async () => {
+                const currentSession = editSession.current;
                 const result = await servers.refetch();
+                if (currentSession !== editSession.current) return;
                 const current = result.data?.items.find((server) => server.id === editing.id);
                 if (current) edit(current);
                 else

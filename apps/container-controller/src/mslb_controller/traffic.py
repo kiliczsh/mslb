@@ -33,6 +33,14 @@ class MonotonicClock:
         await asyncio.sleep(delay=seconds)
 
 
+class DispatchRefused(TrafficError):
+    """The owned task reached dispatch after its admission became unusable."""
+
+    def __init__(self, *, reason: HttpReason) -> None:
+        self.reason = reason
+        super().__init__(code=reason)
+
+
 @dataclass(slots=True, kw_only=True)
 class TrafficDriver:
     configuration: DockerSettings
@@ -127,6 +135,8 @@ class TrafficDriver:
             request = RequestInput(t=0, **reservation.request.model_dump())
             try:
                 result = task.result()
+            except DispatchRefused as error:
+                await self.emit(request=request, kind="unexecuted", reason=error.reason)
             except TrafficError as error:
                 reason: HttpReason = (
                     error.code
@@ -151,9 +161,21 @@ class TrafficDriver:
             finally:
                 reservation.release()
 
+    async def send(self, *, request: RequestInput, reservation: Reservation) -> WorkCompleted:
+        reason = self.halt()
+        if reason is not None:
+            raise DispatchRefused(reason=reason)
+        if self.elapsed() - request.t >= self.configuration.pending_timeout_seconds:
+            raise DispatchRefused(reason="PENDING_TIMEOUT")
+        return await self.http.work(reservation=reservation)
+
     async def dispatch(self) -> None:
         while self.pending and self.halt() is None:
             request = self.pending[0]
+            if self.elapsed() - request.t >= self.configuration.pending_timeout_seconds:
+                self.pending.popleft()
+                await self.emit(request=request, kind="dropped", reason="PENDING_TIMEOUT")
+                continue
             try:
                 reservation = self.router.reserve(
                     request=WorkRequest(
@@ -169,6 +191,8 @@ class TrafficDriver:
                 await self.emit(request=request, kind="dropped", reason="UNSCHEDULABLE_MEMORY")
                 continue
             self.pending.popleft()
+            # Admission owns a reservation even if its event write delays or prevents dispatch.
+            self.peak_inflight = max(self.peak_inflight, len(self.inflight) + 1)
             try:
                 await self.emit(
                     request=request, kind="admitted", backend_id=reservation.backend.spec.id
@@ -177,9 +201,11 @@ class TrafficDriver:
                 if reason is not None:
                     await self.emit(request=request, kind="unexecuted", reason=reason)
                     continue
-                task = asyncio.create_task(coro=self.http.work(reservation=reservation))
+                if self.elapsed() - request.t >= self.configuration.pending_timeout_seconds:
+                    await self.emit(request=request, kind="unexecuted", reason="PENDING_TIMEOUT")
+                    continue
+                task = asyncio.create_task(coro=self.send(request=request, reservation=reservation))
                 self.inflight[task] = reservation
-                self.peak_inflight = max(self.peak_inflight, len(self.inflight))
             finally:
                 if not any(item is reservation for item in self.inflight.values()):
                     reservation.release()
@@ -247,15 +273,20 @@ class TrafficDriver:
                 ):
                     request = requests[cursor]
                     cursor += 1
+                    queued = len(self.pending) < self.configuration.max_pending
+                    if queued:
+                        # Queue membership is established at arrival observation, before sink I/O.
+                        self.pending.append(request)
+                        self.peak_pending = max(self.peak_pending, len(self.pending))
                     await self.emit(request=request, kind="arrived")
                     arrival_stop = self.halt()
                     if arrival_stop is not None:
+                        if queued:
+                            self.pending.pop()
                         await self.emit(request=request, kind="unexecuted", reason=arrival_stop)
-                    elif len(self.pending) >= self.configuration.max_pending:
+                    elif not queued:
                         await self.emit(request=request, kind="dropped", reason="PENDING_OVERFLOW")
                     else:
-                        self.pending.append(request)
-                        self.peak_pending = max(self.peak_pending, len(self.pending))
                         await self.dispatch()
                 if refresh is not None and refresh.done():
                     refresh.result()

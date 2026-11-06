@@ -170,7 +170,14 @@ def test_disconnect_closes_verified_file_and_archive_resources(
 ) -> None:
     files = ManagedFiles(tmp_path, StorageLimits(min_free_bytes=0))
     reference = files.publish("datasets/disconnect.csv", (os.urandom(2 * 1024**2),), 3 * 1024**2)
-    response = ArtifactResponse((Download(files, reference, "requests.csv", "text/csv"),), archive)
+    response = ArtifactResponse(
+        downloads=(
+            Download(
+                files=files, reference=reference, filename="requests.csv", media_type="text/csv"
+            ),
+        ),
+        archive=archive,
+    )
 
     async def scenario() -> None:
         async def receive() -> dict[str, str]:

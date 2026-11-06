@@ -165,6 +165,8 @@ def verify_docker_outputs(
         sequence = 0
         last_elapsed = 0.0
         active_http: dict[str, HttpRecord] = {}
+        pending: set[str] = set()
+        peak_pending = peak_inflight = 0
         with files.verified_stream(
             reference=FileReference(**manifest.artifacts["http_events.jsonl"].model_dump())
         ) as stream:
@@ -223,8 +225,17 @@ def verify_docker_outputs(
                         condition=event.elapsed_seconds >= expected[event.request_id].t,
                         message="Docker arrival was observed before its offset",
                     )
+                    if len(pending) < snapshot.configuration.max_pending:
+                        pending.add(event.request_id)
+                        peak_pending = max(peak_pending, len(pending))
                 if event.kind == "admitted":
+                    require(
+                        condition=event.request_id in pending,
+                        message="Docker HTTP admission did not own a queue slot",
+                    )
+                    pending.remove(event.request_id)
                     active_http[event.request_id] = event
+                    peak_inflight = max(peak_inflight, len(active_http))
                     require(
                         condition=len(active_http) <= snapshot.configuration.global_inflight,
                         message="Docker HTTP global inflight ceiling exceeded",
@@ -251,13 +262,22 @@ def verify_docker_outputs(
                         message="Docker HTTP operation count differs",
                     )
                 if event.kind in counts:
+                    if previous is not None and previous.kind == "arrived":
+                        require(
+                            condition=(event.request_id not in pending)
+                            == (event.reason == "PENDING_OVERFLOW")
+                            or event.kind == "unexecuted",
+                            message="Docker pending refusal differs from queue membership",
+                        )
+                    pending.discard(event.request_id)
                     counts[event.kind] += 1
                     active_http.pop(event.request_id, None)
                 states[event.request_id] = event
         require(
             condition=set(states) == set(expected)
             and sum(counts.values()) == len(requests)
-            and not active_http,
+            and not active_http
+            and not pending,
             message="Docker HTTP terminal accounting is incomplete",
         )
         for name, count in counts.items():
@@ -265,6 +285,11 @@ def verify_docker_outputs(
                 condition=count == getattr(summary, name) == getattr(manifest, name),
                 message="Docker HTTP terminal totals differ",
             )
+        require(
+            condition=(summary.peak_pending, summary.peak_inflight)
+            == (peak_pending, peak_inflight),
+            message="Docker HTTP observed peaks differ from the event history",
+        )
         return runtime
     except (OSError, ValidationError):
         raise OperationError(

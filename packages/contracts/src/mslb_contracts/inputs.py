@@ -28,9 +28,13 @@ class InputError(ValueError):
         super().__init__(f"{field}: {reason}")
 
 
-def normalize_identifier(value: str) -> str:
+def normalize_identifier(*, value: str) -> str:
     """Trim edge whitespace and normalize Unicode without folding case."""
     normalized = unicodedata.normalize("NFC", value.strip())
+    if "\x00" in normalized:
+        raise ValueError("identifier_cannot_contain_nul")
+    if normalized in {".", ".."}:
+        raise ValueError("identifier_cannot_be_dot_segment")
     try:
         size = len(normalized.encode("utf-8"))
     except UnicodeEncodeError:
@@ -52,7 +56,7 @@ class ServerInput(BaseModel):
     @field_validator("id")
     @classmethod
     def normalize_id(cls, value: str) -> str:
-        return normalize_identifier(value)
+        return normalize_identifier(value=value)
 
 
 class RequestInput(BaseModel):
@@ -67,7 +71,7 @@ class RequestInput(BaseModel):
     @field_validator("request_id")
     @classmethod
     def normalize_id(cls, value: str) -> str:
-        return normalize_identifier(value)
+        return normalize_identifier(value=value)
 
 
 class ServerDocument(BaseModel):

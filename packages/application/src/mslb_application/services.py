@@ -50,7 +50,7 @@ class Services:
 
     async def get_server(self, server_id: str) -> ServerView:
         try:
-            normalized = normalize_identifier(server_id)
+            normalized = normalize_identifier(value=server_id)
         except ValueError:
             raise OperationError("VALIDATION_ERROR", "Invalid server identifier") from None
         for value in await self.catalog.list_servers():

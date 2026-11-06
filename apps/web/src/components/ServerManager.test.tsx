@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { Api } from "../lib/api.js";
@@ -70,3 +70,62 @@ it("preserves a stale edit, requires deliberate reload, then saves with the curr
   expect(diagnostics).not.toHaveBeenCalled();
   diagnostics.mockRestore();
 });
+
+it.each(["another server", "a new server"])(
+  "keeps the newer edit session when a prior save completes while editing %s",
+  async (destination) => {
+    const diagnostics = vi.spyOn(console, "error");
+    const servers = ["A", "B"].map((id) => ({
+      id,
+      cpu_units_per_tick: 1,
+      mem_mb: 100,
+      rate_limit_per_sec: 2,
+      version: 1,
+    }));
+    const pending: ((response: Response) => void)[] = [];
+    const api = new Api("", async (_input, init) => {
+      if (init?.method === "PATCH") {
+        return new Promise<Response>((resolve) => pending.push(resolve));
+      }
+      return Response.json({ items: servers, next_cursor: null });
+    });
+    const client = createQueryClient();
+    render(
+      <QueryClientProvider client={client}>
+        <ServerManager api={api} />
+      </QueryClientProvider>,
+    );
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Edit A" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await vi.waitFor(() => expect(pending).toHaveLength(1));
+    expect(screen.getByLabelText("Memory capacity (MB)")).toHaveProperty("disabled", true);
+    if (destination === "another server") {
+      await user.click(screen.getByRole("button", { name: "Edit B" }));
+    } else {
+      await user.click(screen.getByRole("button", { name: "Cancel editing" }));
+      await user.type(screen.getByLabelText("Server ID"), "C");
+    }
+    const memory = screen.getByLabelText("Memory capacity (MB)");
+    await user.clear(memory);
+    await user.type(memory, "777");
+    await act(async () => {
+      pending[0]?.(Response.json({ ...servers[0], version: 2 }));
+    });
+    await vi.waitFor(() => expect(client.isFetching()).toBe(0));
+    expect(
+      screen.getByRole("heading", {
+        name: destination === "another server" ? "Edit B · version 1" : "Add a server",
+      }),
+    ).toBeTruthy();
+    expect(memory).toHaveProperty("value", "777");
+    expect(screen.getByLabelText("Server ID")).toHaveProperty(
+      "value",
+      destination === "another server" ? "B" : "C",
+    );
+    api.close();
+    client.clear();
+    expect(diagnostics).not.toHaveBeenCalled();
+    diagnostics.mockRestore();
+  },
+);

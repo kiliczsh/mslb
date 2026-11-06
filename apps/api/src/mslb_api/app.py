@@ -74,7 +74,7 @@ class _Multipart(MultiPartParser):
             # Starlette closes these spools for its own multipart exceptions.
             # Also close them when our receive budget or client cancellation fires.
             for spool in self._files_to_close_on_error:
-                await finish(spool.close)
+                await finish(operation=spool.close)
             raise
 
 
@@ -396,7 +396,7 @@ def create_app(
         },
     )
     async def artifact(run_id: UUID, name: ArtifactName = "run.jsonl") -> Response:
-        return ArtifactResponse((await queries.download(run_id, name),))
+        return ArtifactResponse(downloads=(await queries.download(run_id=run_id, name=name),))
 
     @router.get(
         "/simulations/{run_id}/inputs",
@@ -410,11 +410,11 @@ def create_app(
     async def run_inputs(run_id: UUID) -> Response:
         downloads = tuple(
             [
-                await queries.download(run_id, name)
+                await queries.download(run_id=run_id, name=name)
                 for name in ("servers.json", "requests.csv", "snapshot.json", "manifest.json")
             ]
         )
-        return ArtifactResponse(downloads, archive=True)
+        return ArtifactResponse(downloads=downloads, archive=True)
 
     @router.get(
         "/simulations/{run_id}/stream",
@@ -428,7 +428,7 @@ def create_app(
         feed = EventFeed(database, run_id, int(last))
         initial = await queries.run(run_id)
         return EventResponse(
-            feed.stream(initial),
+            source=feed.stream(initial=initial),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )

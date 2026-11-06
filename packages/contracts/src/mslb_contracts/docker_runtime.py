@@ -56,6 +56,8 @@ class HttpEvent(DockerModel):
 
 
 class TrafficSummary(DockerModel):
+    """Peaks count queued arrivals and owned HTTP reservations, including unsent admissions."""
+
     schema_version: Annotated[int, Field(ge=1, le=1)] = 1
     mode: Literal["docker"] = "docker"
     status: Literal["completed", "cancelled", "failed"]

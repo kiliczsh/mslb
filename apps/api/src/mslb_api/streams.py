@@ -16,8 +16,10 @@ from starlette.requests import ClientDisconnect
 from starlette.responses import StreamingResponse
 from starlette.types import Message, Receive, Scope, Send
 
+SEND_TIMEOUT_SECONDS = 5
 
-async def finish[T](operation: Callable[[], T]) -> T:
+
+async def finish[T](*, operation: Callable[[], T]) -> T:
     """Do not abandon bounded filesystem work or cleanup on repeated cancellation."""
     task = asyncio.create_task(asyncio.to_thread(operation))
     try:
@@ -33,7 +35,7 @@ async def finish[T](operation: Callable[[], T]) -> T:
 
 
 class _ZipSink(io.RawIOBase):
-    def __init__(self, pending: queue.Queue[bytes], stopped: Event) -> None:
+    def __init__(self, *, pending: queue.Queue[bytes], stopped: Event) -> None:
         super().__init__()
         self.pending, self.stopped = pending, stopped
 
@@ -61,7 +63,7 @@ class _ZipSink(io.RawIOBase):
 
 
 class ArtifactResponse(StreamingResponse):
-    def __init__(self, downloads: tuple[Download, ...], archive: bool = False) -> None:
+    def __init__(self, *, downloads: tuple[Download, ...], archive: bool = False) -> None:
         self.downloads, self.archive = downloads, archive
         self.stack = ExitStack()
         self.files: list[BinaryIO] = []
@@ -73,31 +75,31 @@ class ArtifactResponse(StreamingResponse):
             headers["ETag"] = '"' + downloads[0].reference.sha256 + '"'
         self.source = self.chunks()
         super().__init__(
-            self.source,
+            content=self.source,
             media_type="application/zip" if archive else downloads[0].media_type,
             headers=headers,
         )
 
     def prepare(self) -> None:
         for download in self.downloads:
-            self.files.append(self.stack.enter_context(download.open()))
+            self.files.append(self.stack.enter_context(cm=download.open()))
 
     async def chunks(self) -> AsyncGenerator[bytes]:
         if not self.archive:
-            while block := await finish(lambda: self.files[0].read(64 * 1024)):
+            while block := await finish(operation=lambda: self.files[0].read(64 * 1024)):
                 yield block
             return
         pending: queue.Queue[bytes] = queue.Queue(maxsize=1)
 
         def write() -> None:
             with zipfile.ZipFile(
-                _ZipSink(pending, self.stopped),
-                "w",
+                file=_ZipSink(pending=pending, stopped=self.stopped),
+                mode="w",
                 compression=zipfile.ZIP_DEFLATED,
                 compresslevel=1,
             ) as archive:
                 for download, source in zip(self.downloads, self.files, strict=True):
-                    with archive.open(download.filename, "w") as target:
+                    with archive.open(name=download.filename, mode="w") as target:
                         while block := source.read(64 * 1024):
                             target.write(block)
 
@@ -107,7 +109,7 @@ class ArtifactResponse(StreamingResponse):
                 try:
                     yield pending.get_nowait()
                 except queue.Empty:
-                    await asyncio.sleep(0.01)
+                    await asyncio.sleep(delay=0.01)
             await task
         finally:
             self.stopped.set()
@@ -120,30 +122,33 @@ class ArtifactResponse(StreamingResponse):
 
     @override
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        async def bounded_send(message: Message) -> None:
+            await asyncio.wait_for(fut=send(message), timeout=SEND_TIMEOUT_SECONDS)
+
         try:
-            await finish(self.prepare)
-            await super().__call__(scope, receive, send)
-        except ClientDisconnect:
+            await finish(operation=self.prepare)
+            await super().__call__(scope, receive, bounded_send)
+        except (TimeoutError, ClientDisconnect):
             return
         finally:
             self.stopped.set()
             try:
                 await self.source.aclose()
             finally:
-                await finish(self.stack.close)
+                await finish(operation=self.stack.close)
 
 
 class EventResponse(StreamingResponse):
     def __init__(
-        self, source: AsyncGenerator[bytes], media_type: str, headers: dict[str, str]
+        self, *, source: AsyncGenerator[bytes], media_type: str, headers: dict[str, str]
     ) -> None:
         self.source = source
-        super().__init__(source, media_type=media_type, headers=headers)
+        super().__init__(content=source, media_type=media_type, headers=headers)
 
     @override
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         async def bounded_send(message: Message) -> None:
-            await asyncio.wait_for(send(message), timeout=5)
+            await asyncio.wait_for(fut=send(message), timeout=SEND_TIMEOUT_SECONDS)
 
         try:
             await super().__call__(scope, receive, bounded_send)

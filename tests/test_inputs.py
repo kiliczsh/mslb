@@ -3,8 +3,23 @@ import json
 from pathlib import Path
 
 import pytest
-from mslb_contracts.inputs import InputError, ServerInput, input_digest, read_requests, read_servers
+from mslb_contracts.inputs import (
+    InputError,
+    RequestInput,
+    ServerInput,
+    input_digest,
+    read_requests,
+    read_servers,
+)
 from pydantic import ValidationError
+
+
+@pytest.mark.parametrize(argnames="identifier", argvalues=[".", "..", " . ", " .. ", "a\x00b"])
+def test_unaddressable_or_unstorable_identifiers_are_rejected(identifier: str) -> None:
+    with pytest.raises(expected_exception=ValidationError):
+        ServerInput(id=identifier, cpu_units_per_tick=1, mem_mb=1, rate_limit_per_sec=1)
+    with pytest.raises(expected_exception=ValidationError):
+        RequestInput(t=0, request_id=identifier, work_units=1, mem_mb=1)
 
 
 def test_bom_unicode_quotes_and_input_order_normalize() -> None:
