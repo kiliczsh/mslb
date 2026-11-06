@@ -57,6 +57,18 @@ class RunCommand(ReadModel):
     idempotency_key: Annotated[str, Field(min_length=1, max_length=256)] | None = None
 
 
+class WaitArguments(ReadModel):
+    run_ids: Annotated[tuple[RunId, ...], Field(min_length=1, max_length=8)]
+    wait_seconds: Annotated[int, Field(ge=0, le=25)] = 20
+
+    @field_validator("run_ids")
+    @classmethod
+    def unique(cls, value: tuple[UUID, ...]) -> tuple[UUID, ...]:
+        if len(set(value)) != len(value):
+            raise ValueError("Run IDs must be unique")
+        return value
+
+
 class EventArguments(RunReference, PageArguments):
     start_tick: Annotated[int, Field(ge=0, le=1_000_000)] = 0
     end_tick: Annotated[int, Field(ge=0, le=1_000_000)] = 1_000_000

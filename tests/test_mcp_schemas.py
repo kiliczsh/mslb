@@ -14,7 +14,7 @@ def test_generated_inventory_is_stable_valid_complete_and_detects_missing_files(
     assert files == artifacts()
     manifest = json.loads(files["manifest.json"])
     assert (
-        len(manifest["tools"]) == 12
+        len(manifest["tools"]) == 13
         and len(manifest["resources"]) == 4
         and len(manifest["prompts"]) == 3
     )

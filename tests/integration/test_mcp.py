@@ -127,6 +127,10 @@ def test_official_client_discovers_and_exercises_all_tools_resources_and_prompts
                         assert (await call(client, "get_simulation_status", {"run_id": run_id}))[
                             "status"
                         ] == "completed"
+                    waited = await call(
+                        client=client, name="wait_for_simulations", arguments={"run_ids": ids}
+                    )
+                    assert waited["all_terminal"] is True and waited["timed_out"] is False
                     metrics = await call(client, "get_simulation_metrics", {"run_id": ids[0]})
                     assert (
                         isinstance(metrics["summary"], dict)
@@ -425,7 +429,7 @@ def test_official_http_client_auth_origin_and_request_correlation(
                     async with Client(
                         streamable_http_client("http://testserver/mcp", http_client=http)
                     ) as client:
-                        assert len((await client.list_tools()).tools) == 12
+                        assert len((await client.list_tools()).tools) == 13
                         result = await client.call_tool("list_strategies", {})
                         assert not result.is_error and result.meta is not None
                         assert result.meta["request_id"] == request_ids[-1]

@@ -110,7 +110,7 @@ def create_app(
     catalog, jobs = Catalog(database), Jobs(database)
     submissions, queries = Submissions(catalog, inputs), Queries(database, outputs, signing_key)
     services = Services(catalog, jobs, submissions, queries)
-    mcp = McpAdapter(services, settings)
+    mcp = McpAdapter(services=services, settings=settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:

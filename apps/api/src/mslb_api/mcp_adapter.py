@@ -9,6 +9,7 @@ from uuid import uuid4
 from mslb_application.errors import OperationError
 from mslb_application.failures import failure
 from mslb_application.services import Services
+from mslb_application.waiting import RunWaiter
 from mslb_contracts.canonical import canonical_bytes
 from mslb_contracts.http import CompareRequest
 from mslb_contracts.inputs import ServerInput
@@ -25,6 +26,7 @@ from mslb_contracts.mcp import (
     ServerReference,
     ServerResource,
     ServerUpdate,
+    WaitArguments,
 )
 from mcp import MCPError
 from mcp.server import Server, ServerRequestContext
@@ -64,27 +66,33 @@ from mslb_api.mcp_catalog import (
     output_schema,
     schema,
 )
+from mslb_api.mcp_transport import DISCONNECTED, DisconnectAware, while_connected
 from mslb_api.settings import Settings
 
 RESPONSE_LIMIT = 1024**2 - 65536 - 1024
 
 
-def correlation(context: ServerRequestContext[object]) -> str:
+def correlation(*, context: ServerRequestContext[object]) -> str:
     if isinstance(context.request, Request):
         return str(getattr(context.request.state, "request_id", str(uuid4())))
     return str(uuid4())
 
 
 class McpAdapter:
-    def __init__(self, services: Services, settings: Settings) -> None:
+    def __init__(self, *, services: Services, settings: Settings) -> None:
         self.services = services
-        self.calls = asyncio.Semaphore(8)
+        self.calls = asyncio.Semaphore(value=8)
+        self.wait_calls = asyncio.Semaphore(value=2)
+        self.progress_tokens: set[tuple[str, str | int]] = set()
+        self.waiter = RunWaiter(queries=services.queries)
         self.server: Server[object] = Server(
-            "Load balancer",
+            name="Load balancer",
             version=CONTRACT_VERSION,
             instructions=(
-                "Use registered dataset IDs. Runs are queued durably; status and event "
-                "tools return actual results. Resource reads and prompts are read-only."
+                "Use registered dataset IDs. run_simulation durably enqueues and returns promptly. "
+                "Use wait_for_simulations for bounded batch waiting, with progress opt-in. "
+                "Keep get_simulation_status for recovery or occasional explicit checks. "
+                "Resources and prompts are read-only."
             ),
             on_list_tools=self.list_tools,
             on_call_tool=self.call_tool,
@@ -94,23 +102,80 @@ class McpAdapter:
             on_list_prompts=self.list_prompts,
             on_get_prompt=self.get_prompt,
         )
-        self.app = self.server.streamable_http_app(
-            json_response=True,
-            max_request_body_size=65536,
-            max_sessions=10,
-            session_idle_timeout=settings.mcp_session_idle_seconds,
-            transport_security=TransportSecuritySettings(
-                allowed_hosts=list(settings.allowed_hosts),
-                allowed_origins=list(settings.allowed_origins),
-            ),
+        self.app = DisconnectAware(
+            app=self.server.streamable_http_app(
+                json_response=False,
+                max_request_body_size=65536,
+                max_sessions=10,
+                session_idle_timeout=settings.mcp_session_idle_seconds,
+                transport_security=TransportSecuritySettings(
+                    allowed_hosts=list(settings.allowed_hosts),
+                    allowed_origins=list(settings.allowed_origins),
+                ),
+            )
         )
 
     @asynccontextmanager
-    async def admitted(self) -> AsyncGenerator[None]:
-        if self.calls.locked():
-            raise OperationError("RATE_LIMITED", "MCP operation capacity is occupied")
-        async with self.calls:
+    async def admitted(self, *, waiting: bool = False) -> AsyncGenerator[None]:
+        slots = self.wait_calls if waiting else self.calls
+        if slots.locked():
+            raise OperationError(
+                code="RATE_LIMITED",
+                message="MCP wait capacity is occupied"
+                if waiting
+                else "MCP operation capacity is occupied",
+            )
+        async with slots:
             yield
+
+    async def wait(
+        self, *, context: ServerRequestContext[object], argument: WaitArguments
+    ) -> BaseModel:
+        token = context.meta.get("progress_token") if context.meta is not None else None
+        # SDK 2.3 creates request-scoped session facades, even within one retained
+        # HTTP session. Use the validated transport session ID for that lifecycle.
+        owner = (
+            context.request.headers.get("mcp-session-id", f"request-{id(context.session)}")
+            if isinstance(context.request, Request)
+            else f"request-{id(context.session)}"
+        )
+        key = (owner, token) if token is not None else None
+        if key is not None and key in self.progress_tokens:
+            raise OperationError(
+                code="VALIDATION_ERROR", message="Progress token is already active"
+            )
+        if key is not None:
+            self.progress_tokens.add(key)
+
+        async def report(*, progress: int, message: str) -> None:
+            if token is None:
+                return
+            await context.session.send_progress_notification(
+                progress_token=token,
+                progress=float(progress),
+                message=message,
+                related_request_id=str(context.request_id)
+                if context.request_id is not None
+                else None,
+            )
+
+        disconnected = (
+            getattr(context.request.state, DISCONNECTED, None)
+            if isinstance(context.request, Request)
+            else None
+        )
+        try:
+            return await while_connected(
+                operation=self.waiter.wait(
+                    run_ids=argument.run_ids,
+                    wait_seconds=argument.wait_seconds,
+                    report=report if token is not None else None,
+                ),
+                disconnected=disconnected,
+            )
+        finally:
+            if key is not None:
+                self.progress_tokens.discard(key)
 
     async def list_tools(
         self, context: ServerRequestContext[object], params: PaginatedRequestParams | None
@@ -120,8 +185,8 @@ class McpAdapter:
                 Tool(
                     name=tool.name,
                     description=tool.description,
-                    input_schema=schema(tool.input),
-                    output_schema=output_schema(tool),
+                    input_schema=schema(model=tool.input),
+                    output_schema=output_schema(tool=tool),
                     annotations=ToolAnnotations(
                         read_only_hint=tool.read_only,
                         destructive_hint=not tool.read_only,
@@ -132,66 +197,77 @@ class McpAdapter:
             ]
         )
 
-    async def execute(self, name: str, argument: BaseModel) -> BaseModel:
+    async def execute(self, *, name: str, argument: BaseModel) -> BaseModel:
         service = self.services
         if name == "list_servers" and isinstance(argument, PageArguments):
-            return await service.list_servers(argument.limit, argument.cursor)
+            return await service.list_servers(limit=argument.limit, cursor=argument.cursor)
         if name == "get_server" and isinstance(argument, ServerReference):
-            return await service.get_server(argument.server_id)
+            return await service.get_server(server_id=argument.server_id)
         if name == "create_server" and isinstance(argument, ServerInput):
-            return await service.create_server(argument)
+            return await service.create_server(body=argument)
         if name == "update_server" and isinstance(argument, ServerUpdate):
             return await service.update_server(
-                argument.server_id, argument.changes, argument.expected_version
+                server_id=argument.server_id,
+                body=argument.changes,
+                expected_version=argument.expected_version,
             )
         if name == "delete_server" and isinstance(argument, ServerDelete):
             return ServerDeleted(
-                server_id=await service.delete_server(argument.server_id, argument.expected_version)
+                server_id=await service.delete_server(
+                    server_id=argument.server_id, expected_version=argument.expected_version
+                )
             )
         if name == "list_strategies":
             return service.strategies()
         if name == "run_simulation" and isinstance(argument, RunCommand):
-            return await service.submit(argument.simulation, argument.idempotency_key)
+            return await service.submit(body=argument.simulation, key=argument.idempotency_key)
         if name == "get_simulation_status" and isinstance(argument, RunReference):
-            return await service.detail(argument.run_id)
+            return await service.detail(run_id=argument.run_id)
         if name == "get_simulation_metrics" and isinstance(argument, MetricArguments):
             if argument.metric is not None:
                 return await service.queries.chart(
-                    argument.run_id,
-                    argument.metric,
-                    argument.start_tick,
-                    argument.end_tick,
-                    argument.max_points,
-                    argument.server_id,
+                    run_id=argument.run_id,
+                    metric=argument.metric,
+                    start_tick=argument.start_tick,
+                    end_tick=argument.end_tick,
+                    max_points=argument.max_points,
+                    server_id=argument.server_id,
                 )
             return await service.queries.metrics(
-                argument.run_id, (argument.server_id,) if argument.server_id is not None else ()
+                run_id=argument.run_id,
+                server_ids=(argument.server_id,) if argument.server_id is not None else (),
             )
         if name == "get_simulation_events" and isinstance(argument, EventArguments):
             return await service.queries.events(
-                argument.run_id,
-                argument.limit,
-                argument.cursor,
-                argument.start_tick,
-                argument.end_tick,
+                run_id=argument.run_id,
+                limit=argument.limit,
+                cursor=argument.cursor,
+                start_tick=argument.start_tick,
+                end_tick=argument.end_tick,
             )
         if name == "compare_simulations" and isinstance(argument, CompareRequest):
-            return await service.queries.compare(argument.run_ids)
+            return await service.queries.compare(run_ids=argument.run_ids)
         if name == "cancel_simulation" and isinstance(argument, RunReference):
-            return await service.cancel(argument.run_id)
-        raise OperationError("NOT_FOUND", "MCP tool is not registered")
+            return await service.cancel(run_id=argument.run_id)
+        raise OperationError(code="NOT_FOUND", message="MCP tool is not registered")
 
     async def call_tool(
         self, context: ServerRequestContext[object], params: CallToolRequestParams
     ) -> CallToolResult:
-        identifier = correlation(context)
+        identifier = correlation(context=context)
         try:
             contract = TOOL_BY_NAME.get(params.name)
             if contract is None:
-                raise OperationError("NOT_FOUND", "MCP tool is not registered")
-            argument = contract.input.model_validate_json(canonical_bytes(params.arguments or {}))
-            async with self.admitted():
-                result = await self.execute(params.name, argument)
+                raise OperationError(code="NOT_FOUND", message="MCP tool is not registered")
+            argument = contract.input.model_validate_json(
+                json_data=canonical_bytes(value=params.arguments or {})
+            )
+            async with self.admitted(waiting=isinstance(argument, WaitArguments)):
+                result = (
+                    await self.wait(context=context, argument=argument)
+                    if isinstance(argument, WaitArguments)
+                    else await self.execute(name=params.name, argument=argument)
+                )
             reply = CallToolResult(
                 content=[TextContent(text="Structured result attached.")],
                 structured_content=result.model_dump(mode="json"),
@@ -199,11 +275,12 @@ class McpAdapter:
             )
             if len(reply.model_dump_json(by_alias=True).encode()) > RESPONSE_LIMIT:
                 raise OperationError(
-                    "RESOURCE_LIMIT_EXCEEDED", "MCP result exceeds its encoded byte budget"
+                    code="RESOURCE_LIMIT_EXCEEDED",
+                    message="MCP result exceeds its encoded byte budget",
                 )
             return reply
         except Exception as error:
-            envelope = failure(error, identifier)
+            envelope = failure(error=error, request_id=identifier)
             return CallToolResult(
                 is_error=True,
                 content=[TextContent(text=envelope.model_dump_json())],
@@ -236,7 +313,7 @@ class McpAdapter:
     async def read_resource(
         self, context: ServerRequestContext[object], params: ReadResourceRequestParams
     ) -> ReadResourceResult:
-        identifier = correlation(context)
+        identifier = correlation(context=context)
         try:
             async with self.admitted():
                 if params.uri == "mslb://servers":
@@ -245,24 +322,28 @@ class McpAdapter:
                     result = self.services.strategies()
                 else:
                     match = re.fullmatch(
-                        r"mslb://runs/([a-fA-F0-9-]{36})/(summary|events)", params.uri
+                        pattern=r"mslb://runs/([a-fA-F0-9-]{36})/(summary|events)",
+                        string=params.uri,
                     )
                     if match is None:
-                        raise OperationError("NOT_FOUND", "MCP resource is not registered")
+                        raise OperationError(
+                            code="NOT_FOUND", message="MCP resource is not registered"
+                        )
                     run_id = RunReference.model_validate_json(
-                        canonical_bytes({"run_id": match[1]})
+                        json_data=canonical_bytes(value={"run_id": match[1]})
                     ).run_id
                     result = (
-                        await self.services.detail(run_id)
+                        await self.services.detail(run_id=run_id)
                         if match[2] == "summary"
                         else EventResource(
-                            page=await self.services.queries.events(run_id, limit=100)
+                            page=await self.services.queries.events(run_id=run_id, limit=100)
                         )
                     )
             payload = result.model_dump_json()
             if len(payload.encode()) * 2 > RESPONSE_LIMIT:
                 raise OperationError(
-                    "RESOURCE_LIMIT_EXCEEDED", "Resource exceeds its encoded response budget"
+                    code="RESOURCE_LIMIT_EXCEEDED",
+                    message="Resource exceeds its encoded response budget",
                 )
             return ReadResourceResult(
                 contents=[
@@ -271,7 +352,7 @@ class McpAdapter:
                 meta={"request_id": identifier},
             )
         except Exception as error:
-            envelope = failure(error, identifier)
+            envelope = failure(error=error, request_id=identifier)
             raise MCPError(
                 code=INVALID_PARAMS,
                 message=envelope.error.message,
@@ -293,23 +374,26 @@ class McpAdapter:
     async def get_prompt(
         self, context: ServerRequestContext[object], params: GetPromptRequestParams
     ) -> GetPromptResult:
-        identifier = correlation(context)
+        identifier = correlation(context=context)
         try:
             contract = next((entry for entry in PROMPTS if entry[0] == params.name), None)
             if contract is None:
-                raise OperationError("NOT_FOUND", "MCP prompt is not registered")
-            arguments = contract[2].model_validate_json(canonical_bytes(params.arguments or {}))
+                raise OperationError(code="NOT_FOUND", message="MCP prompt is not registered")
+            arguments = contract[2].model_validate_json(
+                json_data=canonical_bytes(value=params.arguments or {})
+            )
             async with self.admitted():
                 if isinstance(arguments, CompareStrategiesArguments):
-                    dataset = await self.services.queries.dataset(arguments.dataset_id)
+                    dataset = await self.services.queries.dataset(dataset_id=arguments.dataset_id)
                     instruction = (
                         f"Propose four run_simulation calls for existing dataset {dataset.id}, "
                         f"mode {arguments.mode}, one for each list_strategies result. Keep frozen "
-                        "inputs/settings compatible and use compare_simulations with an explicit "
-                        "first baseline after completion."
+                        "inputs/settings compatible. Batch their IDs in wait_for_simulations; "
+                        "repeat only if its bounded wait expires. Use compare_simulations with an "
+                        "explicit first baseline after validated, published completion."
                     )
                 elif isinstance(arguments, RunReference):
-                    run = await self.services.queries.run(arguments.run_id)
+                    run = await self.services.queries.run(run_id=arguments.run_id)
                     instruction = (
                         f"Use get_simulation_status and get_simulation_metrics for run {run.id} "
                         f"(persisted status: {run.status}). Analyze exact actual tool results, "
@@ -322,7 +406,9 @@ class McpAdapter:
                             "require distinct Docker settings/controller."
                         )
                 else:
-                    raise OperationError("VALIDATION_ERROR", "Invalid prompt arguments")
+                    raise OperationError(
+                        code="VALIDATION_ERROR", message="Invalid prompt arguments"
+                    )
             text = (
                 instruction
                 + " This prompt is planning text and does not execute a run or change settings. "
@@ -335,7 +421,7 @@ class McpAdapter:
                 meta={"request_id": identifier},
             )
         except Exception as error:
-            envelope = failure(error, identifier)
+            envelope = failure(error=error, request_id=identifier)
             raise MCPError(
                 code=INVALID_PARAMS,
                 message=envelope.error.message,

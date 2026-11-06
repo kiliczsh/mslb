@@ -28,15 +28,16 @@ from mslb_contracts.mcp import (
     ServerReference,
     ServerResource,
     ServerUpdate,
+    WaitArguments,
 )
-from mslb_contracts.queries import ChartView, ComparisonView, MetricsView, Page, RunView
+from mslb_contracts.queries import ChartView, ComparisonView, MetricsView, Page, RunView, WaitResult
 from pydantic import BaseModel
 
 DIALECT = "https://json-schema.org/draft/2020-12/schema"
-CONTRACT_VERSION = "1.0.0"
+CONTRACT_VERSION = "1.1.0"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class ToolContract:
     name: str
     description: str
@@ -47,75 +48,95 @@ class ToolContract:
 
 TOOLS = (
     ToolContract(
-        "list_servers", "Read a bounded ID-ordered server page.", PageArguments, (Page[ServerView],)
+        name="list_servers",
+        description="Read a bounded ID-ordered server page.",
+        input=PageArguments,
+        outputs=(Page[ServerView],),
     ),
     ToolContract(
-        "get_server", "Read one normalized server and version.", ServerReference, (ServerView,)
+        name="get_server",
+        description="Read one normalized server and version.",
+        input=ServerReference,
+        outputs=(ServerView,),
     ),
     ToolContract(
-        "create_server",
-        "Create a logical server for future runs.",
-        ServerInput,
-        (ServerView,),
-        False,
+        name="create_server",
+        description="Create a logical server for future runs.",
+        input=ServerInput,
+        outputs=(ServerView,),
+        read_only=False,
     ),
     ToolContract(
-        "update_server",
-        "Update capacities using the expected server version.",
-        ServerUpdate,
-        (ServerView,),
-        False,
+        name="update_server",
+        description="Update capacities using the expected server version.",
+        input=ServerUpdate,
+        outputs=(ServerView,),
+        read_only=False,
     ),
     ToolContract(
-        "delete_server",
-        "Delete a version-matched server from future configuration.",
-        ServerDelete,
-        (ServerDeleted,),
-        False,
+        name="delete_server",
+        description="Delete a version-matched server from future configuration.",
+        input=ServerDelete,
+        outputs=(ServerDeleted,),
+        read_only=False,
     ),
     ToolContract(
-        "list_strategies",
-        "Read all four logical scheduling strategies.",
-        NoArguments,
-        (Page[StrategyView],),
+        name="list_strategies",
+        description="Read all four logical scheduling strategies.",
+        input=NoArguments,
+        outputs=(Page[StrategyView],),
     ),
     ToolContract(
-        "run_simulation",
-        "Durably enqueue a logical run; poll status separately.",
-        RunCommand,
-        (SimulationAccepted,),
-        False,
+        name="run_simulation",
+        description=(
+            "Durably enqueue a logical run and return promptly; batch IDs in wait_for_simulations."
+        ),
+        input=RunCommand,
+        outputs=(SimulationAccepted,),
+        read_only=False,
     ),
     ToolContract(
-        "get_simulation_status",
-        "Read persisted status and completed validation metadata.",
-        RunReference,
-        (RunDetail,),
+        name="wait_for_simulations",
+        description=(
+            "Read-only wait for 1–8 unique runs, up to 25 seconds (default 20). "
+            "Returns compact persisted statuses when all are terminal or the wait expires. "
+            "Opt into MCP progress for persisted changes; expiry/disconnect never cancels runs. "
+            "Repeat a timed-out wait; reserve get_simulation_status for recovery "
+            "or explicit checks."
+        ),
+        input=WaitArguments,
+        outputs=(WaitResult,),
     ),
     ToolContract(
-        "get_simulation_metrics",
-        "Read exact metrics or a bounded chart range.",
-        MetricArguments,
-        (MetricsView, ChartView),
+        name="get_simulation_status",
+        description="Read persisted status and completed validation metadata.",
+        input=RunReference,
+        outputs=(RunDetail,),
     ),
     ToolContract(
-        "get_simulation_events",
-        "Page committed events with inclusive tick filters.",
-        EventArguments,
-        (Page[PersistedEvent],),
+        name="get_simulation_metrics",
+        description="Read exact metrics or a bounded chart range.",
+        input=MetricArguments,
+        outputs=(MetricsView, ChartView),
     ),
     ToolContract(
-        "compare_simulations",
-        "Compare compatible completed runs against the first baseline.",
-        CompareRequest,
-        (ComparisonView,),
+        name="get_simulation_events",
+        description="Page committed events with inclusive tick filters.",
+        input=EventArguments,
+        outputs=(Page[PersistedEvent],),
     ),
     ToolContract(
-        "cancel_simulation",
-        "Request cancellation through the durable state machine.",
-        RunReference,
-        (RunView,),
-        False,
+        name="compare_simulations",
+        description="Compare compatible completed runs against the first baseline.",
+        input=CompareRequest,
+        outputs=(ComparisonView,),
+    ),
+    ToolContract(
+        name="cancel_simulation",
+        description="Request cancellation through the durable state machine.",
+        input=RunReference,
+        outputs=(RunView,),
+        read_only=False,
     ),
 )
 TOOL_BY_NAME = {tool.name: tool for tool in TOOLS}

@@ -82,6 +82,25 @@ class Reads:
     def __init__(self, database: Database) -> None:
         self.database = database
 
+    async def runs_by_ids(self, *, run_ids: tuple[UUID, ...]) -> tuple[RunView, ...]:
+        """Read a small batch in one coherent transaction, preserving caller order."""
+        if not 1 <= len(run_ids) <= 8 or len(set(run_ids)) != len(run_ids):
+            raise StoreError(code="VALIDATION_ERROR", message="Expected 1–8 unique run IDs")
+
+        async def operation(session: AsyncSession) -> tuple[RunView, ...]:
+            rows = await session.execute(
+                statement=select(Run, Job, OutputProgress)
+                .join(target=Job, onclause=Job.run_id == Run.id)
+                .outerjoin(target=OutputProgress, onclause=OutputProgress.run_id == Run.id)
+                .where(Run.id.in_(other=run_ids), Job.kind == "logical")
+            )
+            views = {row[0].id: run_view(run=row[0], job=row[1], progress=row[2]) for row in rows}
+            if len(views) != len(run_ids):
+                raise StoreError(code="NOT_FOUND", message="One or more runs do not exist")
+            return tuple(views[run_id] for run_id in run_ids)
+
+        return await self.database.transaction(operation=operation)
+
     async def run(self, run_id: UUID) -> RunView:
         async def operation(session: AsyncSession) -> RunView:
             row = (

@@ -60,6 +60,29 @@ class RunView(ReadModel):
     progress: RunProgress | None
 
 
+class PublishedValidation(ReadModel):
+    """Receipt from the verified, durably published manifest; no storage paths."""
+
+    bundle_digest: Digest
+    independent_replay: Literal["passed"]
+    original_validator: Literal["passed", "not_applicable"]
+
+
+class RunStatus(ReadModel):
+    run_id: UUID
+    status: JobStatus
+    attempts: Annotated[int, Field(ge=0, le=3)]
+    error_code: Annotated[str, Field(max_length=64)] | None
+    progress: RunProgress | None
+    validation: PublishedValidation | None
+
+
+class WaitResult(ReadModel):
+    statuses: Annotated[tuple[RunStatus, ...], Field(min_length=1, max_length=8)]
+    all_terminal: bool
+    timed_out: bool
+
+
 class MetricsView(ReadModel):
     run_id: UUID
     bundle_digest: Digest
