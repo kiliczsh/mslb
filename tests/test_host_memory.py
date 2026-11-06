@@ -3,6 +3,7 @@
 import io
 import json
 import os
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -105,6 +106,8 @@ def test_reader_checks_owner_mode_type_links_and_length(
     target.symlink_to(target=tmp_path / "missing")
     assert host_memory.read_host_memory() is None
     target.unlink()
+    if sys.platform != "linux":
+        pytest.skip(reason="FIFO security checks require Linux containers")
     os.mkfifo(path=target, mode=0o644)
     assert host_memory.read_host_memory() is None
 

@@ -1,0 +1,8 @@
+{
+  "name": "mslb-pyright-tooling",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "pyright": "1.1.414"
+  }
+}

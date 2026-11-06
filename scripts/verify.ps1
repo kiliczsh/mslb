@@ -80,7 +80,12 @@ try {
         $preflightOutput | ForEach-Object { Write-Host $_ }
         if ($preflightExit -ne 0) { throw 'Effective deployment preflight failed' }
     }
-    Invoke-CheckedDocker -DockerArguments @('compose', 'up', '--no-build', '-d', '--wait')
+    # A rebuilt tag can have a new immutable manifest identity while Compose keeps
+    # cached configuration labels. Refresh only this project's services before
+    # testing enrollment against the newly built runtime image.
+    Invoke-CheckedDocker -DockerArguments @(
+        'compose', 'up', '--no-build', '--force-recreate', '-d', '--wait'
+    )
     Invoke-TimedCheck -Name 'Host loopback API and web connectivity' -Action {
         $hostHealth = Invoke-WebRequest -Uri 'http://127.0.0.1:8000/api/v1/health/live' -TimeoutSec 5
         if ($hostHealth.StatusCode -ne 200) { throw 'Host loopback API health failed' }

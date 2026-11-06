@@ -2,6 +2,7 @@
 
 import json
 import os
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -22,6 +23,8 @@ def healthy() -> bool:
 
 
 def write_health() -> None:
+    if sys.platform != "linux":
+        raise RuntimeError("Private worker heartbeat storage requires Linux containers")
     if HEALTH.parent.is_symlink():
         raise ValueError("Unsafe worker health directory")
     HEALTH.parent.mkdir(mode=0o700, exist_ok=True)

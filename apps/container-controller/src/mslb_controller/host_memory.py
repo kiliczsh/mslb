@@ -16,6 +16,8 @@ FRAME_BYTES = 512
 
 def read_host_memory() -> HostMemoryEvidence | None:
     """Read only a root-owned regular frame from the guard's read-only volume."""
+    if sys.platform != "linux":
+        return None
     try:
         descriptor = os.open(
             path=DIRECTORY / "memory.json", flags=os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
@@ -39,6 +41,8 @@ def read_host_memory() -> HostMemoryEvidence | None:
 
 def write_frame(*, raw: bytes, directory: Path, previous: datetime | None) -> datetime:
     """Validate before atomically replacing the sole numeric evidence frame."""
+    if sys.platform != "linux":
+        raise RuntimeError("Host evidence volume writes require Linux containers")
     if len(raw) > FRAME_BYTES or not raw.endswith(b"\n"):
         raise ValueError("Host memory evidence exceeds its fixed frame")
     frame = HostMemoryEvidence.model_validate_json(json_data=raw)
@@ -72,6 +76,8 @@ def consume(*, stream: BinaryIO, directory: Path) -> None:
 
 def main() -> None:
     # Linux-only writer image. Exclusive volume lock rejects a second host feeder.
+    if sys.platform != "linux":
+        raise RuntimeError("Host evidence volume writes require Linux containers")
     import fcntl
 
     DIRECTORY.chmod(mode=0o755)

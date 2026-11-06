@@ -88,7 +88,8 @@ services:
         from pathlib import Path
         import mslb_api.app, mslb_application.worker, mslb_controller.engine, mslb_mock_server.app
         assert importlib.util.find_spec(name="pytest") is None
-        assert all(shutil.which(cmd=name) is None for name in ("uv", "just", "ruff", "ty"))
+        assert all(shutil.which(cmd=name) is None for name in ("uv", "just", "ruff", "ty", "node", "pyright"))
+        assert not Path("/opt/mslb-pyright").exists()
         assert not Path("/app/tests").exists()
         assert Path("/app/scripts/validate_run.py").read_bytes() == Path("/fixtures/core/validate_run.py").read_bytes()
         assert os.getuid() == 1000

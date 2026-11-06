@@ -3,6 +3,7 @@
 import os
 import re
 import secrets
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -86,6 +87,8 @@ class Settings:
 
 
 def cursor_secret(root: Path) -> bytes:
+    if sys.platform != "linux":
+        raise RuntimeError("API signing-key storage requires Linux containers")
     if root.is_symlink():
         raise OperationError("VALIDATION_FAILED", "Unsafe API state directory")
     root.mkdir(mode=0o700, parents=True, exist_ok=True)

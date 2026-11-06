@@ -1,6 +1,7 @@
 import hashlib
 import io
 import os
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Event
@@ -151,7 +152,9 @@ def test_symlinked_directories_and_nonregular_snapshot_targets_fail(tmp_path: Pa
         files.publish("datasets/untrusted.csv", (b"never written",), 100)
     assert not list(outside.iterdir())
     fifo = root / "snapshots" / ("0" * 64 + ".json")
-    os.mkfifo(fifo)
+    if sys.platform != "linux":
+        pytest.skip(reason="FIFO security checks require Linux containers")
+    os.mkfifo(path=fifo)
     with pytest.raises(OperationError):
         files.load_snapshot(f"snapshots/{'0' * 64}.json", "0" * 64)
 

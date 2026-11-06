@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import tempfile
 from collections import Counter
 from collections.abc import Mapping
@@ -618,6 +619,8 @@ def write_checkpoint(
     max_bytes: int = MAX_CHECKPOINT_BYTES,
 ) -> CheckpointArtifact:
     """Fsync a content-addressed file; callers still must commit its DB reference."""
+    if sys.platform != "linux":
+        raise RuntimeError("Durable checkpoint storage requires Linux containers")
     verify_snapshot(snapshot)
     _preflight(simulation, metrics, max_bytes)
     servers, requests = domain_inputs(snapshot)

@@ -6,9 +6,7 @@ import subprocess
 def main() -> None:
     """Stop on the first failed check."""
     commands = [
-        ["ruff", "check", "."],
-        ["ruff", "format", "--check", "."],
-        ["ty", "check"],
+        ["just", "check"],
         ["just", "check-mcp-schemas"],
         ["pytest"],
         [
@@ -25,7 +23,7 @@ def main() -> None:
     ]
     for command in commands:
         print("Running:", " ".join(command), flush=True)
-        subprocess.run(command, check=True)  # noqa: S603 -- fixed commands, no user input
+        subprocess.run(args=command, check=True)  # noqa: S603 -- fixed commands, no user input
 
 
 if __name__ == "__main__":

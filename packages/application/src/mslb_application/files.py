@@ -1,12 +1,12 @@
 """Bounded managed local files; only server-derived keys can select storage."""
 
 import csv
-import fcntl
 import hashlib
 import io
 import os
 import re
 import shutil
+import sys
 import tempfile
 import time
 from collections.abc import Callable, Generator, Iterable
@@ -22,6 +22,9 @@ from mslb_contracts.runs import RunSnapshot
 
 from mslb_application.errors import OperationError
 from mslb_application.snapshots import read_snapshot, verify_snapshot
+
+if sys.platform == "linux":
+    import fcntl
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,9 +106,15 @@ def _write_blocks(*, chunks: Iterable[bytes], maximum: int) -> Generator[bytes]:
 class ManagedFiles:
     """Linux-container storage with immutable publication and scoped admission locks."""
 
+    root: Path
+    limits: StorageLimits
+    read_only: bool
+
     def __init__(
         self, root: Path, limits: StorageLimits | None = None, read_only: bool = False
     ) -> None:
+        if sys.platform != "linux":
+            raise RuntimeError("Managed storage requires Linux containers")
         if root.is_symlink():
             raise OperationError("VALIDATION_FAILED", "Managed storage root is unsafe")
         if not read_only:
@@ -126,6 +135,8 @@ class ManagedFiles:
 
     @staticmethod
     def _sync_directory(directory: Path) -> None:
+        if sys.platform != "linux":
+            raise RuntimeError("Managed storage synchronization requires Linux containers")
         descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
         try:
             os.fsync(descriptor)
@@ -149,6 +160,8 @@ class ManagedFiles:
 
     @contextmanager
     def _lock(self, name: str, wait: bool = True) -> Generator[None]:
+        if sys.platform != "linux":
+            raise RuntimeError("Managed storage locking requires Linux containers")
         if self.read_only:
             raise OperationError("FORBIDDEN", "Storage is read-only")
         descriptor = os.open(self.root / name, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)

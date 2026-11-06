@@ -5,6 +5,7 @@ import os
 import re
 import secrets
 import stat
+import sys
 from pathlib import Path
 from typing import Literal
 
@@ -18,6 +19,8 @@ def root(*, role: Role) -> Path:
 
 
 def read_token(*, role: Role = "controller") -> str:
+    if sys.platform != "linux":
+        raise RuntimeError("Private credential storage requires Linux containers")
     descriptor = os.open(path=root(role=role) / "token", flags=os.O_RDONLY | os.O_NOFOLLOW)
     with os.fdopen(fd=descriptor, mode="r", encoding="ascii") as stream:
         info = os.fstat(fd=stream.fileno())
@@ -36,6 +39,8 @@ def read_token(*, role: Role = "controller") -> str:
 
 
 def initialize(*, role: Role = "controller") -> None:
+    if sys.platform != "linux":
+        raise RuntimeError("Private credential storage requires Linux containers")
     directory = root(role=role)
     directory.chmod(mode=0o750)
     try:

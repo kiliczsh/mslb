@@ -12,6 +12,8 @@ HEALTH = Path("/run/mslb-tmp/guard-health.json")
 
 
 def write_health() -> None:
+    if sys.platform != "linux":
+        raise RuntimeError("Guard heartbeat storage requires Linux containers")
     temporary = HEALTH.with_suffix(suffix=".tmp")
     descriptor = os.open(
         path=temporary,
@@ -24,6 +26,8 @@ def write_health() -> None:
 
 
 def healthy() -> bool:
+    if sys.platform != "linux":
+        return False
     try:
         descriptor = os.open(path=HEALTH, flags=os.O_RDONLY | os.O_NOFOLLOW)
         with os.fdopen(fd=descriptor, mode="rb") as stream:
