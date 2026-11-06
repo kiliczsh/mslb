@@ -9,7 +9,7 @@ from mslb_contracts.docker_runs import CreationIntent, DockerId, ImageId
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 PROJECT = "mslb"
-IMAGE = "mslb-python-tools:local"
+IMAGE = "mslb-python-runtime:local"
 NETWORK = PROJECT + "_docker-traffic"
 API_VERSION = "/v1.53"
 

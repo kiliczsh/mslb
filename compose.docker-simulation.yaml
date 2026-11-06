@@ -1,9 +1,10 @@
 # Operational traffic components. The root Compose file includes these by default.
 x-backend: &backend
-  image: mslb-python-tools:local
+  image: mslb-python-runtime:local
   build:
     context: .
     dockerfile: infra/tooling/python.Dockerfile
+    target: runtime
   command: [python, -m, mslb_mock_server]
   read_only: true
   tmpfs: ["/run/mslb-tmp:rw,noexec,nosuid,nodev,size=16m,uid=1000,gid=1000"]
@@ -33,7 +34,7 @@ x-backend: &backend
 
 services:
   resource-guard:
-    image: mslb-python-tools:local
+    image: mslb-python-runtime:local
     command: [python, -m, mslb_controller.guard_main]
     user: "1000:1000"
     read_only: true
@@ -66,7 +67,7 @@ services:
         max-buffer-size: 1m
   host-memory-writer:
     profiles: [tools]
-    image: mslb-python-tools:local
+    image: mslb-python-runtime:local
     command: [python, -m, mslb_controller.host_memory]
     user: "0:0"
     read_only: true
@@ -85,7 +86,7 @@ services:
         max-size: 1m
         max-file: "1"
   control-init:
-    image: mslb-python-tools:local
+    image: mslb-python-runtime:local
     command: [python, -m, mslb_controller.credentials, --all]
     user: "1000:1000"
     read_only: true
@@ -98,7 +99,7 @@ services:
     network_mode: none
     volumes: [controller-auth:/run/controller-auth, guard-auth:/run/guard-auth]
   docker-proxy:
-    image: mslb-python-tools:local
+    image: mslb-python-runtime:local
     command: [python, -m, mslb_controller.proxy_main]
     # Socket ownership requires UID 0. No Linux capabilities; GID 1000 reads only its credential.
     user: "0:1000"

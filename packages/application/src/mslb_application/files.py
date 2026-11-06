@@ -78,6 +78,28 @@ def _read_chunks(stream: BinaryIO) -> Generator[bytes]:
         yield block
 
 
+def _write_blocks(*, chunks: Iterable[bytes], maximum: int) -> Generator[bytes]:
+    """Coalesce encoder fragments without buffering more than one 64 KiB block."""
+    remaining_budget = maximum
+    pending = bytearray()
+    for chunk in chunks:
+        remaining = memoryview(chunk)
+        while remaining:
+            amount = min(len(remaining), 64 * 1024 - len(pending), remaining_budget + 1)
+            pending.extend(remaining[:amount])
+            remaining = remaining[amount:]
+            remaining_budget -= amount
+            if remaining_budget < 0:
+                raise OperationError(
+                    code="PAYLOAD_TOO_LARGE", message="Managed file exceeds its byte limit"
+                )
+            if len(pending) == 64 * 1024:
+                yield bytes(pending)
+                pending.clear()
+    if pending:
+        yield bytes(pending)
+
+
 class ManagedFiles:
     """Linux-container storage with immutable publication and scoped admission locks."""
 
@@ -227,19 +249,19 @@ class ManagedFiles:
         ) as stream:
             path, digest, size = Path(stream.name), hashlib.sha256(), 0
             try:
-                for chunk in chunks:
-                    for offset in range(0, len(chunk), 64 * 1024):
-                        block = chunk[offset : offset + 64 * 1024]
-                        if size + len(block) > maximum:
-                            raise OperationError(
-                                "PAYLOAD_TOO_LARGE", "Managed file exceeds its byte limit"
-                            )
-                        with self._lock(".write-lock"):
-                            self._admit(len(block), scope, size + len(block))
-                            if stream.write(block) != len(block):
-                                raise OSError("Short managed file write")
-                        digest.update(block)
-                        size += len(block)
+                for block in _write_blocks(chunks=chunks, maximum=maximum):
+                    if size + len(block) > maximum:
+                        raise OperationError(
+                            code="PAYLOAD_TOO_LARGE", message="Managed file exceeds its byte limit"
+                        )
+                    with self._lock(name=".write-lock"):
+                        self._admit(
+                            additional=len(block), scope=scope, scope_additional=size + len(block)
+                        )
+                        if stream.write(block) != len(block):
+                            raise OSError("Short managed file write")
+                    digest.update(block)
+                    size += len(block)
                 os.fsync(stream.fileno())
                 yield _Staged(path, digest.hexdigest(), size)
             finally:

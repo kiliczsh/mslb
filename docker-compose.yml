@@ -63,6 +63,7 @@ services:
     build:
       context: .
       dockerfile: infra/tooling/python.Dockerfile
+      target: checks
     network_mode: none
   frontend-checks:
     <<: *tool
@@ -72,6 +73,26 @@ services:
       dockerfile: infra/tooling/frontend.Dockerfile
     network_mode: none
     tmpfs: [/tmp:size=128m, /home/node/.cache:size=32m, "/app/.test-output:size=64m,uid=1000,gid=1000"]
+  runtime-check:
+    <<: *tool
+    image: mslb-python-runtime:local
+    mem_limit: 256m
+    memswap_limit: 256m
+    pids_limit: 32
+    network_mode: none
+    command:
+      - python
+      - -c
+      - |
+        import importlib.util, os, shutil
+        from pathlib import Path
+        import mslb_api.app, mslb_application.worker, mslb_controller.engine, mslb_mock_server.app
+        assert importlib.util.find_spec(name="pytest") is None
+        assert all(shutil.which(cmd=name) is None for name in ("uv", "just", "ruff", "ty"))
+        assert not Path("/app/tests").exists()
+        assert Path("/app/scripts/validate_run.py").read_bytes() == Path("/fixtures/core/validate_run.py").read_bytes()
+        assert os.getuid() == 1000
+        print("Runtime imports, validator identity, non-root user and tool isolation verified")
   web:
     <<: *tool
     profiles: []
@@ -148,7 +169,7 @@ services:
   migrate:
     <<: *tool
     profiles: []
-    image: mslb-python-tools:local
+    image: mslb-python-runtime:local
     command: [python, -m, mslb_persistence.migrations]
     mem_limit: 128m
     memswap_limit: 128m
@@ -170,10 +191,11 @@ services:
   worker:
     <<: *tool
     profiles: []
-    image: mslb-python-tools:local
+    image: mslb-python-runtime:local
     build:
       context: .
       dockerfile: infra/tooling/python.Dockerfile
+      target: runtime
     command: [python, -m, mslb_worker]
     environment:
       DATABASE_URL: postgresql://mslb:local-demo-only@postgres/mslb
@@ -188,7 +210,7 @@ services:
     restart: on-failure:3
     stop_grace_period: 30s
     healthcheck:
-      test: [CMD, python, -m, mslb_worker, health]
+      test: [CMD, python, -m, mslb_worker.health]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -202,10 +224,11 @@ services:
   api:
     <<: *tool
     profiles: []
-    image: mslb-python-tools:local
+    image: mslb-python-runtime:local
     build:
       context: .
       dockerfile: infra/tooling/python.Dockerfile
+      target: runtime
     command: [python, -m, mslb_api]
     mem_limit: 384m
     memswap_limit: 384m
