@@ -25,8 +25,17 @@ def check(payload: bytes) -> None:
     config = Compose.model_validate_json(payload)
     for name, service in config.services.items():
         for port in service.ports:
-            if name in {"postgres", "redis", "worker"}:
-                raise ValueError("Private data/worker services must not publish host ports")
+            if name in {
+                "postgres",
+                "redis",
+                "worker",
+                "backend-a",
+                "backend-b",
+                "container-controller",
+                "docker-proxy",
+                "resource-guard",
+            }:
+                raise ValueError("Private data/control/work services must not publish host ports")
             if port.host_ip is None or not ipaddress.ip_address(port.host_ip).is_loopback:
                 # Remote exposure also needs the planned HTTPS gateway. Until that
                 # gateway is implemented, direct API public publishing is rejected

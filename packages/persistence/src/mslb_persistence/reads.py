@@ -83,7 +83,7 @@ class Reads:
                     select(Run, Job, OutputProgress)
                     .join(Job, Job.run_id == Run.id)
                     .outerjoin(OutputProgress, OutputProgress.run_id == Run.id)
-                    .where(Run.id == run_id)
+                    .where(Run.id == run_id, Job.kind == "logical")
                 )
             ).one_or_none()
             if row is None:
@@ -102,6 +102,7 @@ class Reads:
                 select(Run, Job, OutputProgress)
                 .join(Job, Job.run_id == Run.id)
                 .outerjoin(OutputProgress, OutputProgress.run_id == Run.id)
+                .where(Job.kind == "logical")
             )
             if after is not None:
                 query = query.where(tuple_(Run.created_at, Run.id) > after)

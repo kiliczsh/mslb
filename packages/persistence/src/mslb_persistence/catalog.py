@@ -212,6 +212,9 @@ class Catalog:
             row = await session.get(Run, previous.run_id)
             if row is None:
                 raise StoreError("NOT_READY", "Idempotency record references missing run")
+            job = await session.get(Job, previous.run_id)
+            if job is None or job.kind != "logical":
+                raise StoreError("CONFLICT", "Idempotency key belongs to a different run mode")
             return RunRecord.from_model(row)
 
         return await self.database.transaction(operation)
@@ -260,6 +263,11 @@ class Catalog:
                     existing = await session.get(Run, previous.run_id)
                     if existing is None:
                         raise StoreError("NOT_READY", "Idempotency record references missing run")
+                    job = await session.get(Job, previous.run_id)
+                    if job is None or job.kind != "logical":
+                        raise StoreError(
+                            "CONFLICT", "Idempotency key belongs to a different run mode"
+                        )
                     return RunRecord.from_model(existing)
                 if previous is not None:
                     await session.delete(previous)

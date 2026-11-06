@@ -7,7 +7,9 @@ members = [
     "mslb-api",
     "mslb-application",
     "mslb-contracts",
+    "mslb-controller",
     "mslb-engine",
+    "mslb-mock-server",
     "mslb-persistence",
     "mslb-worker",
     "mslb-workspace",
@@ -415,9 +417,41 @@ dependencies = [
 requires-dist = [{ name = "pydantic", specifier = ">=2,<3" }]
 
 [[package]]
+name = "mslb-controller"
+version = "0.1.0"
+source = { editable = "apps/container-controller" }
+dependencies = [
+    { name = "httpx" },
+    { name = "mslb-contracts" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = "==0.28.1" },
+    { name = "mslb-contracts", editable = "packages/contracts" },
+]
+
+[[package]]
 name = "mslb-engine"
 version = "0.2.0"
 source = { editable = "packages/engine" }
+
+[[package]]
+name = "mslb-mock-server"
+version = "0.1.0"
+source = { editable = "apps/mock-server" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "mslb-contracts" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = "==0.162.0" },
+    { name = "mslb-contracts", editable = "packages/contracts" },
+    { name = "uvicorn", specifier = "==0.54.0" },
+]
 
 [[package]]
 name = "mslb-persistence"
@@ -461,7 +495,9 @@ dependencies = [
     { name = "mslb-api" },
     { name = "mslb-application" },
     { name = "mslb-contracts" },
+    { name = "mslb-controller" },
     { name = "mslb-engine" },
+    { name = "mslb-mock-server" },
     { name = "mslb-persistence" },
     { name = "mslb-worker" },
 ]
@@ -482,7 +518,9 @@ requires-dist = [
     { name = "mslb-api", editable = "apps/api" },
     { name = "mslb-application", editable = "packages/application" },
     { name = "mslb-contracts", editable = "packages/contracts" },
+    { name = "mslb-controller", editable = "apps/container-controller" },
     { name = "mslb-engine", editable = "packages/engine" },
+    { name = "mslb-mock-server", editable = "apps/mock-server" },
     { name = "mslb-persistence", editable = "packages/persistence" },
     { name = "mslb-worker", editable = "apps/worker" },
 ]

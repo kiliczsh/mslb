@@ -1,5 +1,8 @@
 name: mslb
 
+include:
+  - path: compose.docker-simulation.yaml
+
 x-tool: &tool
   profiles: [tools]
   read_only: true
@@ -109,6 +112,16 @@ services:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
     networks: [internal]
+  traffic-check:
+    <<: *tool
+    image: mslb-python-tools:local
+    command: [python, scripts/check_traffic.py]
+    mem_limit: 256m
+    memswap_limit: 256m
+    depends_on:
+      backend-a: {condition: service_healthy}
+      backend-b: {condition: service_healthy}
+    networks: [docker-traffic]
   bundle-runner:
     <<: *tool
     image: mslb-python-tools:local

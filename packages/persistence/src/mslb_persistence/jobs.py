@@ -1,6 +1,7 @@
 """One global logical execution slot, server-time leases, and fenced transitions."""
 
 from datetime import datetime, timedelta
+from typing import Literal
 from uuid import UUID
 
 from sqlalchemy import and_, delete, func, select, update
@@ -14,6 +15,7 @@ from mslb_persistence.records import JobRecord, Lease
 
 def ownership_predicate(lease: Lease) -> ColumnElement[bool]:
     return and_(
+        Job.kind == "logical",
         Job.run_id == lease.run_id,
         Job.attempts == lease.attempt,
         Job.fence == lease.fence,
@@ -118,7 +120,7 @@ class Jobs:
                 return None
             job = await session.scalar(
                 select(Job)
-                .where(Job.status == "queued", Job.attempts < 3)
+                .where(Job.kind == "logical", Job.status == "queued", Job.attempts < 3)
                 .order_by(Job.created_at, Job.run_id)
                 .limit(1)
                 .with_for_update(skip_locked=True)
@@ -161,9 +163,16 @@ class Jobs:
 
         return await self.database.transaction(operation)
 
-    async def cancel(self, run_id: UUID) -> JobRecord:
+    async def cancel(
+        self, run_id: UUID, *, kind: Literal["logical", "docker"] = "logical"
+    ) -> JobRecord:
+        if kind not in {"logical", "docker"}:
+            raise StoreError("VALIDATION_ERROR", "Invalid run mode")
+
         async def operation(session: AsyncSession) -> JobRecord:
-            job = await session.scalar(select(Job).where(Job.run_id == run_id).with_for_update())
+            job = await session.scalar(
+                select(Job).where(Job.run_id == run_id, Job.kind == kind).with_for_update()
+            )
             if job is None:
                 raise StoreError("NOT_FOUND", "Run does not exist")
             if job.status == "queued":

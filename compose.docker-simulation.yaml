@@ -1,0 +1,50 @@
+# Operational traffic components. The root Compose file includes these by default.
+x-backend: &backend
+  image: mslb-python-tools:local
+  build:
+    context: .
+    dockerfile: infra/tooling/python.Dockerfile
+  command: [python, -m, mslb_mock_server]
+  read_only: true
+  tmpfs: [/tmp:size=16m]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  mem_limit: 128m
+  memswap_limit: 128m
+  cpus: 0.5
+  pids_limit: 32
+  networks: [docker-traffic]
+  stop_grace_period: 5s
+  healthcheck:
+    test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2).close()"]
+    interval: 5s
+    timeout: 3s
+    retries: 15
+  logging:
+    driver: json-file
+    options:
+      max-size: 5m
+      max-file: "2"
+      mode: non-blocking
+      max-buffer-size: 1m
+  labels:
+    com.mslb.component: http-backend
+    com.mslb.backend-kind: static
+
+services:
+  backend-a:
+    <<: *backend
+    environment:
+      BACKEND_ID: backend-a
+      LOGICAL_ADMISSION_MEM_MB: "1024"
+      MAX_INFLIGHT: "4"
+  backend-b:
+    <<: *backend
+    environment:
+      BACKEND_ID: backend-b
+      LOGICAL_ADMISSION_MEM_MB: "1024"
+      MAX_INFLIGHT: "4"
+
+networks:
+  docker-traffic:
+    internal: true
