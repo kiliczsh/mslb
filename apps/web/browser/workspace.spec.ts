@@ -148,6 +148,10 @@ test("native streamed downloads remain one-use and bound to their originating br
 test("real gateway CRUD, CSV, queued worker completion and narrow-screen session reset", async ({
   page,
 }) => {
+  // Two durable jobs include queueing, fsync and independent replay. Retained
+  // histories can exceed the ordinary 15-second interactive assertion budget.
+  test.setTimeout(90_000);
+  const completionTimeout = 30_000;
   const pageErrors: string[] = [];
   const diagnostics: string[] = [];
   const authenticated = process.env.AUTH_ENABLED === "true";
@@ -217,7 +221,9 @@ test("real gateway CRUD, CSV, queued worker completion and narrow-screen session
   const firstRun = acceptedSchema.parse(await firstResponse.json());
   const creation = z.object({ dataset_id: z.uuid() }).parse(firstResponse.request().postDataJSON());
   expect(await page.getByRole("alert").allTextContents()).toEqual([]);
-  await expect(page.getByText("Independent replay: passed.", { exact: false })).toBeVisible();
+  await expect(page.getByText("Independent replay: passed.", { exact: false })).toBeVisible({
+    timeout: completionTimeout,
+  });
   await expect(page.getByRole("button", { name: "Copy settings for a new run" })).toBeVisible();
   await page.getByText("Reproducibility and saved configuration", { exact: true }).click();
   await expect(page.getByText(/^Snapshot: [a-f0-9]{64}$/)).toBeVisible();
@@ -260,6 +266,7 @@ test("real gateway CRUD, CSV, queued worker completion and narrow-screen session
             await page.request.get(`/api/v1/simulations/${second.run_id}`, { headers })
           ).json(),
         ).status,
+      { timeout: completionTimeout },
     )
     .toBe("completed");
   await page.getByLabel("Saved comparison run ID").fill(second.run_id);

@@ -109,6 +109,15 @@ label {
   font-size: 0.9rem;
   font-weight: 600;
 }
+fieldset {
+  min-width: 0;
+  border: 1px solid #d3dde2;
+  border-radius: 6px;
+  margin: 16px 0;
+}
+legend {
+  font-weight: 650;
+}
 :where(label) input,
 :where(label) select,
 :where(label) textarea {

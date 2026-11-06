@@ -8,6 +8,8 @@ import {
   settingsSchema,
   terminal,
 } from "../lib/contracts.js";
+import { scalingPolicyError } from "../lib/scalingPolicy.js";
+import { AutoscalingControls } from "./AutoscalingControls.js";
 import { Feedback } from "./Feedback.js";
 import { LiveRun } from "./LiveRun.js";
 
@@ -20,13 +22,12 @@ export function RunWorkspace({ api, dataset }: { api: Api; dataset: Dataset | nu
   const [cursor, setCursor] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [settings, setSettings] = useState<Settings>(structuredClone(defaultSettings));
-  const [scalingText, setScalingText] = useState(
-    JSON.stringify(defaultSettings.autoscaling, null, 2),
-  );
   const [localError, setLocalError] = useState("");
-  const [reviewed, setReviewed] = useState(false);
+  const [reviewKey, setReviewKey] = useState<string | null>(null);
   const retry = useRef<{ body: string; key: string } | null>(null);
   const servers = useQuery({ queryKey: ["servers"], queryFn: ({ signal }) => api.servers(signal) });
+  const currentReviewKey = JSON.stringify({ dataset, servers: servers.data?.items, settings });
+  const reviewed = reviewKey === currentReviewKey;
   const history = useQuery({
     queryKey: ["runs", cursor],
     queryFn: ({ signal }) => api.runs(cursor, signal),
@@ -48,7 +49,7 @@ export function RunWorkspace({ api, dataset }: { api: Api; dataset: Dataset | nu
     onSuccess: async (run) => {
       setSelected(run.run_id);
       setCursor(null);
-      setReviewed(false);
+      setReviewKey(null);
       retry.current = null;
       await client.invalidateQueries({ queryKey: ["runs"] });
     },
@@ -62,28 +63,26 @@ export function RunWorkspace({ api, dataset }: { api: Api; dataset: Dataset | nu
   });
   function change(next: Settings) {
     setSettings(next);
-    setReviewed(false);
+    setReviewKey(null);
+    setLocalError("");
     launch.reset();
   }
   function validated() {
-    try {
-      const result = settingsSchema.safeParse({
-        ...settings,
-        autoscaling: JSON.parse(scalingText),
+    const result = settingsSchema.safeParse(settings);
+    if (result.success) {
+      const policyError = scalingPolicyError({
+        policy: result.data.autoscaling,
+        initialServerCount: servers.data?.items.length ?? 0,
       });
-      if (result.success) {
-        setLocalError("");
-        return result.data;
-      }
-      setLocalError(
-        result.error.issues
-          .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
-          .slice(0, 8)
-          .join("; "),
-      );
-    } catch {
-      setLocalError("Autoscaling settings must be valid JSON. Your input has been preserved.");
+      setLocalError(policyError ?? "");
+      return policyError ? null : result.data;
     }
+    setLocalError(
+      result.error.issues
+        .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+        .slice(0, 8)
+        .join("; "),
+    );
     return null;
   }
   return (
@@ -100,7 +99,7 @@ export function RunWorkspace({ api, dataset }: { api: Api; dataset: Dataset | nu
           const configuration = validated();
           if (!configuration || !dataset || !servers.data?.items.length) return;
           if (!reviewed) {
-            setReviewed(true);
+            setReviewKey(currentReviewKey);
             return;
           }
           launch.mutate({ datasetId: dataset.id, configuration });
@@ -206,27 +205,10 @@ export function RunWorkspace({ api, dataset }: { api: Api; dataset: Dataset | nu
             />
           </label>
         </div>
-        <details>
-          <summary>Simulated autoscaling settings</summary>
-          <p>
-            Edit the complete scaling policy. Set enabled to true to activate. Thresholds are
-            reduced exact fractions; null server bounds/template are resolved against the saved
-            cluster. This changes virtual servers, not Docker replicas.
-          </p>
-          <label>
-            Autoscaling policy JSON
-            <textarea
-              rows={16}
-              spellCheck={false}
-              maxLength={16_384}
-              value={scalingText}
-              onChange={(event) => {
-                setScalingText(event.target.value);
-                setReviewed(false);
-              }}
-            />
-          </label>
-        </details>
+        <AutoscalingControls
+          policy={settings.autoscaling}
+          onChange={(autoscaling) => change({ ...settings, autoscaling })}
+        />
         <details>
           <summary>Effective execution limits</summary>
           <p>
@@ -284,6 +266,10 @@ export function RunWorkspace({ api, dataset }: { api: Api; dataset: Dataset | nu
                 </li>
               ))}
             </ul>
+            <details>
+              <summary>Configuration to submit</summary>
+              <pre>{JSON.stringify(settings, null, 2)}</pre>
+            </details>
           </div>
         )}
         <button
@@ -392,7 +378,6 @@ export function RunWorkspace({ api, dataset }: { api: Api; dataset: Dataset | nu
                 type="button"
                 onClick={() => {
                   change(structuredClone(detail.data.configuration));
-                  setScalingText(JSON.stringify(detail.data.configuration.autoscaling, null, 2));
                 }}
               >
                 Copy settings for a new run
