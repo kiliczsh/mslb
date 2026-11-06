@@ -9,7 +9,8 @@ from mslb_contracts.catalog import ServerView
 from mslb_contracts.durability import PersistedEvent
 from mslb_contracts.http import ServerPatch, SimulationCreate
 from mslb_contracts.inputs import normalize_identifier
-from mslb_contracts.queries import Page, ReadModel
+from mslb_contracts.pagination import Page
+from mslb_contracts.read_base import ReadModel
 
 type Limit = Annotated[int, Field(ge=1, le=500)]
 type Cursor = Annotated[str, Field(min_length=1, max_length=2048)]

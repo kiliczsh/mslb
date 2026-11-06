@@ -5,7 +5,7 @@ from typing import Annotated, Literal, Self
 
 from pydantic import AwareDatetime, Field, field_validator, model_validator
 
-from mslb_contracts.docker_runs import DockerId, DockerModel
+from mslb_contracts.docker_base import DockerId, DockerModel
 
 type ServiceName = Literal[
     "web",

@@ -4,7 +4,10 @@ from collections import deque
 from dataclasses import dataclass
 from fractions import Fraction
 
-from mslb_engine.models import AutoscalingPolicy, ScaleDecision, Server, SimulationError
+from mslb_engine.errors import SimulationError
+from mslb_engine.event_models import ScaleDecision
+from mslb_engine.input_models import Server
+from mslb_engine.run_config import AutoscalingPolicy
 
 
 @dataclass(frozen=True, slots=True)

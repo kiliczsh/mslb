@@ -6,8 +6,9 @@ from collections import deque
 from fractions import Fraction
 from typing import BinaryIO
 
-from mslb_engine.models import AutoscalingPolicy, Server
+from mslb_engine.input_models import Server
 from mslb_engine.replay_errors import ReplayError
+from mslb_engine.run_config import AutoscalingPolicy
 
 
 class ScalingReplay:

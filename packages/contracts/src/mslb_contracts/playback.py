@@ -7,7 +7,7 @@ from pydantic import Field
 
 from mslb_contracts.fractions import FractionValue
 from mslb_contracts.inputs import ServerInput
-from mslb_contracts.queries import ReadModel
+from mslb_contracts.read_base import ReadModel
 from mslb_contracts.runs import Digest
 
 type Tick = Annotated[int, Field(ge=0, le=1_000_000)]

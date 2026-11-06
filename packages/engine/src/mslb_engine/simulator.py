@@ -6,16 +6,10 @@ from dataclasses import replace
 from fractions import Fraction
 
 from mslb_engine.autoscaling import Autoscaler
-from mslb_engine.models import (
-    EVENT_PRIORITY,
-    Event,
-    Request,
-    RunConfig,
-    Server,
-    ServerSample,
-    SimulationError,
-    TickFrame,
-)
+from mslb_engine.errors import SimulationError
+from mslb_engine.event_models import EVENT_PRIORITY, Event, ServerSample, TickFrame
+from mslb_engine.input_models import Request, Server
+from mslb_engine.run_config import RunConfig
 
 
 class Simulation:

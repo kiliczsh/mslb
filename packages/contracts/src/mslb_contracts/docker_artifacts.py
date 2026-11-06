@@ -6,8 +6,10 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, Field, field_validator, model_validator
 
-from mslb_contracts.docker_runs import CreationIntent, DockerModel, StaticReservation
+from mslb_contracts.docker_base import DockerModel
+from mslb_contracts.docker_ownership import CreationIntent, StaticReservation
 from mslb_contracts.docker_runtime import HttpEvent, TrafficSummary
+from mslb_contracts.durability import StoredFile
 from mslb_contracts.runs import Digest
 
 type ResourceState = Literal[
@@ -90,3 +92,30 @@ class RuntimeRecord(ScopeRecord):
     mode: Literal["docker"] = "docker"
     traffic: TrafficSummary
     lifecycle_events: Annotated[int, Field(ge=1, le=1024)]
+
+
+class DockerManifest(DockerModel):
+    schema_version: Annotated[int, Field(ge=1, le=1)] = 1
+    mode: Literal["docker"] = "docker"
+    run_id: UUID
+    publication_fence: Annotated[int, Field(ge=1)]
+    snapshot_digest: Digest
+    total: Annotated[int, Field(ge=1, le=10_000)]
+    completed: Annotated[int, Field(ge=0, le=10_000)]
+    failed: Annotated[int, Field(ge=0, le=10_000)]
+    dropped: Annotated[int, Field(ge=0, le=10_000)]
+    unexecuted: Annotated[int, Field(ge=0, le=10_000)]
+    artifacts: Annotated[dict[str, StoredFile], Field(min_length=3, max_length=3)]
+
+    @model_validator(mode="after")
+    def artifacts_and_accounting(self) -> Self:
+        names = {"http_events.jsonl", "runtime_summary.json", "container_lifecycle.jsonl"}
+        prefix = f"docker/{self.run_id.hex}/{self.publication_fence}/"
+        if (
+            self.completed + self.failed + self.dropped + self.unexecuted != self.total
+            or set(self.artifacts) != names
+            or sum(value.size_bytes for value in self.artifacts.values()) > 512 * 1024**2
+            or any(value.key != prefix + name for name, value in self.artifacts.items())
+        ):
+            raise ValueError("Docker artifact namespace or terminal accounting is invalid")
+        return self

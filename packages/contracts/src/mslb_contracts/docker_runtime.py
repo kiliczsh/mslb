@@ -4,7 +4,7 @@ from typing import Annotated, Literal, Self
 
 from pydantic import Field, model_validator
 
-from mslb_contracts.docker_runs import DockerModel
+from mslb_contracts.docker_base import DockerModel
 from mslb_contracts.traffic import WorkCompleted
 
 type StopReason = Literal["CANCELLED", "FENCE_LOST", "RESOURCE_PRESSURE", "RUN_DEADLINE"]

@@ -6,8 +6,9 @@ from dataclasses import dataclass
 from fractions import Fraction
 from typing import BinaryIO
 
-from mslb_engine.models import Request, RunConfig, Server
+from mslb_engine.input_models import Request, Server
 from mslb_engine.replay_errors import ReplayError
+from mslb_engine.run_config import RunConfig
 from mslb_engine.scaling_replay import ScalingReplay
 
 _PRIORITY = {

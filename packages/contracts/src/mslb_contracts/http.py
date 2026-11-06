@@ -6,7 +6,8 @@ from uuid import UUID
 from pydantic import ConfigDict, Field, model_validator
 
 from mslb_contracts.inputs import PositiveValue
-from mslb_contracts.queries import JobStatus, ReadModel, RunView
+from mslb_contracts.read_base import JobStatus, ReadModel
+from mslb_contracts.run_views import RunView
 from mslb_contracts.runs import BundleManifest, Digest, RunSettings
 
 
