@@ -423,6 +423,7 @@ source = { editable = "apps/container-controller" }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
+    { name = "mslb-application" },
     { name = "mslb-contracts" },
     { name = "mslb-persistence" },
     { name = "uvicorn" },
@@ -432,6 +433,7 @@ dependencies = [
 requires-dist = [
     { name = "fastapi", specifier = "==0.162.0" },
     { name = "httpx", specifier = "==0.28.1" },
+    { name = "mslb-application", editable = "packages/application" },
     { name = "mslb-contracts", editable = "packages/contracts" },
     { name = "mslb-persistence", editable = "packages/persistence" },
     { name = "uvicorn", specifier = "==0.54.0" },

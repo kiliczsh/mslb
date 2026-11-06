@@ -2,9 +2,10 @@
 name = "mslb-controller"
 version = "0.1.0"
 requires-python = ">=3.13,<3.14"
-dependencies = ["mslb-contracts", "mslb-persistence", "httpx==0.28.1", "fastapi==0.162.0", "uvicorn==0.54.0"]
+dependencies = ["mslb-application", "mslb-contracts", "mslb-persistence", "httpx==0.28.1", "fastapi==0.162.0", "uvicorn==0.54.0"]
 
 [tool.uv.sources]
+mslb-application = { workspace = true }
 mslb-contracts = { workspace = true }
 mslb-persistence = { workspace = true }
 

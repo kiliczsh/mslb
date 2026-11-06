@@ -27,6 +27,7 @@ type ResourceReason = Literal[
     "MEMORY_HEADROOM",
     "RESOURCE_PRESSURE",
     "WARMING_UP",
+    "HOST_MEMORY_UNAVAILABLE",
 ]
 
 SERVICE_LIMITS_MB: dict[ServiceName, int] = {
@@ -39,7 +40,7 @@ SERVICE_LIMITS_MB: dict[ServiceName, int] = {
     "backend-a": 128,
     "backend-b": 128,
     "container-controller": 192,
-    "resource-guard": 64,
+    "resource-guard": 128,
 }
 MIB = 1024**2
 STARTUP_AND_DYNAMIC_BYTES = (128 + 64 + 256) * MIB
@@ -124,7 +125,8 @@ def memory_bounds(*, probe: ResourceProbe | None) -> tuple[int, int, int]:
 def safe_to_admit(*, probe: ResourceProbe) -> bool:
     caps, reserve, headroom = memory_bounds(probe=probe)
     return (
-        probe.engine_memory_bytes >= 8 * 1024**3
+        not probe.desktop_engine
+        and probe.engine_memory_bytes >= 8 * 1024**3
         and caps + reserve <= probe.engine_memory_bytes
         and probe.available_memory_bytes >= headroom
         and all(

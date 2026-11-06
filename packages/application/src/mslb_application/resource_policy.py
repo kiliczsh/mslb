@@ -37,6 +37,8 @@ class ResourcePolicy:
             reason, stop_running = "RESOURCE_PRESSURE", True
         elif probe.available_memory_bytes < headroom:
             reason, stop_running = "MEMORY_HEADROOM", True
+        elif probe.desktop_engine:
+            reason, stop_running = "HOST_MEMORY_UNAVAILABLE", True
         elif any(item.working_set_bytes * 100 >= item.limit_bytes * 70 for item in probe.services):
             reason = "RESOURCE_PRESSURE"
         if reason is not None:

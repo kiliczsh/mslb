@@ -32,6 +32,38 @@ x-backend: &backend
     com.mslb.backend-kind: static
 
 services:
+  resource-guard:
+    image: mslb-python-tools:local
+    command: [python, -m, mslb_controller.guard_main]
+    user: "1000:1000"
+    read_only: true
+    tmpfs: ["/run/mslb-tmp:rw,noexec,nosuid,nodev,size=4m,uid=1000,gid=1000,mode=0700"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.5
+    pids_limit: 32
+    environment:
+      DATABASE_URL: postgresql://mslb:local-demo-only@postgres/mslb
+    volumes: ["guard-auth:/run/guard-auth:ro"]
+    networks: [docker-control, control-data]
+    depends_on:
+      docker-proxy: {condition: service_healthy}
+    stop_grace_period: 30s
+    restart: on-failure:3
+    healthcheck:
+      test: [CMD, python, -m, mslb_controller.guard_health]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+        mode: non-blocking
+        max-buffer-size: 1m
   control-init:
     image: mslb-python-tools:local
     command: [python, -m, mslb_controller.credentials, --all]

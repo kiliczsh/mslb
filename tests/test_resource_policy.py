@@ -39,13 +39,22 @@ def warm(*, policy: ResourcePolicy) -> None:
         assert result.admit is (second == 2)
 
 
+def test_desktop_vm_evidence_cannot_replace_host_headroom() -> None:
+    policy = ResourcePolicy()
+    for second in range(4):
+        value = probe(second=second).model_copy(update={"desktop_engine": True})
+        result = policy.evaluate(probe=value, now=value.measured_at)
+        assert not result.admit and result.stop_running
+        assert result.reason == "HOST_MEMORY_UNAVAILABLE"
+
+
 def test_admission_needs_three_distinct_cool_samples_and_counts_future_growth() -> None:
     policy = ResourcePolicy()
     initial = probe()
     first = policy.evaluate(probe=initial, now=EPOCH)
     for _ in range(10):
         assert not policy.evaluate(probe=initial, now=EPOCH).admit
-    assert first.reason == "WARMING_UP" and first.cap_sum_bytes == 3584 * MIB
+    assert first.reason == "WARMING_UP" and first.cap_sum_bytes == 3648 * MIB
     warm(policy=ResourcePolicy())
     for second in (1, 2):
         value = probe(second=second)
