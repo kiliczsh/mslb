@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import { z } from "zod";
 import { acceptedSchema, detailSchema } from "../src/lib/contracts.js";
@@ -66,22 +69,110 @@ test("authentication headers, visible denial and session reset without persisten
   await expect(page.getByRole("alert").first()).toContainText("Authentication required");
 });
 
+test("native streamed downloads remain one-use and bound to their originating browser page", async ({
+  page,
+  context,
+}) => {
+  await page.goto("/");
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.register("/download-worker.js", { type: "module" });
+    await navigator.serviceWorker.ready;
+    if (!navigator.serviceWorker.controller)
+      await new Promise<void>((resolve) =>
+        navigator.serviceWorker.addEventListener("controllerchange", () => resolve(), {
+          once: true,
+        }),
+      );
+    const worker = navigator.serviceWorker.controller;
+    if (!worker) throw new Error("Download worker is missing");
+    let produced = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (produced === 512) controller.close();
+        else {
+          produced += 1;
+          controller.enqueue(new Uint8Array(65536).fill(0x61));
+        }
+      },
+    });
+    const channel = new MessageChannel();
+    const ready = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error("Download worker did not acknowledge")),
+        10_000,
+      );
+      channel.port1.onmessage = (event) => {
+        clearTimeout(timer);
+        if (event.data.kind === "ready") resolve();
+        else reject(new Error("Download worker rejected its transfer"));
+      };
+    });
+    worker.postMessage(
+      { kind: "prepare", id: 9981, body, filename: "bounded.jsonl", media: "application/x-ndjson" },
+      [body, channel.port2],
+    );
+    await ready;
+    channel.port1.close();
+  });
+  const other = await context.newPage();
+  await other.goto("/");
+  expect(await other.evaluate(async () => (await fetch("/_download/9981")).status)).toBe(410);
+  await other.close();
+  const downloadReady = page.waitForEvent("download");
+  await page.evaluate(() => {
+    const link = document.createElement("a");
+    link.href = "/_download/9981";
+    document.body.append(link);
+    link.click();
+    link.remove();
+  });
+  const download = await downloadReady;
+  expect(await download.failure()).toBeNull();
+  expect(download.suggestedFilename()).toBe("bounded.jsonl");
+  const path = await download.path();
+  if (!path) throw new Error("Download path is missing");
+  const actual = createHash("sha256"),
+    expected = createHash("sha256");
+  let size = 0;
+  for await (const chunk of createReadStream(path)) {
+    actual.update(chunk);
+    size += chunk.byteLength;
+  }
+  for (let index = 0; index < 512; index += 1) expected.update(new Uint8Array(65536).fill(0x61));
+  expect(size).toBe(32 * 1024 ** 2);
+  expect(actual.digest("hex")).toBe(expected.digest("hex"));
+  expect(await page.evaluate(async () => (await fetch("/_download/9981")).status)).toBe(410);
+  expect(await page.evaluate(async () => await caches.keys())).toEqual([]);
+});
+
 test("real gateway CRUD, CSV, queued worker completion and narrow-screen session reset", async ({
   page,
 }) => {
   const pageErrors: string[] = [];
   const diagnostics: string[] = [];
+  const authenticated = process.env.AUTH_ENABLED === "true";
+  let checkingDenial = authenticated;
+  const denials: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   page.on("console", (message) => {
     const readinessDiagnostic =
       message.type() === "error" &&
       message.location().url.endsWith("/api/v1/health/ready") &&
       message.text().includes("503");
-    if ((message.type() === "warning" || message.type() === "error") && !readinessDiagnostic)
+    const expectedDenial =
+      checkingDenial &&
+      message.type() === "error" &&
+      message.location().url.endsWith("/api/v1/servers?limit=64") &&
+      message.text().includes("401");
+    if (expectedDenial) denials.push(message.text());
+    else if ((message.type() === "warning" || message.type() === "error") && !readinessDiagnostic)
       diagnostics.push(message.text());
   });
   await page.goto("/");
-  if (process.env.AUTH_ENABLED === "true") {
+  if (authenticated) {
+    await expect(page.getByRole("alert").first()).toContainText("UNAUTHORIZED");
+    await expect.poll(() => denials.length).toBe(1);
+    checkingDenial = false;
     await page.getByLabel("Bearer token (authenticated mode)").fill(process.env.AUTH_TOKEN ?? "");
     await page.getByRole("button", { name: "Connect", exact: true }).click();
   }
@@ -179,6 +270,38 @@ test("real gateway CRUD, CSV, queued worker completion and narrow-screen session
     "round_robin",
   );
   await expect(page.getByText(`Baseline: ${firstRun.run_id}`, { exact: true })).toBeVisible();
+  await expect(page.getByText("Event connection: complete", { exact: false })).toBeVisible();
+  await expect(page.getByRole("list", { name: "Recent persisted events" })).toContainText(
+    "FINISHED",
+  );
+  const fileReady = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download saved artifact", exact: true }).click();
+  const file = await fileReady;
+  expect(await file.failure()).toBeNull();
+  expect(file.suggestedFilename()).toBe("run.jsonl");
+  const saved = await file.path();
+  if (!saved) throw new Error("Browser download path is missing");
+  const bytes = await readFile(saved);
+  const artifact = await page.request.get(
+    `/api/v1/simulations/${firstRun.run_id}/artifact?name=run.jsonl`,
+    { headers },
+  );
+  expect(createHash("sha256").update(bytes).digest("hex")).toBe(
+    artifact.headers().etag?.replaceAll('"', ""),
+  );
+  await expect(page.getByText("File handed to browser.", { exact: false })).toBeVisible();
+  await page.getByRole("combobox", { name: /^Saved artifact/ }).selectOption("inputs.zip");
+  const zipReady = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download saved artifact", exact: true }).click();
+  const archive = await zipReady;
+  expect(await archive.failure()).toBeNull();
+  const zipPath = await archive.path();
+  if (!zipPath) throw new Error("Browser archive path is missing");
+  const zip = await readFile(zipPath);
+  expect(zip.subarray(0, 2).toString()).toBe("PK");
+  expect(zip.toString("latin1")).toContain("servers.json");
+  expect(zip.toString("latin1")).toContain("manifest.json");
+  expect(await page.evaluate(async () => await caches.keys())).toEqual([]);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole("heading", { name: "Simulations", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -189,7 +312,12 @@ test("real gateway CRUD, CSV, queued worker completion and narrow-screen session
   expect(
     await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length })),
   ).toEqual({ local: 0, session: 0 });
+  checkingDenial = authenticated;
   await page.getByRole("button", { name: "Clear session", exact: true }).click();
+  if (authenticated) {
+    await expect(page.getByRole("alert").first()).toContainText("UNAUTHORIZED");
+    await expect.poll(() => denials.length).toBe(2);
+  } else expect(denials).toEqual([]);
   await expect(page.getByLabel("Bearer token (authenticated mode)")).toHaveValue("");
   expect(pageErrors).toEqual([]);
   expect(diagnostics).toEqual([]);

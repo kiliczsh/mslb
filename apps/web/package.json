@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "check": "biome ci --error-on-warnings . && tsc --noEmit",
+    "check": "biome ci --error-on-warnings . && tsc --noEmit && tsc --noEmit -p worker/tsconfig.json",
     "test": "tsc --outDir .test-output && node --test .test-output/tests/*.test.js && vitest run --configLoader native",
     "build": "vite build --configLoader native",
     "test:browser": "playwright test"

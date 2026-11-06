@@ -8,8 +8,13 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   reporter: "line",
   outputDir: process.env.PLAYWRIGHT_OUTPUT_DIR ?? "/app/test-results/results",
+  webServer: {
+    command: "node browser/loopbackProxy.ts",
+    url: "http://localhost:8080/health",
+    timeout: 15_000,
+  },
   use: {
-    baseURL: "http://web:8080",
+    baseURL: "http://localhost:8080",
     browserName: "chromium",
     headless: true,
     trace: "off",

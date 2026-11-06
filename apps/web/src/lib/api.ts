@@ -77,7 +77,12 @@ export class Api {
     this.lifetime.abort();
   }
 
-  async request<T>(path: string, schema: z.ZodType<T>, init: RequestInit = {}): Promise<T> {
+  async response<T>(
+    path: string,
+    consume: (response: Response, signal: AbortSignal) => Promise<T>,
+    init: RequestInit = {},
+    timeout = 30_000,
+  ): Promise<T> {
     if (this.pending >= 8)
       throw new ApiError(
         "This browser session is busy. Wait for an active request, then retry.",
@@ -85,24 +90,35 @@ export class Api {
       );
     const headers = new Headers(init.headers);
     if (this.token) headers.set("Authorization", `Bearer ${this.token}`);
+    const closed = new AbortController();
     this.pending += 1;
     try {
+      const signal = AbortSignal.any([
+        closed.signal,
+        this.lifetime.signal,
+        AbortSignal.timeout(timeout),
+        ...(init.signal ? [init.signal] : []),
+      ]);
       const response = await this.fetcher(`/api/v1/${path}`, {
         ...init,
         headers,
         credentials: "omit",
         cache: "no-store",
         redirect: "error",
-        signal: AbortSignal.any([
-          this.lifetime.signal,
-          AbortSignal.timeout(30_000),
-          ...(init.signal ? [init.signal] : []),
-        ]),
+        signal,
       });
-      if (response.status === 204) return schema.parse(undefined);
-      const value = await boundedJson(response);
       // Product readiness uses a 503 success-shaped diagnostic while the product is incomplete.
-      if (!response.ok && !(path === "health/ready" && readinessSchema.safeParse(value).success)) {
+      if (!response.ok) {
+        const value = await boundedJson(response);
+        if (
+          path === "health/ready" &&
+          response.status === 503 &&
+          readinessSchema.safeParse(value).success
+        )
+          return await consume(
+            Response.json(value, { status: response.status, headers: response.headers }),
+            signal,
+          );
         const parsed = errorSchema.safeParse(value);
         if (parsed.success)
           throw new ApiError(
@@ -113,17 +129,33 @@ export class Api {
           );
         throw new ApiError(`The service could not complete this request (${response.status}).`);
       }
-      const parsed = schema.safeParse(value);
-      if (!parsed.success)
-        throw new ApiError("The service response does not match its contract.", "INVALID_RESPONSE");
-      return parsed.data;
+      return await consume(response, signal);
     } catch (error) {
       if (error instanceof ApiError || init.signal?.aborted) throw error;
       // Browser/library exceptions may contain request details. Do not echo them into the UI/logs.
       throw new ApiError("Cannot reach the service. Check connectivity, then retry.");
     } finally {
+      closed.abort();
       this.pending -= 1;
     }
+  }
+
+  request<T>(path: string, schema: z.ZodType<T>, init: RequestInit = {}): Promise<T> {
+    return this.response(
+      path,
+      async (response) => {
+        const parsed = schema.safeParse(
+          response.status === 204 ? undefined : await boundedJson(response),
+        );
+        if (!parsed.success)
+          throw new ApiError(
+            "The service response does not match its contract.",
+            "INVALID_RESPONSE",
+          );
+        return parsed.data;
+      },
+      init,
+    );
   }
 
   servers = (signal: AbortSignal) =>
@@ -198,6 +230,12 @@ export class Api {
   events = (id: string, tick: number, cursor: string | null, signal: AbortSignal) =>
     this.request(
       `simulations/${encodeURIComponent(id)}/events?${new URLSearchParams({ limit: "100", start_tick: String(tick), end_tick: String(tick), ...(cursor ? { cursor } : {}) })}`,
+      pageSchema(eventSchema),
+      { signal },
+    );
+  eventHistory = (id: string, cursor: string | null, signal: AbortSignal) =>
+    this.request(
+      `simulations/${encodeURIComponent(id)}/events?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
       pageSchema(eventSchema),
       { signal },
     );

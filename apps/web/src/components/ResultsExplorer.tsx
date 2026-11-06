@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Api } from "../lib/api.js";
 import type { Run } from "../lib/contracts.js";
 import { RunComparison } from "./RunComparison.js";
+import { RunDownloads } from "./RunDownloads.js";
 import { RunMetrics } from "./RunMetrics.js";
 import { RunPlayback } from "./RunPlayback.js";
 
@@ -35,6 +36,7 @@ export function ResultsExplorer({
       {tab === "metrics" && <RunMetrics api={api} runId={run.id} terminalTick={terminalTick} />}
       {tab === "playback" && <RunPlayback api={api} runId={run.id} terminalTick={terminalTick} />}
       {tab === "comparison" && <RunComparison api={api} run={run} />}
+      <RunDownloads key={run.id} api={api} runId={run.id} />
     </section>
   );
 }

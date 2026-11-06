@@ -4,6 +4,31 @@ import { defaultSettings, serverSchema, settingsSchema } from "./contracts.js";
 import { createQueryClient } from "./queryClient.js";
 
 describe("bounded same-origin transport", () => {
+  it("holds admission through streamed consumption and aborts the response when the consumer finishes", async () => {
+    const finish: (() => void)[] = [],
+      signals: AbortSignal[] = [];
+    const api = new Api("", async (_input, init) => {
+      if (init?.signal) signals.push(init.signal);
+      return new Response("stream");
+    });
+    const active = Array.from({ length: 8 }, () =>
+      api.response(
+        "simulations/example/stream",
+        async () => new Promise<void>((resolve) => finish.push(resolve)),
+      ),
+    );
+    await vi.waitFor(() => expect(finish).toHaveLength(8));
+    await expect(
+      api.response("simulations/example/stream", async () => undefined),
+    ).rejects.toMatchObject({ code: "RATE_LIMITED" });
+    expect(signals.every((signal) => !signal.aborted)).toBe(true);
+    for (const resolve of finish) resolve();
+    await Promise.all(active);
+    expect(signals.every((signal) => signal.aborted)).toBe(true);
+    await expect(
+      api.response("simulations/example/stream", async () => undefined),
+    ).resolves.toBeUndefined();
+  });
   it("caps outstanding session requests and recovers after completed work", async () => {
     const waiting: ((response: Response) => void)[] = [];
     const api = new Api("", async () => new Promise<Response>((resolve) => waiting.push(resolve)));

@@ -9,6 +9,7 @@ import {
   terminal,
 } from "../lib/contracts.js";
 import { Feedback } from "./Feedback.js";
+import { LiveRun } from "./LiveRun.js";
 
 const ResultsExplorer = lazy(() =>
   import("./ResultsExplorer.js").then((module) => ({ default: module.ResultsExplorer })),
@@ -400,6 +401,7 @@ export function RunWorkspace({ api, dataset }: { api: Api; dataset: Dataset | nu
           )}
         </div>
       </div>
+      {detail.data && <LiveRun key={detail.data.id} api={api} run={detail.data} />}
       {detail.data?.validation && (
         <Suspense fallback={<p role="status">Loading result views…</p>}>
           <ResultsExplorer
