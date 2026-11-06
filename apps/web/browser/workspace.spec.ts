@@ -3,7 +3,56 @@ import { createReadStream } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import { z } from "zod";
-import { acceptedSchema, detailSchema } from "../src/lib/contracts.js";
+import { acceptedSchema, detailSchema, serverSchema } from "../src/lib/contracts.js";
+
+const fixtureHeaders = {
+  Authorization: `Bearer ${process.env.AUTH_TOKEN ?? ""}`,
+};
+const fixtureServers = [
+  { id: "s1", cpu_units_per_tick: 10, mem_mb: 1024, rate_limit_per_sec: 2 },
+  { id: "s2", cpu_units_per_tick: 5, mem_mb: 512, rate_limit_per_sec: 1 },
+];
+
+test.beforeAll(async ({ request }) => {
+  if (process.env.BROWSER_TEST_INSTALLATION !== "isolated")
+    throw new Error("Refusing to prepare servers outside the disposable browser installation.");
+  // Verify a fresh installation before changing any server. The runner destroys
+  // this project's private volumes in finally, including when a test fails.
+  for (const collection of ["simulations", "datasets"]) {
+    const response = await request.get(`/api/v1/${collection}`, { headers: fixtureHeaders });
+    expect(response.status()).toBe(200);
+    expect(
+      z.object({ items: z.array(z.unknown()), next_cursor: z.null() }).parse(await response.json())
+        .items,
+    ).toEqual([]);
+  }
+  const existing = await request.get("/api/v1/servers", { headers: fixtureHeaders });
+  expect(existing.status()).toBe(200);
+  const page = z
+    .object({ items: z.array(serverSchema), next_cursor: z.null() })
+    .parse(await existing.json());
+  for (const server of page.items) {
+    const response = await request.delete(`/api/v1/servers/${encodeURIComponent(server.id)}`, {
+      headers: { ...fixtureHeaders, "If-Match": `"${server.version}"` },
+    });
+    expect(response.status()).toBe(204);
+  }
+  for (const server of fixtureServers) {
+    const response = await request.post("/api/v1/servers", {
+      headers: fixtureHeaders,
+      data: server,
+    });
+    expect(response.status()).toBe(201);
+    expect(serverSchema.parse(await response.json())).toMatchObject(server);
+  }
+  const prepared = await request.get("/api/v1/servers", { headers: fixtureHeaders });
+  expect(
+    z
+      .object({ items: z.array(serverSchema) })
+      .parse(await prepared.json())
+      .items.map(({ version, ...server }) => server),
+  ).toEqual(fixtureServers);
+});
 
 test("gateway serves built assets with isolation headers and rejects untrusted hosts/origins", async ({
   request,
@@ -148,8 +197,8 @@ test("native streamed downloads remain one-use and bound to their originating br
 test("real gateway CRUD, CSV, queued worker completion and narrow-screen session reset", async ({
   page,
 }) => {
-  // Two durable jobs include queueing, fsync and independent replay. Retained
-  // histories can exceed the ordinary 15-second interactive assertion budget.
+  // Two durable jobs include queueing, fsync and independent replay in the
+  // disposable installation with the exact server configuration above.
   test.setTimeout(90_000);
   const completionTimeout = 30_000;
   const pageErrors: string[] = [];

@@ -9,15 +9,19 @@ import httpx
 import pytest
 from mslb_api.app import create_app
 from mslb_api.settings import Settings
+from mslb_api.streams import SEND_TIMEOUT_SECONDS, EventResponse
 from mslb_application.event_feed import EventFeed
 from mslb_application.files import ManagedFiles, StorageLimits
 from mslb_application.worker import Worker
+from mslb_contracts.durability import PersistedEvent
 from mslb_contracts.inputs import RequestInput
 from mslb_contracts.queries import RunView
 from mslb_persistence.reads import Reads
 from sqlalchemy.exc import DBAPIError
+from starlette.types import Receive, Scope, Send
 
 from tests.integration.helpers import scratch
+from tests.integration.streaming_transport import SlowHttpTransport
 
 
 def test_invalid_and_chunked_oversized_uploads_leave_no_dataset_or_staging(tmp_path: Path) -> None:
@@ -195,21 +199,60 @@ def test_identical_http_retries_share_materialization_and_survive_owner_cancella
         release.set()
 
 
-def test_live_sse_replay_and_slow_consumer_keep_worker_output_independent(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("close_kind", "identifier_padding"),
+    [
+        pytest.param("send_deadline", 0, id="send_deadline-frame_budget"),
+        pytest.param("client_disconnect", 0, id="client_disconnect-frame_budget"),
+        pytest.param("send_deadline", 90, id="send_deadline-byte_budget"),
+        pytest.param("client_disconnect", 90, id="client_disconnect-byte_budget"),
+    ],
+)
+def test_blocked_http_sse_consumer_releases_admission_and_replays_complete_durable_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, close_kind: str, identifier_padding: int
+) -> None:
+    release_validation = Event()
+    overflow = asyncio.Event()
+    feeds: list[EventFeed] = []
+    responses: list[EventResponse] = []
+    peak_frames, peak_bytes = 0, 0
+    original_offer, original_response = EventFeed.offer, EventResponse.__call__
+
+    def observed_offer(self: EventFeed, frame: bytes) -> bool:
+        nonlocal peak_frames, peak_bytes
+        if not feeds:
+            feeds.append(self)
+        accepted = original_offer(self=self, frame=frame)
+        if self is feeds[0]:
+            peak_frames = max(peak_frames, self.queue.qsize())
+            peak_bytes = max(peak_bytes, self.queued_bytes)
+            if self.overflow:
+                overflow.set()
+        return accepted
+
+    async def observed_response(
+        self: EventResponse, scope: Scope, receive: Receive, send: Send
+    ) -> None:
+        responses.append(self)
+        await original_response(self=self, scope=scope, receive=receive, send=send)
+
+    monkeypatch.setattr(target=EventFeed, name="offer", value=observed_offer)
+    monkeypatch.setattr(target=EventResponse, name="__call__", value=observed_response)
+
     async def scenario() -> None:
         async with scratch() as database:
             inputs = await asyncio.to_thread(
-                ManagedFiles, tmp_path / "inputs", StorageLimits(min_free_bytes=0)
+                ManagedFiles, root=tmp_path / "inputs", limits=StorageLimits(min_free_bytes=0)
             )
             outputs = await asyncio.to_thread(
-                ManagedFiles, tmp_path / "outputs", StorageLimits(min_free_bytes=0)
+                ManagedFiles, root=tmp_path / "outputs", limits=StorageLimits(min_free_bytes=0)
             )
             app = create_app(
-                Settings(allowed_hosts=("testserver",)),
-                database,
-                inputs,
-                outputs,
-                b"sse-check-signing-key" * 2,
+                settings=Settings(allowed_hosts=("testserver",), stream_limit=1, request_limit=4),
+                database=database,
+                inputs=inputs,
+                outputs=outputs,
+                signing_key=b"sse-check-signing-key" * 2,
             )
             async with app.router.lifespan_context(app):
                 async with httpx.AsyncClient(
@@ -217,30 +260,140 @@ def test_live_sse_replay_and_slow_consumer_keep_worker_output_independent(tmp_pa
                 ) as client:
                     source = (
                         "t,request_id,work_units,mem_mb\n"
-                        + "".join(f"0,r{i:04d},1,1\n" for i in range(251))
+                        + "".join(f"0,r{i:04d}{'x' * identifier_padding},1,1\n" for i in range(251))
                     ).encode()
                     dataset = await client.post(
-                        "datasets", files={"file": ("requests.csv", source, "text/csv")}
+                        url="datasets", files={"file": ("requests.csv", source, "text/csv")}
                     )
+                    assert dataset.status_code == 201, dataset.text
                     run = await client.post(
-                        "simulations", json={"dataset_id": dataset.json()["id"]}
+                        url="simulations", json={"dataset_id": dataset.json()["id"]}
                     )
+                    assert run.status_code == 202, run.text
                     run_id = run.json()["run_id"]
-                    streaming = asyncio.create_task(client.get(f"simulations/{run_id}/stream"))
-                    await asyncio.sleep(0.1)
-                    assert not streaming.done()
-                    assert await Worker(database, inputs, outputs).run_once()
-                    response = await asyncio.wait_for(streaming, 10)
-                    sequences = [
-                        int(line[4:])
-                        for line in response.text.splitlines()
-                        if line.startswith("id: ")
-                    ]
-                    assert sequences == list(range(1, 754))
-                    detail = await Reads(database).run(UUID(run_id))
-                    feed = EventFeed(database, detail.id)
-                    await asyncio.wait_for(feed.produce(detail), 5)
-                    assert feed.overflow and feed.queued_bytes <= 64 * 1024
-                    assert (await Reads(database).run(detail.id)).status == "completed"
 
-    asyncio.run(scenario())
+                    def hold_terminal(phase: str, lease: object, tick: int) -> None:
+                        if phase == "terminal_committed":
+                            assert release_validation.wait(timeout=12), (
+                                "Test did not release worker validation"
+                            )
+
+                    transport = SlowHttpTransport(app=app)
+                    async with httpx.AsyncClient(
+                        transport=transport, base_url="http://testserver/api/v1/"
+                    ) as slow:
+                        async with slow.stream(
+                            method="GET", url=f"simulations/{run_id}/stream"
+                        ) as response:
+                            assert response.status_code == 200
+                            assert response.headers["content-type"].startswith("text/event-stream")
+                            worker = asyncio.create_task(
+                                coro=Worker(
+                                    database=database,
+                                    inputs=inputs,
+                                    outputs=outputs,
+                                    observer=hold_terminal,
+                                ).run_once()
+                            )
+                            lines = response.aiter_lines()
+                            assert isinstance(lines, AsyncGenerator)
+                            received: list[PersistedEvent] = []
+                            last_received_id = 0
+                            try:
+                                async with asyncio.timeout(delay=6):
+                                    async for line in lines:
+                                        if line.startswith("id: "):
+                                            last_received_id = int(line[4:])
+                                        if line.startswith("data: ") and '"sequence":' in line:
+                                            received.append(
+                                                PersistedEvent.model_validate_json(
+                                                    json_data=line[6:]
+                                                )
+                                            )
+                                            assert received[-1].sequence == last_received_id
+                                            break
+                                assert [event.sequence for event in received] == [1]
+                                assert (
+                                    transport.sending.is_set() and not transport.finished.is_set()
+                                )
+                                await asyncio.wait_for(fut=overflow.wait(), timeout=3)
+                                assert 0 < peak_frames <= 500
+                                assert 0 < peak_bytes <= 64 * 1024
+                                if identifier_padding:
+                                    assert peak_frames < 500, (
+                                        "Long frames did not exercise the byte ceiling"
+                                    )
+                                    assert peak_bytes > 60 * 1024
+                                else:
+                                    assert peak_frames == 500, (
+                                        "Short frames did not exercise the frame ceiling"
+                                    )
+                                assert transport.peak_frames == 1
+                                denied = await client.get(url=f"simulations/{run_id}/stream")
+                                assert denied.status_code == 429, (
+                                    "Blocked connection did not retain stream admission"
+                                )
+                                assert (await client.get(url=f"simulations/{run_id}")).json()[
+                                    "status"
+                                ] == "running"
+                                release_validation.set()
+                                assert await asyncio.wait_for(fut=worker, timeout=5)
+                                assert (
+                                    await Reads(database=database).run(run_id=UUID(hex=run_id))
+                                ).status == "completed"
+                                assert not transport.finished.is_set(), (
+                                    "Worker completed only after the blocked stream ended"
+                                )
+                                if close_kind == "client_disconnect":
+                                    await response.aclose()
+                                try:
+                                    await asyncio.wait_for(
+                                        fut=transport.finished.wait(),
+                                        timeout=SEND_TIMEOUT_SECONDS + 2,
+                                    )
+                                except TimeoutError:
+                                    raise AssertionError(
+                                        "Blocked HTTP SSE connection missed its cleanup deadline"
+                                    ) from None
+                                assert transport.task is not None and transport.task.done()
+                                await transport.task
+                                assert feeds[0].closed.is_set()
+                                # Retain the response so GC cannot hide missing cleanup.
+                                with pytest.raises(expected_exception=StopAsyncIteration):
+                                    await asyncio.wait_for(
+                                        fut=anext(responses[0].source), timeout=1
+                                    )
+                            finally:
+                                release_validation.set()
+                                await lines.aclose()
+                                await asyncio.wait_for(fut=worker, timeout=8)
+
+                    replay = await client.get(
+                        url=f"simulations/{run_id}/stream",
+                        headers={"Last-Event-ID": str(last_received_id)},
+                    )
+                    assert replay.status_code == 200, (
+                        "Stream admission was not released after cleanup"
+                    )
+                    replayed = [
+                        PersistedEvent.model_validate_json(json_data=line[6:])
+                        for line in replay.text.splitlines()
+                        if line.startswith("data: ") and '"sequence":' in line
+                    ]
+                    ids = [event.sequence for event in (*received, *replayed)]
+                    assert ids == list(range(1, 754)), (
+                        "Reconnect lost, duplicated or reordered a durable event"
+                    )
+                    assert [
+                        int(line[4:])
+                        for line in replay.text.splitlines()
+                        if line.startswith("id: ")
+                    ] == list(range(last_received_id + 1, 754))
+                    assert (
+                        "event: status\n" in replay.text and '"status":"completed"' in replay.text
+                    )
+
+    try:
+        asyncio.run(main=scenario())
+    finally:
+        release_validation.set()

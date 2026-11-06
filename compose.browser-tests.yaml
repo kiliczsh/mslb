@@ -1,0 +1,49 @@
+# Disposable logical installation. No host ports or developer data volumes.
+services:
+  postgres:
+    extends: {file: docker-compose.yml, service: postgres}
+    pull_policy: never
+    networks: !override [internal]
+    volumes: !override
+      - type: tmpfs
+        target: /var/lib/postgresql/data
+        tmpfs: {size: 268435456}
+  redis:
+    extends: {file: docker-compose.yml, service: redis}
+  migrate:
+    extends: {file: docker-compose.yml, service: migrate}
+    profiles: !reset []
+  worker:
+    extends: {file: docker-compose.yml, service: worker}
+    profiles: !reset []
+    depends_on:
+      redis: {condition: service_healthy}
+  api:
+    extends: {file: docker-compose.yml, service: api}
+    profiles: !reset []
+    ports: !reset []
+    environment:
+      AUTH_ENABLED: "true"
+      AUTH_TOKEN: browser_fixture_credential_12345678901234567890
+      ALLOWED_HOSTS: localhost:8000,127.0.0.1:8000,api:8000
+      ALLOWED_ORIGINS: http://localhost:8080,http://127.0.0.1:8080,http://web:8080
+  web:
+    extends: {file: docker-compose.yml, service: web}
+    profiles: !reset []
+    ports: !reset []
+  browser-checks:
+    extends: {file: docker-compose.yml, service: browser-checks}
+    profiles: !reset []
+    environment:
+      BROWSER_TEST_INSTALLATION: isolated
+      AUTH_ENABLED: "true"
+      AUTH_TOKEN: browser_fixture_credential_12345678901234567890
+
+networks:
+  internal: {internal: true}
+  ingress: {driver: bridge}
+
+volumes:
+  inputs:
+  outputs:
+  api-state:

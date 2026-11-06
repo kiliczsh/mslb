@@ -60,11 +60,12 @@ try {
     $webHealth = Invoke-WebRequest -Uri 'http://127.0.0.1:8080/health' -TimeoutSec 5
     if ($webHealth.StatusCode -ne 200) { throw 'Host loopback dashboard health failed' }
     Write-Host 'Host loopback dashboard connectivity verified'
-    foreach ($service in @('dependencies-check', 'migrate', 'python-checks', 'persistence-checks', 'frontend-checks', 'worker-check', 'api-check', 'mcp-check', 'traffic-check', 'docker-proxy-check', 'browser-checks')) {
+    foreach ($service in @('dependencies-check', 'migrate', 'python-checks', 'persistence-checks', 'frontend-checks', 'worker-check', 'api-check', 'mcp-check', 'traffic-check', 'docker-proxy-check')) {
         Invoke-CheckedDocker -DockerArguments @(
             'compose', '--profile', 'tools', 'run', '--rm', $service
         )
     }
+    & (Join-Path $PSScriptRoot 'check-browser.ps1')
     Invoke-CheckedDocker -DockerArguments @(
         'compose', '--profile', 'tools', 'run', '--rm', 'bundle-runner'
     )

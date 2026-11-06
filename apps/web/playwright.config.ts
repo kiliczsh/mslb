@@ -1,5 +1,11 @@
 import { defineConfig } from "@playwright/test";
 
+if (process.env.BROWSER_TEST_INSTALLATION !== "isolated") {
+  throw new Error(
+    "Browser tests require the disposable installation in scripts/check-browser.ps1.",
+  );
+}
+
 export default defineConfig({
   testDir: "./browser",
   workers: 1,

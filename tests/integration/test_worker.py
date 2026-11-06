@@ -7,6 +7,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Iterator
+from datetime import timedelta
 from pathlib import Path
 from threading import Event
 from uuid import UUID
@@ -24,7 +25,9 @@ from mslb_persistence.catalog import Catalog
 from mslb_persistence.database import Database
 from mslb_persistence.durability import Durability
 from mslb_persistence.jobs import Jobs
-from mslb_persistence.records import JobRecord, RunRecord
+from mslb_persistence.models import Attempt, Job
+from mslb_persistence.records import JobRecord, Lease, RunRecord
+from sqlalchemy import func, select
 
 from tests.integration.helpers import fixture_inputs, scratch
 
@@ -102,10 +105,11 @@ def test_worker_executes_queued_run_and_matches_independent_cli_bundle(
     asyncio.run(scenario())
 
 
-def test_worker_renews_during_validation_and_observer_failure_does_not_change_output(
+def test_worker_renews_persisted_lease_beyond_original_expiration_during_validation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     original = journal.validate_artifact_files
+    entered, release = Event(), Event()
 
     def delayed(
         snapshot: RunSnapshot,
@@ -114,33 +118,128 @@ def test_worker_renews_during_validation_and_observer_failure_does_not_change_ou
         event_count: int,
         decision_count: int,
     ) -> BundleManifest:
-        time.sleep(1.5)
-        return original(snapshot, directory, terminal_tick, event_count, decision_count)
+        entered.set()
+        assert release.wait(timeout=12), "Test did not release held validation"
+        return original(
+            snapshot=snapshot,
+            directory=directory,
+            terminal_tick=terminal_tick,
+            event_count=event_count,
+            decision_count=decision_count,
+        )
 
-    # A real blocking validation phase runs in the execution thread while the
-    # async supervisor renews a shorter-than-validation test lease.
-    monkeypatch.setattr(journal, "validate_artifact_files", delayed)
+    monkeypatch.setattr(target=journal, name="validate_artifact_files", value=delayed)
 
     async def scenario() -> None:
         async with scratch() as database:
-            inputs, outputs, run = await submission(database, tmp_path)
+            inputs, outputs, run = await submission(database=database, root=tmp_path)
+            claims: list[Lease] = []
 
-            def unavailable(phase: str, lease: object, tick: int) -> None:
-                raise OSError("operational observer unavailable")
+            def observe(phase: str, lease: Lease, tick: int) -> None:
+                if phase == "claimed":
+                    claims.append(lease)
 
             worker = Worker(
-                database,
-                inputs,
-                outputs,
+                database=database,
+                inputs=inputs,
+                outputs=outputs,
+                owner="validation-renewal-owner",
                 lease_seconds=2,
-                renewal_seconds=0.3,
-                observer=unavailable,
+                renewal_seconds=0.2,
+                observer=observe,
             )
-            assert await worker.run_once()
-            assert (await Jobs(database).get(run.id)).status == "completed"
-            assert worker.dropped_notifications > 0
+            task = asyncio.create_task(coro=worker.run_once())
+            try:
+                assert await asyncio.to_thread(entered.wait, timeout=5), (
+                    "Validation was not entered"
+                )
+                assert len(claims) == 1
+                claim = claims[0]
+                async with asyncio.timeout(delay=8):
+                    while True:
+                        async with database.sessions() as session:
+                            row = (
+                                await session.execute(
+                                    statement=select(
+                                        func.clock_timestamp(),
+                                        Job.owner,
+                                        Job.attempts,
+                                        Job.fence,
+                                        Job.lease_expires_at,
+                                        Job.status,
+                                    ).where(Job.run_id == run.id)
+                                )
+                            ).one()
+                        now, owner, attempt, fence, expiration, status = row
+                        if now >= claim.expires_at + timedelta(milliseconds=100):
+                            assert status == "running" and owner == claim.owner
+                            assert (attempt, fence) == (claim.attempt, claim.fence) == (1, 1)
+                            assert expiration is not None and expiration > now, (
+                                "Periodic renewal did not extend the persisted lease "
+                                "beyond its original expiration",
+                                claim.expires_at,
+                                now,
+                                expiration,
+                            )
+                            assert expiration > claim.expires_at
+                            break
+                        await asyncio.sleep(delay=0.05)
+                assert not task.done(), "Validation ended before renewal became necessary"
+                assert (
+                    await Jobs(database=database).claim(owner="competing-owner", lease_seconds=2)
+                    is None
+                )
+            finally:
+                release.set()
+                assert await asyncio.wait_for(fut=task, timeout=8)
+            state = await Jobs(database=database).get(run_id=run.id)
+            # Terminal publication increments the fence to revoke the finished owner.
+            assert (state.status, state.attempts, state.fence) == (
+                "completed",
+                1,
+                claims[0].fence + 1,
+            )
+            async with database.sessions() as session:
+                attempts = (
+                    await session.execute(
+                        statement=select(
+                            Attempt.number, Attempt.owner, Attempt.fence, Attempt.outcome
+                        ).where(Attempt.run_id == run.id)
+                    )
+                ).all()
+            assert attempts == [(1, claims[0].owner, claims[0].fence, "completed")]
 
-    asyncio.run(scenario())
+    try:
+        asyncio.run(main=scenario())
+    finally:
+        release.set()
+
+
+def test_observer_failure_does_not_change_worker_output(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with scratch() as database:
+            inputs, outputs, run = await submission(database=database, root=tmp_path)
+
+            def unavailable(phase: str, lease: Lease, tick: int) -> None:
+                raise OSError("operational observer unavailable")
+
+            worker = Worker(database=database, inputs=inputs, outputs=outputs, observer=unavailable)
+            assert await asyncio.wait_for(fut=worker.run_once(), timeout=10)
+            assert (await Jobs(database=database).get(run_id=run.id)).status == "completed"
+            assert worker.dropped_notifications > 0
+            pointer = await Durability(database=database).published(run_id=run.id)
+            manifest = await asyncio.to_thread(
+                verify_bundle, directory=outputs.path(key=pointer.key).parent
+            )
+            saved = await asyncio.to_thread(
+                inputs.load_snapshot, key=run.snapshot_key, expected_digest=run.snapshot_digest
+            )
+            reference = await asyncio.to_thread(
+                execute_bundle, snapshot=saved, destination=tmp_path / "reference"
+            )
+            assert manifest == reference
+
+    asyncio.run(main=scenario())
 
 
 def test_cancellation_during_validation_never_publishes_completed_pointer(
