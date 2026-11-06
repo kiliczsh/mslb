@@ -1,5 +1,14 @@
 import { expect, it } from "vitest";
-import { serverInputSchema } from "./contracts.js";
+import { defaultSettings, serverInputSchema, settingsSchema } from "./contracts.js";
+
+it("defaults to sequential and accepts only current execution mode names", () => {
+  expect(defaultSettings.mode).toBe("sequential");
+  expect(settingsSchema.parse(defaultSettings).mode).toBe("sequential");
+  expect(settingsSchema.parse({ ...defaultSettings, mode: "concurrent" }).mode).toBe("concurrent");
+  expect(settingsSchema.safeParse({ ...defaultSettings, mode: "sequential_compat" }).success).toBe(
+    false,
+  );
+});
 
 it.each([".", "..", " . ", " .. ", "a\u0000b"])("rejects an unaddressable identifier %j", (id) => {
   expect(

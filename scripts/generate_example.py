@@ -26,15 +26,23 @@ def generate(
         )
     with servers_path.open("rb") as source:
         servers = tuple(
-            Server(s.id, s.cpu_units_per_tick, s.mem_mb, s.rate_limit_per_sec)
-            for s in read_servers(source)
+            Server(
+                id=s.id,
+                cpu_units_per_tick=s.cpu_units_per_tick,
+                mem_mb=s.mem_mb,
+                rate_limit_per_sec=s.rate_limit_per_sec,
+            )
+            for s in read_servers(stream=source)
         )
     with requests_path.open("rb") as source:
         requests = tuple(
-            Request(r.t, r.request_id, r.work_units, r.mem_mb) for r in read_requests(source)
+            Request(t=r.t, request_id=r.request_id, work_units=r.work_units, mem_mb=r.mem_mb)
+            for r in read_requests(stream=source)
         )
-    simulation = Simulation(servers, requests, config)
-    metrics = MetricAccumulator(requests, servers, config.max_metric_series)
+    simulation = Simulation(servers=servers, requests=requests, config=config)
+    metrics = MetricAccumulator(
+        requests=requests, servers=servers, max_series=config.max_metric_series
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
     stream = tempfile.NamedTemporaryFile(
         mode="w",
@@ -53,7 +61,9 @@ def generate(
             stream.flush()
             os.fsync(stream.fileno())
         with temporary.open("rb") as validation_source:
-            validate_trace(validation_source, servers, requests, config)
+            validate_trace(
+                stream=validation_source, servers=servers, requests=requests, config=config
+            )
         report = metrics.summary()
         os.replace(temporary, output)
         return report
@@ -77,7 +87,7 @@ def main() -> None:
     parser.add_argument("--servers", type=Path, required=True)
     parser.add_argument("--requests", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--mode", choices=["concurrent", "sequential_compat"], default="concurrent")
+    parser.add_argument("--mode", choices=["concurrent", "sequential"], default="sequential")
     parser.add_argument(
         "--strategy",
         choices=[
@@ -95,10 +105,10 @@ def main() -> None:
     mode: Mode = args.mode
     strategy: Strategy = args.strategy
     report = generate(
-        args.servers,
-        args.requests,
-        args.output,
-        RunConfig(
+        servers_path=args.servers,
+        requests_path=args.requests,
+        output=args.output,
+        config=RunConfig(
             mode=mode,
             strategy=strategy,
             max_simulation_ticks=args.max_simulation_ticks,

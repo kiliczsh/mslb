@@ -189,7 +189,7 @@ def validate_trace(
             if (
                 memory[sid] + request.mem_mb > server.mem_mb
                 or starts[sid] >= server.rate_limit_per_sec
-                or (config.mode == "sequential_compat" and running[sid])
+                or (config.mode == "sequential" and running[sid])
             ):
                 raise ReplayError("Memory, rate, or sequential overlap violation")
             starts[sid] += 1

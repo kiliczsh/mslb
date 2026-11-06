@@ -929,7 +929,11 @@ def test_persisted_event_pagination_handles_more_than_501_events_without_gaps(
                 RequestInput(t=0, request_id=f"r-{n:04d}", work_units=10, mem_mb=1)
                 for n in range(500)
             )
-            snapshot = make_snapshot(prepared.snapshot.servers, requests, RunSettings())
+            snapshot = make_snapshot(
+                servers=prepared.snapshot.servers,
+                requests=requests,
+                settings=RunSettings(mode="concurrent"),
+            )
             dataset = await prepared.catalog.register_dataset(
                 DatasetRegistration(
                     digest=snapshot.dataset_digest,

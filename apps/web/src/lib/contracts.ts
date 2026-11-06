@@ -75,7 +75,7 @@ export const scalingSchema = z.strictObject({
   server_template: templateSchema.nullable(),
 });
 export const settingsSchema = z.strictObject({
-  mode: z.enum(["concurrent", "sequential_compat"]),
+  mode: z.enum(["concurrent", "sequential"]),
   strategy: strategySchema,
   queue_timeout_ticks: integer(1_000_000, 1).nullable(),
   max_queue_size: integer(10_000).nullable(),
@@ -87,7 +87,7 @@ export const settingsSchema = z.strictObject({
 });
 export type Settings = z.infer<typeof settingsSchema>;
 export const defaultSettings: Settings = {
-  mode: "concurrent",
+  mode: "sequential",
   strategy: "first_fit",
   queue_timeout_ticks: null,
   max_queue_size: null,

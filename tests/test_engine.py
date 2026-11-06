@@ -15,7 +15,9 @@ from scripts.generate_example import generate
 
 
 def events_for(requests: tuple[Request, ...], config: RunConfig | None = None) -> list[Event]:
-    simulation = Simulation((Server("s", 10, 100, 10),), requests, config or RunConfig())
+    simulation = Simulation(
+        (Server("s", 10, 100, 10),), requests, config or RunConfig(mode="concurrent")
+    )
     return [event for frame in simulation.iter_ticks() for event in frame.events]
 
 
@@ -25,7 +27,9 @@ def finish_ticks(events: list[Event]) -> dict[str, int]:
 
 def test_equal_fractional_sharing_and_consumption() -> None:
     requests = tuple(Request(0, str(index), 10, 1) for index in range(3))
-    frames = list(Simulation((Server("s", 10, 100, 10),), requests, RunConfig()).iter_ticks())
+    frames = list(
+        Simulation((Server("s", 10, 100, 10),), requests, RunConfig(mode="concurrent")).iter_ticks()
+    )
     assert finish_ticks([event for frame in frames for event in frame.events]) == {
         "0": 3,
         "1": 3,
@@ -41,7 +45,7 @@ def test_unused_cpu_is_not_redistributed_and_shares_change_next_interval() -> No
         Simulation(
             (Server("s", 10, 100, 10),),
             (Request(0, "a", 1, 1), Request(0, "b", 10, 1)),
-            RunConfig(),
+            RunConfig(mode="concurrent"),
         ).iter_ticks()
     )
     assert frames[0].samples[0].consumed_cpu == 6
@@ -56,7 +60,7 @@ def test_midflight_arrival_changes_subsequent_shares() -> None:
 
 def test_sequential_boundary_reuse_and_canonical_order() -> None:
     events = events_for(
-        (Request(0, "a", 10, 1), Request(1, "b", 10, 1)), RunConfig(mode="sequential_compat")
+        (Request(0, "a", 10, 1), Request(1, "b", 10, 1)), RunConfig(mode="sequential")
     )
     assert [(e.event, e.request_id) for e in events if e.t == 1] == [
         ("REQUEST_FINISHED", "a"),
@@ -128,7 +132,7 @@ def test_four_strategies_choose_eligible_servers_with_stable_ties(strategy: Stra
         for f in Simulation(
             servers,
             tuple(Request(0, str(i), 10, 10) for i in range(4)),
-            RunConfig(strategy=strategy),
+            RunConfig(mode="concurrent", strategy=strategy),
         ).iter_ticks()
         for e in f.events
     ]
@@ -152,7 +156,8 @@ def test_limits_fail_instead_of_fabricating_success() -> None:
     assert samples.value.code == "RESOURCE_LIMIT_EXCEEDED"
     with pytest.raises(SimulationError) as arithmetic:
         events_for(
-            tuple(Request(0, str(i), 10, 1) for i in range(3)), RunConfig(max_fraction_bits=1)
+            tuple(Request(0, str(i), 10, 1) for i in range(3)),
+            RunConfig(mode="concurrent", max_fraction_bits=1),
         )
     assert arithmetic.value.code == "RESOURCE_LIMIT_EXCEEDED"
 
@@ -176,6 +181,7 @@ def test_supported_expanded_golden_lifecycles() -> None:
             servers,
             requests,
             RunConfig(
+                mode=config["execution_mode"],
                 strategy=config["scheduling_strategy"],
                 queue_timeout_ticks=config["queue_timeout_ticks"] or None,
             ),
@@ -207,9 +213,7 @@ def test_supported_expanded_golden_lifecycles() -> None:
 def test_generated_sequential_trace_passes_unchanged_original_validator(tmp_path: Path) -> None:
     output = tmp_path / "run.jsonl"
     root = Path("/fixtures/core")
-    generate(
-        root / "servers.json", root / "requests.csv", output, RunConfig(mode="sequential_compat")
-    )
+    generate(root / "servers.json", root / "requests.csv", output, RunConfig(mode="sequential"))
     subprocess.run(  # noqa: S603 -- fixed interpreter and trusted fixture paths
         [
             sys.executable,

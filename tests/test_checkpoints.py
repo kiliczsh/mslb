@@ -21,7 +21,7 @@ from mslb_application.snapshots import canonical_bytes, domain_config, domain_in
 from mslb_contracts.checkpoints import IntervalCheckpoint
 from mslb_contracts.durability import StoredFile
 from mslb_contracts.inputs import RequestInput, ServerInput
-from mslb_contracts.runs import RunSettings, RunSnapshot
+from mslb_contracts.runs import LegacyRunSettings, RunSettings, RunSnapshot
 from mslb_engine.metrics import MetricAccumulator
 from mslb_engine.models import STRATEGIES, SimulationError, TickFrame
 from mslb_engine.replay import validate_trace
@@ -31,7 +31,8 @@ from mslb_engine.simulator import Simulation
 def saved_run(
     mode: str = "concurrent", strategy: str = "first_fit", scaling: bool = True
 ) -> RunSnapshot:
-    settings = RunSettings.model_validate_json(
+    settings_type = LegacyRunSettings if mode == "sequential_compat" else RunSettings
+    settings = settings_type.model_validate_json(
         json.dumps(
             {
                 "mode": mode,
@@ -104,7 +105,7 @@ def contents(streams: dict[str, BinaryIO]) -> dict[str, bytes]:
     return result
 
 
-@pytest.mark.parametrize("mode", ["concurrent", "sequential_compat"])
+@pytest.mark.parametrize("mode", ["concurrent", "sequential", "sequential_compat"])
 @pytest.mark.parametrize("strategy", STRATEGIES)
 @pytest.mark.parametrize("scaling", [False, True])
 def test_restore_at_every_completed_interval_matches_uninterrupted_bytes_and_metrics(
@@ -230,7 +231,7 @@ def test_checkpoint_cadence_counts_executed_intervals_and_new_events(tmp_path: P
         tuple(
             RequestInput(t=0, request_id=f"burst-{n}", work_units=2, mem_mb=1) for n in range(500)
         ),
-        RunSettings(),
+        RunSettings(mode="concurrent"),
     )
     simulation, metrics, streams = execution(burst)
     append(next(simulation.iter_ticks()), metrics, streams)
@@ -350,7 +351,7 @@ def test_actual_high_precision_remaining_work_round_trips_without_float_conversi
                 for t in range(83)
             ),
         ),
-        RunSettings(),
+        RunSettings(mode="concurrent"),
     )
     simulation, metrics, streams = execution(saved)
     iterator = simulation.iter_ticks()

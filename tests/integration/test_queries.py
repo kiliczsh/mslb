@@ -9,10 +9,11 @@ import pytest
 from mslb_application.errors import OperationError
 from mslb_application.files import ManagedFiles, StorageLimits
 from mslb_application.queries import Download, Queries
+from mslb_application.snapshots import make_snapshot
 from mslb_application.submissions import Submissions
 from mslb_application.worker import Worker
 from mslb_contracts.queries import ComparisonView, JsonValue
-from mslb_contracts.runs import RunSettings, ScalingSettings, TemplateSettings
+from mslb_contracts.runs import LegacyRunSettings, RunSettings, ScalingSettings, TemplateSettings
 from mslb_engine.models import SimulationError
 from mslb_persistence.catalog import Catalog
 from mslb_persistence.database import Database, StoreError
@@ -92,7 +93,9 @@ def test_verified_playback_matches_saved_intervals_events_and_http_bounds(
 ) -> None:
     async def scenario() -> None:
         async with scratch() as database:
-            outputs, service, runs = await prepare(database, tmp_path, (RunSettings(),))
+            outputs, service, runs = await prepare(
+                database, tmp_path, (RunSettings(mode="concurrent"),)
+            )
             query = Queries(database, outputs, b"test-playback-signing-key" * 2)
             with pytest.raises(OperationError, match="completed"):
                 await query.playback(runs[0], 0)
@@ -324,7 +327,7 @@ def test_metrics_charts_downloads_and_comparison_use_completed_verified_output(
 
 
 @pytest.mark.parametrize(
-    "different", [RunSettings(max_simulation_ticks=10_000), RunSettings(mode="sequential_compat")]
+    "different", [RunSettings(max_simulation_ticks=10_000), RunSettings(mode="concurrent")]
 )
 def test_comparison_rejects_semantic_setting_and_mode_mismatches(
     tmp_path: Path, different: RunSettings
@@ -340,6 +343,52 @@ def test_comparison_rejects_semantic_setting_and_mode_mismatches(
             assert failure.value.code == "CONFLICT"
 
     asyncio.run(scenario())
+
+
+def test_archived_mode_executes_and_compares_without_rewriting_saved_identity(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        async with scratch() as database:
+            outputs, service, runs = await prepare(
+                database=database, root=tmp_path, settings=(RunSettings(),)
+            )
+            record = await service.catalog.get_run(run_id=runs[0])
+            current = await asyncio.to_thread(
+                service.files.load_snapshot,
+                key=record.snapshot_key,
+                expected_digest=record.snapshot_digest,
+            )
+            archived = make_snapshot(
+                servers=current.servers,
+                requests=current.requests,
+                settings=LegacyRunSettings(mode="sequential_compat"),
+            )
+            reference = await asyncio.to_thread(service.files.save_snapshot, snapshot=archived)
+            before = service.files.path(key=reference.key).read_bytes()
+            servers = await service.catalog.list_servers()
+            legacy_run = await service.catalog.enqueue(
+                dataset_id=record.dataset_id,
+                snapshot=archived,
+                versions=tuple((server.id, server.version) for server in servers),
+                body_digest="1" * 64,
+            )
+            worker = Worker(database=database, inputs=service.files, outputs=outputs)
+            assert await worker.run_once() and await worker.run_once()
+            queries = Queries(
+                database=database, outputs=outputs, cursor_secret=b"legacy-mode-cursor" * 2
+            )
+            history = await queries.run(run_id=legacy_run.id)
+            assert history.configuration.mode == "sequential"
+            assert history.snapshot_digest == archived.snapshot_digest
+            comparison = await queries.compare(run_ids=(runs[0], legacy_run.id))
+            assert comparison.runs[1].differing_settings == ()
+            assert service.files.path(key=reference.key).read_bytes() == before
+            async with database.sessions() as session:
+                row = await session.get(entity=Run, ident=legacy_run.id)
+                assert row is not None and row.configuration["mode"] == "sequential_compat"
+
+    asyncio.run(main=scenario())
 
 
 def test_all_dropped_comparison_preserves_null_latency_and_zero_baseline(tmp_path: Path) -> None:

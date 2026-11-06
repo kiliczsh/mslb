@@ -5,6 +5,7 @@ from uuid import UUID
 
 from mslb_contracts.canonical import canonical_bytes
 from mslb_contracts.queries import DatasetView, RunProgress, RunView
+from mslb_contracts.runs import LegacyRunSettings, public_settings
 from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +30,11 @@ def dataset_view(row: Dataset) -> DatasetView:
 
 def run_view(run: Run, job: Job, progress: OutputProgress | None) -> RunView:
     # JSON validation is explicit at the ORM boundary; no live entity or file key escapes.
+    configuration = run.configuration
+    if configuration.get("mode") == "sequential_compat":
+        configuration = public_settings(
+            settings=LegacyRunSettings.model_validate(obj=configuration)
+        ).model_dump(mode="json")
     data = dict(
         id=str(run.id),
         dataset_id=str(run.dataset_id),
@@ -36,7 +42,7 @@ def run_view(run: Run, job: Job, progress: OutputProgress | None) -> RunView:
         dataset_digest=run.dataset_digest,
         server_snapshot_digest=run.server_snapshot_digest,
         engine_version=run.engine_version,
-        configuration=run.configuration,
+        configuration=configuration,
         status=job.status,
         attempts=job.attempts,
         created_at=run.created_at.isoformat(),

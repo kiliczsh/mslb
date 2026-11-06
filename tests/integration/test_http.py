@@ -81,6 +81,9 @@ def test_rest_crud_upload_durable_execution_downloads_and_sse(
                     )
                     assert run.status_code == 202, run.text
                     run_id = run.json()["run_id"]
+                    detail = await client.get(f"simulations/{run_id}")
+                    assert detail.json()["configuration"]["mode"] == "sequential"
+                    assert detail.json()["mode"] == "sequential"
                     repeated = await client.post(
                         "simulations", json=body, headers={"Idempotency-Key": "repeat-one"}
                     )

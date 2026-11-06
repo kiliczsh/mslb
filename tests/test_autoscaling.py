@@ -256,7 +256,7 @@ def test_cpu_trigger_without_queue_and_max_bound_no_action() -> None:
     assert frames[2].scale_decision.action == "none" and frames[2].scale_decision.reason == "bounds"
 
 
-@pytest.mark.parametrize("mode", ["concurrent", "sequential_compat"])
+@pytest.mark.parametrize("mode", ["concurrent", "sequential"])
 @pytest.mark.parametrize(
     "strategy", ["first_fit", "round_robin", "least_connections", "most_available_memory"]
 )

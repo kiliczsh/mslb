@@ -125,8 +125,8 @@ export function RunWorkspace({ api, dataset }: { api: Api; dataset: Dataset | nu
                 change({ ...settings, mode: settingsSchema.shape.mode.parse(event.target.value) })
               }
             >
+              <option value="sequential">Sequential · original validator compatible</option>
               <option value="concurrent">Concurrent · shared CPU</option>
-              <option value="sequential_compat">Sequential · original validator compatible</option>
             </select>
           </label>
           <label>

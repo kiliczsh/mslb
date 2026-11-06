@@ -210,6 +210,7 @@ test("real gateway CRUD, CSV, queued worker completion and narrow-screen session
   await page.getByRole("button", { name: "Upload dataset", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("registered and selected");
   await page.getByRole("button", { name: "Simulations", exact: true }).click();
+  await expect(page.getByLabel("Execution mode")).toHaveValue("sequential");
   await page.getByRole("button", { name: "Review snapshot", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Review snapshot inputs" })).toBeVisible();
   const firstAccepted = page.waitForResponse(
@@ -219,6 +220,7 @@ test("real gateway CRUD, CSV, queued worker completion and narrow-screen session
   await page.getByRole("button", { name: "Confirm and queue run", exact: true }).click();
   const firstResponse = await firstAccepted;
   const firstRun = acceptedSchema.parse(await firstResponse.json());
+  expect(firstResponse.request().postDataJSON().mode).toBe("sequential");
   const creation = z.object({ dataset_id: z.uuid() }).parse(firstResponse.request().postDataJSON());
   expect(await page.getByRole("alert").allTextContents()).toEqual([]);
   await expect(page.getByText("Independent replay: passed.", { exact: false })).toBeVisible({

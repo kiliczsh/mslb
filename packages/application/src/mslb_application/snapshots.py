@@ -6,7 +6,15 @@ from typing import BinaryIO
 from mslb_contracts.canonical import canonical_bytes
 from mslb_contracts.fractions import FractionValue
 from mslb_contracts.inputs import InputError, RequestInput, ServerInput, input_digest
-from mslb_contracts.runs import RunSettings, RunSnapshot, ScalingSettings, TemplateSettings
+from mslb_contracts.runs import (
+    LegacyRunSettings,
+    RunSettings,
+    RunSnapshot,
+    ScalingSettings,
+    StoredRunSettings,
+    TemplateSettings,
+    public_settings,
+)
 from mslb_engine import __version__
 from mslb_engine.models import AutoscalingPolicy, Request, RunConfig, Server, ServerTemplate
 from mslb_engine.simulator import Simulation
@@ -16,14 +24,22 @@ from pydantic import ValidationError
 def domain_inputs(snapshot: RunSnapshot) -> tuple[tuple[Server, ...], tuple[Request, ...]]:
     return (
         tuple(
-            Server(s.id, s.cpu_units_per_tick, s.mem_mb, s.rate_limit_per_sec)
+            Server(
+                id=s.id,
+                cpu_units_per_tick=s.cpu_units_per_tick,
+                mem_mb=s.mem_mb,
+                rate_limit_per_sec=s.rate_limit_per_sec,
+            )
             for s in snapshot.servers
         ),
-        tuple(Request(r.t, r.request_id, r.work_units, r.mem_mb) for r in snapshot.requests),
+        tuple(
+            Request(t=r.t, request_id=r.request_id, work_units=r.work_units, mem_mb=r.mem_mb)
+            for r in snapshot.requests
+        ),
     )
 
 
-def domain_config(settings: RunSettings) -> RunConfig:
+def domain_config(settings: StoredRunSettings) -> RunConfig:
     """Use domain validation for cross-field policy semantics on every transport."""
     scaling = settings.autoscaling
     template = scaling.server_template
@@ -40,13 +56,15 @@ def domain_config(settings: RunSettings) -> RunConfig:
         scale_out_step=scaling.scale_out_step,
         scale_in_step=scaling.scale_in_step,
         server_template=ServerTemplate(
-            template.cpu_units_per_tick, template.mem_mb, template.rate_limit_per_sec
+            cpu_units_per_tick=template.cpu_units_per_tick,
+            mem_mb=template.mem_mb,
+            rate_limit_per_sec=template.rate_limit_per_sec,
         )
         if template is not None
         else None,
     )
     return RunConfig(
-        mode=settings.mode,
+        mode=public_settings(settings=settings).mode,
         strategy=settings.strategy,
         queue_timeout_ticks=settings.queue_timeout_ticks,
         max_queue_size=settings.max_queue_size,
@@ -73,8 +91,10 @@ def settings_from_domain(config: RunConfig) -> RunSettings:
         autoscaling=ScalingSettings(
             enabled=policy.enabled,
             window_ticks=policy.window_ticks,
-            scale_out_cpu_threshold=FractionValue.from_fraction(policy.scale_out_cpu_threshold),
-            scale_in_cpu_threshold=FractionValue.from_fraction(policy.scale_in_cpu_threshold),
+            scale_out_cpu_threshold=FractionValue.from_fraction(
+                value=policy.scale_out_cpu_threshold
+            ),
+            scale_in_cpu_threshold=FractionValue.from_fraction(value=policy.scale_in_cpu_threshold),
             scale_out_drop_rate_threshold=FractionValue.from_fraction(
                 policy.scale_out_drop_rate_threshold
             ),
@@ -96,30 +116,45 @@ def settings_from_domain(config: RunConfig) -> RunSettings:
 
 
 def make_snapshot(
-    servers: tuple[ServerInput, ...], requests: tuple[RequestInput, ...], settings: RunSettings
+    servers: tuple[ServerInput, ...],
+    requests: tuple[RequestInput, ...],
+    settings: StoredRunSettings,
 ) -> RunSnapshot:
     """Normalize ordering, expand defaults, validate admission, and digest semantics."""
     ordered_servers = tuple(sorted(servers, key=lambda server: server.id))
     ordered_requests = tuple(sorted(requests, key=lambda request: (request.t, request.request_id)))
     simulation = Simulation(
-        tuple(
-            Server(s.id, s.cpu_units_per_tick, s.mem_mb, s.rate_limit_per_sec)
+        servers=tuple(
+            Server(
+                id=s.id,
+                cpu_units_per_tick=s.cpu_units_per_tick,
+                mem_mb=s.mem_mb,
+                rate_limit_per_sec=s.rate_limit_per_sec,
+            )
             for s in ordered_servers
         ),
-        tuple(Request(r.t, r.request_id, r.work_units, r.mem_mb) for r in ordered_requests),
-        domain_config(settings),
+        requests=tuple(
+            Request(t=r.t, request_id=r.request_id, work_units=r.work_units, mem_mb=r.mem_mb)
+            for r in ordered_requests
+        ),
+        config=domain_config(settings=settings),
     )
+    resolved: StoredRunSettings = settings_from_domain(config=simulation.config)
+    if isinstance(settings, LegacyRunSettings):
+        resolved = LegacyRunSettings.model_validate(
+            obj=resolved.model_dump(mode="python") | {"mode": "sequential_compat"}
+        )
     snapshot = RunSnapshot(
         engine_version=__version__,
         servers=ordered_servers,
         requests=ordered_requests,
-        configuration=settings_from_domain(simulation.config),
-        dataset_digest=input_digest(ordered_requests),
-        server_snapshot_digest=input_digest(ordered_servers),
+        configuration=resolved,
+        dataset_digest=input_digest(records=ordered_requests),
+        server_snapshot_digest=input_digest(records=ordered_servers),
         snapshot_digest="0" * 64,
     )
     digest = hashlib.sha256(
-        canonical_bytes(snapshot.model_dump(mode="json", exclude={"snapshot_digest"}))
+        canonical_bytes(value=snapshot.model_dump(mode="json", exclude={"snapshot_digest"}))
     ).hexdigest()
     return snapshot.model_copy(update={"snapshot_digest": digest})
 
@@ -127,7 +162,9 @@ def make_snapshot(
 def verify_snapshot(snapshot: RunSnapshot) -> RunSnapshot:
     if snapshot.engine_version != __version__:
         raise InputError("engine_version", "incompatible_engine_version")
-    expected = make_snapshot(snapshot.servers, snapshot.requests, snapshot.configuration)
+    expected = make_snapshot(
+        servers=snapshot.servers, requests=snapshot.requests, settings=snapshot.configuration
+    )
     if snapshot != expected:
         raise InputError("snapshot", "identity_or_normalization_mismatch")
     return snapshot
@@ -138,7 +175,7 @@ def read_snapshot(stream: BinaryIO) -> RunSnapshot:
     if len(payload) > 32 * 1024 * 1024:
         raise InputError("snapshot", "payload_too_large")
     try:
-        snapshot = RunSnapshot.model_validate_json(payload)
+        snapshot = RunSnapshot.model_validate_json(json_data=payload)
     except ValidationError:
         raise InputError("snapshot", "invalid_schema") from None
-    return verify_snapshot(snapshot)
+    return verify_snapshot(snapshot=snapshot)

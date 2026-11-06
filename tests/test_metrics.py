@@ -25,7 +25,9 @@ def test_nearest_rank_percentiles_and_empty_latency() -> None:
 def test_counts_latency_consumption_and_capacity_match_hand_calculation() -> None:
     requests = (Request(0, "a", 1, 10), Request(0, "b", 10, 20))
     metrics = MetricAccumulator(requests, (Server("s", 10, 100, 2),))
-    for frame in Simulation((Server("s", 10, 100, 2),), requests, RunConfig()).iter_ticks():
+    for frame in Simulation(
+        (Server("s", 10, 100, 2),), requests, RunConfig(mode="concurrent")
+    ).iter_ticks():
         metrics.observe(frame)
     report = metrics.summary()
     assert report["arrived"] == report["finished"] == 2

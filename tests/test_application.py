@@ -47,7 +47,7 @@ def test_snapshot_defaults_are_frozen_normalized_and_round_trip() -> None:
         == saved
     )
     assert read_snapshot(io.BytesIO(canonical_bytes(saved.model_dump(mode="json")))) == saved
-    assert domain_config(saved.configuration).mode == "concurrent"
+    assert domain_config(settings=saved.configuration).mode == "sequential"
     assert saved.engine_version == __version__ == version("mslb-engine")
 
 
@@ -59,6 +59,7 @@ def test_snapshot_defaults_are_frozen_normalized_and_round_trip() -> None:
         '{"queue_timeout_ticks":0}',
         '{"strategy":"random"}',
         '{"mode":"docker"}',
+        '{"mode":"sequential_compat"}',
         '{"unexpected":1}',
         '{"autoscaling":{"enabled":"true"}}',
         '{"autoscaling":{"window_ticks":10001}}',
@@ -89,7 +90,7 @@ def test_snapshot_identity_rejects_tampering_and_unknown_versions() -> None:
         read_snapshot(io.BytesIO(canonical_bytes(raw)))
 
 
-@pytest.mark.parametrize("mode", ["concurrent", "sequential_compat"])
+@pytest.mark.parametrize("mode", ["concurrent", "sequential"])
 def test_complete_bundle_replays_and_repeated_execution_is_identical(
     tmp_path: Path, mode: str
 ) -> None:
@@ -99,9 +100,7 @@ def test_complete_bundle_replays_and_repeated_execution_is_identical(
     result = execute_bundle(saved, destination)
     assert set(result.artifacts) == ARTIFACT_NAMES
     assert result.independent_replay == "passed"
-    assert result.original_validator == (
-        "passed" if mode == "sequential_compat" else "not_applicable"
-    )
+    assert result.original_validator == ("passed" if mode == "sequential" else "not_applicable")
     assert verify_bundle(destination) == result
     before = {path.name: path.read_bytes() for path in destination.iterdir()}
     assert execute_bundle(saved, destination) == result
@@ -216,7 +215,7 @@ def test_evaluator_timeout_is_controlled_and_never_publishes(
 
     monkeypatch.setattr(subprocess, "run", timed_out)
     with pytest.raises(OperationError, match="timed out") as failure:
-        execute_bundle(snapshot(RunSettings(mode="sequential_compat")), tmp_path / "timeout")
+        execute_bundle(snapshot(RunSettings(mode="sequential")), tmp_path / "timeout")
     assert failure.value.code == "VALIDATION_FAILED"
     assert list(tmp_path.iterdir()) == []
 

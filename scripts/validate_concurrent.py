@@ -25,26 +25,32 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("servers", "requests", "run"):
         parser.add_argument("--" + name, type=Path, required=True)
-    parser.add_argument("--mode", choices=["concurrent", "sequential_compat"], default="concurrent")
+    parser.add_argument("--mode", choices=["concurrent", "sequential"], default="sequential")
     parser.add_argument("--queue-timeout-ticks", type=int)
     parser.add_argument("--max-queue-size", type=int)
     parser.add_argument("--max-simulation-ticks", type=int, default=100_000)
     args = parser.parse_args(namespace=Arguments())
     with args.servers.open("rb") as stream:
         servers = tuple(
-            Server(s.id, s.cpu_units_per_tick, s.mem_mb, s.rate_limit_per_sec)
-            for s in read_servers(stream)
+            Server(
+                id=s.id,
+                cpu_units_per_tick=s.cpu_units_per_tick,
+                mem_mb=s.mem_mb,
+                rate_limit_per_sec=s.rate_limit_per_sec,
+            )
+            for s in read_servers(stream=stream)
         )
     with args.requests.open("rb") as stream:
         requests = tuple(
-            Request(r.t, r.request_id, r.work_units, r.mem_mb) for r in read_requests(stream)
+            Request(t=r.t, request_id=r.request_id, work_units=r.work_units, mem_mb=r.mem_mb)
+            for r in read_requests(stream=stream)
         )
     with args.run.open("rb") as stream:
         summary = validate_trace(
-            stream,
-            servers,
-            requests,
-            RunConfig(
+            stream=stream,
+            servers=servers,
+            requests=requests,
+            config=RunConfig(
                 mode=args.mode,
                 queue_timeout_ticks=args.queue_timeout_ticks,
                 max_queue_size=args.max_queue_size,

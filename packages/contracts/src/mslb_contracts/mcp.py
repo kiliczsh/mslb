@@ -86,4 +86,4 @@ class EventResource(ReadModel):
 
 class CompareStrategiesArguments(ReadModel):
     dataset_id: RunId
-    mode: Literal["concurrent", "sequential_compat"] = "concurrent"
+    mode: Literal["concurrent", "sequential"] = "sequential"

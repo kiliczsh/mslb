@@ -121,6 +121,9 @@ def test_official_client_discovers_and_exercises_all_tools_resources_and_prompts
                         assert isinstance(run_id, str)
                         ids.append(run_id)
                         assert await worker.run_once()
+                        status = await call(client, "get_simulation_status", {"run_id": run_id})
+                        assert isinstance(status["configuration"], dict)
+                        assert status["configuration"]["mode"] == "sequential"
                         assert (await call(client, "get_simulation_status", {"run_id": run_id}))[
                             "status"
                         ] == "completed"

@@ -42,12 +42,12 @@ def test_hand_calculated_fractional_trace_without_engine_oracle(
         value,
         (Server("s", 10, 10, 2),),
         (Request(0, "a", 1, 1), Request(0, "b", 10, 1)),
-        RunConfig(),
+        RunConfig(mode="concurrent"),
     )
     assert result.finished == 2 and result.terminal_tick == 2
 
 
-@pytest.mark.parametrize("mode", ["concurrent", "sequential_compat"])
+@pytest.mark.parametrize("mode", ["concurrent", "sequential"])
 @pytest.mark.parametrize(
     "strategy", ["first_fit", "round_robin", "least_connections", "most_available_memory"]
 )
@@ -117,9 +117,9 @@ def test_noncanonical_or_malformed_traces_are_rejected(raw: bytes) -> None:
 @pytest.mark.parametrize(
     "config,mem,rate",
     [
-        (RunConfig(), 6, 2),
-        (RunConfig(), 1, 1),
-        (RunConfig(mode="sequential_compat"), 1, 2),
+        (RunConfig(mode="concurrent"), 6, 2),
+        (RunConfig(mode="concurrent"), 1, 1),
+        (RunConfig(mode="sequential"), 1, 2),
     ],
 )
 def test_overlap_resource_and_start_rate_violations(config: RunConfig, mem: int, rate: int) -> None:

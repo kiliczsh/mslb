@@ -53,7 +53,7 @@ async def submission(
     return readonly, outputs, run
 
 
-@pytest.mark.parametrize("mode", ["concurrent", "sequential_compat"])
+@pytest.mark.parametrize("mode", ["concurrent", "sequential"])
 @pytest.mark.parametrize("strategy", STRATEGIES)
 @pytest.mark.parametrize("scaling", [False, True])
 def test_worker_executes_queued_run_and_matches_independent_cli_bundle(

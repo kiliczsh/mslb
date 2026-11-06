@@ -41,9 +41,8 @@ class ScalingSettings(BaseModel):
     server_template: TemplateSettings | None = None
 
 
-class RunSettings(BaseModel):
+class ExecutionSettings(BaseModel):
     model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
-    mode: Literal["concurrent", "sequential_compat"] = "concurrent"
     strategy: Literal["first_fit", "round_robin", "least_connections", "most_available_memory"] = (
         "first_fit"
     )
@@ -56,13 +55,34 @@ class RunSettings(BaseModel):
     autoscaling: ScalingSettings = Field(default_factory=ScalingSettings)
 
 
+class RunSettings(ExecutionSettings):
+    mode: Literal["concurrent", "sequential"] = "sequential"
+
+
+class LegacyRunSettings(ExecutionSettings):
+    """Read archived settings without changing the bytes bound by their digest."""
+
+    mode: Literal["sequential_compat"]
+
+
+type StoredRunSettings = RunSettings | LegacyRunSettings
+
+
+def public_settings(*, settings: StoredRunSettings) -> RunSettings:
+    if isinstance(settings, RunSettings):
+        return settings
+    return RunSettings.model_validate(
+        obj=settings.model_dump(mode="python") | {"mode": "sequential"}
+    )
+
+
 class RunSnapshot(BaseModel):
     model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
     schema_version: Annotated[int, Field(ge=1, le=1)] = 1
     engine_version: Annotated[str, Field(min_length=1, max_length=64)]
     servers: Annotated[tuple[ServerInput, ...], Field(min_length=1, max_length=64)]
     requests: Annotated[tuple[RequestInput, ...], Field(min_length=1, max_length=10_000)]
-    configuration: RunSettings
+    configuration: StoredRunSettings
     dataset_digest: Digest
     server_snapshot_digest: Digest
     snapshot_digest: Digest
@@ -77,12 +97,12 @@ class ArtifactMetadata(BaseModel):
 def verify_snapshot_identity(snapshot: RunSnapshot) -> None:
     """Verify normalized structural identity without depending on engine execution."""
     expected = hashlib.sha256(
-        canonical_bytes(snapshot.model_dump(mode="json", exclude={"snapshot_digest"}))
+        canonical_bytes(value=snapshot.model_dump(mode="json", exclude={"snapshot_digest"}))
     ).hexdigest()
     if (
         snapshot.snapshot_digest != expected
-        or snapshot.dataset_digest != input_digest(snapshot.requests)
-        or snapshot.server_snapshot_digest != input_digest(snapshot.servers)
+        or snapshot.dataset_digest != input_digest(records=snapshot.requests)
+        or snapshot.server_snapshot_digest != input_digest(records=snapshot.servers)
         or snapshot.servers != tuple(sorted(snapshot.servers, key=lambda server: server.id))
         or snapshot.requests
         != tuple(sorted(snapshot.requests, key=lambda request: (request.t, request.request_id)))

@@ -160,10 +160,7 @@ def _hash_file(path: Path, maximum: int) -> tuple[int, str]:
 def _original_validation(
     directory: Path, snapshot: RunSnapshot
 ) -> Literal["passed", "not_applicable"]:
-    if (
-        snapshot.configuration.mode != "sequential_compat"
-        or snapshot.configuration.autoscaling.enabled
-    ):
+    if snapshot.configuration.mode == "concurrent" or snapshot.configuration.autoscaling.enabled:
         return "not_applicable"
     if _hash_file(ORIGINAL_VALIDATOR, 256 * 1024)[1] != ORIGINAL_VALIDATOR_DIGEST:
         raise OperationError("VALIDATION_FAILED", "Original evaluator identity mismatch")

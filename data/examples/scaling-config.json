@@ -1,4 +1,5 @@
 {
+  "mode": "concurrent",
   "strategy": "round_robin",
   "autoscaling": {
     "enabled": true,

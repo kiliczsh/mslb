@@ -49,7 +49,12 @@ function workspace({ configuration }: { configuration?: Settings } = {}) {
     const path = String(input);
     if (path.includes("/servers?")) return Response.json({ items: [server], next_cursor: null });
     if (path.endsWith(run.id))
-      return Response.json({ ...run, mode: "concurrent", strategy: "first_fit", validation: null });
+      return Response.json({
+        ...run,
+        mode: run.configuration.mode,
+        strategy: "first_fit",
+        validation: null,
+      });
     if (path.includes("/events")) return Response.json({ items: [], next_cursor: null });
     return Response.json({ items: configuration ? [run] : [], next_cursor: null });
   });
@@ -67,6 +72,7 @@ it("submits named autoscaling controls as exact frozen settings and reuses inter
   const { api, submit, client } = workspace();
   const user = userEvent.setup();
   await vi.waitFor(() => expect(client.isFetching()).toBe(0));
+  expect(screen.getByLabelText("Execution mode")).toHaveProperty("value", "sequential");
   expect(screen.getByRole("button", { name: "Review snapshot" })).toHaveProperty("disabled", false);
   await user.click(screen.getByText("Simulated autoscaling settings"));
   await user.selectOptions(screen.getByLabelText("Simulated autoscaling"), "enabled");

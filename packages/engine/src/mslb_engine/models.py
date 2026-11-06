@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from fractions import Fraction
 from typing import Literal, Self
 
-type Mode = Literal["concurrent", "sequential_compat"]
+type Mode = Literal["concurrent", "sequential"]
 type Strategy = Literal["first_fit", "round_robin", "least_connections", "most_available_memory"]
 type EventKind = Literal[
     "REQUEST_FINISHED", "REQUEST_ARRIVED", "REQUEST_DROPPED", "REQUEST_STARTED"
@@ -163,7 +163,7 @@ class ScaleDecision:
 
 @dataclass(frozen=True, slots=True)
 class RunConfig:
-    mode: Mode = "concurrent"
+    mode: Mode = "sequential"
     strategy: Strategy = "first_fit"
     queue_timeout_ticks: int | None = None
     max_queue_size: int | None = None
@@ -174,7 +174,7 @@ class RunConfig:
     autoscaling: AutoscalingPolicy = AutoscalingPolicy()
 
     def __post_init__(self) -> None:
-        if self.mode not in ("concurrent", "sequential_compat") or self.strategy not in STRATEGIES:
+        if self.mode not in ("concurrent", "sequential") or self.strategy not in STRATEGIES:
             raise SimulationError("VALIDATION_ERROR", "Unknown logical mode or strategy")
         if self.queue_timeout_ticks is not None:
             _integer(self.queue_timeout_ticks, 1, 1_000_000)
