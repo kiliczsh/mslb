@@ -3,7 +3,11 @@ import { useEffect, useState } from "react";
 import { useStore } from "zustand";
 import type { Api } from "../lib/api.js";
 import { createPlaybackStore } from "../lib/playbackStore.js";
+import type { Playback } from "../lib/resultContracts.js";
+import { usePageVisible } from "../lib/usePageVisible.js";
 import { Feedback } from "./Feedback.js";
+import { FlowTopology } from "./FlowTopology.js";
+import { PauseIcon, PlayIcon } from "./Icons.js";
 import { MetricNumber } from "./MetricNumber.js";
 import { VirtualList } from "./VirtualList.js";
 
@@ -18,6 +22,8 @@ export function RunPlayback({
 }) {
   const [store] = useState(() => createPlaybackStore(terminalTick));
   const state = useStore(store);
+  const visible = usePageVisible();
+  const [lastFrame, setLastFrame] = useState<Playback | null>(null);
   const [eventPage, setEventPage] = useState<{ tick: number; cursor: string | null }>({
     tick: 0,
     cursor: null,
@@ -39,7 +45,17 @@ export function RunPlayback({
     queryFn: ({ signal }) => api.events(runId, state.tick, cursor, signal),
   });
   useEffect(() => {
-    if (!state.playing) return;
+    if (frame.data) setLastFrame(frame.data);
+  }, [frame.data]);
+  // Inspection changes request pagination, not this tick's server resources.
+  // Keep server buttons mounted while that request loads so keyboard focus survives.
+  const topologyFrame =
+    frame.data ??
+    (lastFrame?.tick === state.tick && lastFrame.server_offset === state.serverOffset
+      ? lastFrame
+      : null);
+  useEffect(() => {
+    if (!state.playing || !visible) return;
     if (frame.isError || frame.data?.terminal) {
       store.getState().pause();
       return;
@@ -48,7 +64,7 @@ export function RunPlayback({
     const next = frame.data.frame_tick + frame.data.duration_ticks;
     const timer = setTimeout(() => store.getState().advance(next), 1000 / state.speed);
     return () => clearTimeout(timer);
-  }, [state.playing, state.speed, frame.isFetching, frame.isError, frame.data, store]);
+  }, [state.playing, state.speed, frame.isFetching, frame.isError, frame.data, store, visible]);
   return (
     <section aria-label="Persisted playback">
       <h3>Playback from saved intervals</h3>
@@ -73,6 +89,11 @@ export function RunPlayback({
           First tick
         </button>
         <button type="button" disabled={state.tick >= terminalTick} onClick={state.toggle}>
+          {state.playing ? (
+            <PauseIcon size={18} aria-hidden="true" />
+          ) : (
+            <PlayIcon size={18} aria-hidden="true" />
+          )}
           {state.playing ? "Pause playback" : "Play playback"}
         </button>
         <button
@@ -101,6 +122,14 @@ export function RunPlayback({
         {frame.isFetching ? " · loading saved interval" : ""}
       </p>
       <Feedback error={frame.error} />
+      {topologyFrame && (
+        <FlowTopology
+          frame={topologyFrame}
+          playing={state.playing && visible && !frame.isFetching}
+          selectedId={state.serverId}
+          onInspect={state.inspect}
+        />
+      )}
       {frame.data && (
         <>
           <p>

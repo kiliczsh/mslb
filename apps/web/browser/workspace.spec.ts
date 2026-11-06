@@ -116,6 +116,7 @@ test("authentication headers, visible denial and session reset without persisten
   });
   await page.goto("/");
   await expect(page.getByRole("alert").first()).toContainText("Authentication required");
+  await page.getByText("Connection", { exact: true }).click();
   await page.getByLabel("Bearer token (authenticated mode)").fill(token);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.getByText("No servers configured.", { exact: false })).toBeVisible();
@@ -123,6 +124,7 @@ test("authentication headers, visible denial and session reset without persisten
   expect(
     await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length })),
   ).toEqual({ local: 0, session: 0 });
+  await page.getByText("Connection", { exact: true }).click();
   await page.getByRole("button", { name: "Clear session", exact: true }).click();
   await expect(page.getByRole("alert").first()).toContainText("Authentication required");
 });
@@ -235,10 +237,13 @@ test("real gateway CRUD, CSV, queued worker completion and narrow-screen session
     await expect(page.getByRole("alert").first()).toContainText("UNAUTHORIZED");
     await expect.poll(() => denials.length).toBe(1);
     checkingDenial = false;
+    await page.getByText("Connection", { exact: true }).click();
     await page.getByLabel("Bearer token (authenticated mode)").fill(process.env.AUTH_TOKEN ?? "");
     await page.getByRole("button", { name: "Connect", exact: true }).click();
   }
   await expect(page.getByRole("heading", { name: "Server configuration" })).toBeVisible();
+  const workspaceBounds = await page.getByRole("main").boundingBox();
+  expect(workspaceBounds?.x).toBeGreaterThan(0);
   const name = `browser-${crypto.randomUUID().slice(0, 8)}`;
   await page.getByLabel("Server ID", { exact: true }).fill(name);
   const createdResponse = page.waitForResponse(
@@ -292,6 +297,12 @@ test("real gateway CRUD, CSV, queued worker completion and narrow-screen session
   await expect(page.getByRole("table", { name: /^Exact chart buckets/ })).toContainText("2/15");
   await page.getByRole("button", { name: "Playback", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Playback from saved intervals" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Saved request flow" })).toBeVisible();
+  await page.getByRole("button", { name: "Select s1", exact: true }).click();
+  await expect(page.getByRole("complementary", { name: "Selected playback server" })).toContainText(
+    "10 units/tick",
+  );
+  await expect(page.getByRole("button", { name: "Select s1", exact: true })).toBeFocused();
   await expect(page.getByText("Saved resource interval [0, 1)", { exact: false })).toBeVisible();
   await page.getByRole("button", { name: "Inspect active on s1", exact: true }).click();
   await expect(page.getByRole("list", { name: "Requests at selected interval" })).toContainText(
@@ -370,7 +381,7 @@ test("real gateway CRUD, CSV, queued worker completion and narrow-screen session
   expect(zip.toString("latin1")).toContain("manifest.json");
   expect(await page.evaluate(async () => await caches.keys())).toEqual([]);
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByRole("heading", { name: "Simulations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "A new simulation.", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({
     path: process.env.UI_SCREENSHOT_PATH ?? "/app/test-results/workspace-narrow.png",
@@ -380,6 +391,7 @@ test("real gateway CRUD, CSV, queued worker completion and narrow-screen session
     await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length })),
   ).toEqual({ local: 0, session: 0 });
   checkingDenial = authenticated;
+  await page.getByText("Connection", { exact: true }).click();
   await page.getByRole("button", { name: "Clear session", exact: true }).click();
   if (authenticated) {
     await expect(page.getByRole("alert").first()).toContainText("UNAUTHORIZED");

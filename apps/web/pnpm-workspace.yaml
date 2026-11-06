@@ -8,4 +8,5 @@ minimumReleaseAgeExclude:
   - vite@8.3.6
 verifyDepsBeforeRun: false
 patchedDependencies:
+  "@phosphor-icons/react@2.1.10": patches/phosphor-react-2.1.10.patch
   "@reduxjs/toolkit@2.14.0": patches/redux-toolkit-2.14.0.patch

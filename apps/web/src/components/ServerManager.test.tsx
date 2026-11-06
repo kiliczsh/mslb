@@ -66,6 +66,7 @@ it("preserves a stale edit, requires deliberate reload, then saves with the curr
   expect(document.activeElement).toBe(screen.getByRole("button", { name: "Keep server" }));
   await user.click(screen.getByRole("button", { name: "Keep server" }));
   expect(screen.queryByRole("alertdialog")).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Delete test-server" }));
   client.clear();
   expect(diagnostics).not.toHaveBeenCalled();
   diagnostics.mockRestore();

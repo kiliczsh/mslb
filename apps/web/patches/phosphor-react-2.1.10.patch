@@ -1,0 +1,84 @@
+diff --git a/dist/csr/ArrowClockwise.d.ts b/dist/csr/ArrowClockwise.d.ts
+--- a/dist/csr/ArrowClockwise.d.ts
++++ b/dist/csr/ArrowClockwise.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/ArrowRight.d.ts b/dist/csr/ArrowRight.d.ts
+--- a/dist/csr/ArrowRight.d.ts
++++ b/dist/csr/ArrowRight.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/Check.d.ts b/dist/csr/Check.d.ts
+--- a/dist/csr/Check.d.ts
++++ b/dist/csr/Check.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/Database.d.ts b/dist/csr/Database.d.ts
+--- a/dist/csr/Database.d.ts
++++ b/dist/csr/Database.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/DownloadSimple.d.ts b/dist/csr/DownloadSimple.d.ts
+--- a/dist/csr/DownloadSimple.d.ts
++++ b/dist/csr/DownloadSimple.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/Graph.d.ts b/dist/csr/Graph.d.ts
+--- a/dist/csr/Graph.d.ts
++++ b/dist/csr/Graph.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/HardDrives.d.ts b/dist/csr/HardDrives.d.ts
+--- a/dist/csr/HardDrives.d.ts
++++ b/dist/csr/HardDrives.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/Pause.d.ts b/dist/csr/Pause.d.ts
+--- a/dist/csr/Pause.d.ts
++++ b/dist/csr/Pause.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/PencilSimple.d.ts b/dist/csr/PencilSimple.d.ts
+--- a/dist/csr/PencilSimple.d.ts
++++ b/dist/csr/PencilSimple.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/Play.d.ts b/dist/csr/Play.d.ts
+--- a/dist/csr/Play.d.ts
++++ b/dist/csr/Play.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/Plus.d.ts b/dist/csr/Plus.d.ts
+--- a/dist/csr/Plus.d.ts
++++ b/dist/csr/Plus.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/Trash.d.ts b/dist/csr/Trash.d.ts
+--- a/dist/csr/Trash.d.ts
++++ b/dist/csr/Trash.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/UserCircle.d.ts b/dist/csr/UserCircle.d.ts
+--- a/dist/csr/UserCircle.d.ts
++++ b/dist/csr/UserCircle.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/X.d.ts b/dist/csr/X.d.ts
+--- a/dist/csr/X.d.ts
++++ b/dist/csr/X.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';

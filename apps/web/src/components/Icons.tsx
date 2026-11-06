@@ -1,0 +1,14 @@
+export { ArrowClockwiseIcon } from "@phosphor-icons/react/dist/csr/ArrowClockwise";
+export { ArrowRightIcon } from "@phosphor-icons/react/dist/csr/ArrowRight";
+export { CheckIcon } from "@phosphor-icons/react/dist/csr/Check";
+export { DatabaseIcon } from "@phosphor-icons/react/dist/csr/Database";
+export { DownloadSimpleIcon } from "@phosphor-icons/react/dist/csr/DownloadSimple";
+export { GraphIcon } from "@phosphor-icons/react/dist/csr/Graph";
+export { HardDrivesIcon } from "@phosphor-icons/react/dist/csr/HardDrives";
+export { PauseIcon } from "@phosphor-icons/react/dist/csr/Pause";
+export { PencilSimpleIcon } from "@phosphor-icons/react/dist/csr/PencilSimple";
+export { PlayIcon } from "@phosphor-icons/react/dist/csr/Play";
+export { PlusIcon } from "@phosphor-icons/react/dist/csr/Plus";
+export { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
+export { UserCircleIcon } from "@phosphor-icons/react/dist/csr/UserCircle";
+export { XIcon } from "@phosphor-icons/react/dist/csr/X";

@@ -7,6 +7,7 @@ import {
   isArtifact,
 } from "../lib/browserDownload.js";
 import { Feedback } from "./Feedback.js";
+import { DownloadSimpleIcon } from "./Icons.js";
 
 export function RunDownloads({ api, runId }: { api: Api; runId: string }) {
   const [selected, setSelected] = useState<Artifact>("run.jsonl");
@@ -76,6 +77,7 @@ export function RunDownloads({ api, runId }: { api: Api; runId: string }) {
             void download();
           }}
         >
+          <DownloadSimpleIcon size={18} aria-hidden="true" />
           Download saved artifact
         </button>
         {busy && (
