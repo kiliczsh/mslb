@@ -60,7 +60,7 @@ def server_metric_page(
     selected: list[ServerMetricView] = []
     previous: str | None = None
     for index, (key, value) in enumerate(members):
-        if index >= 10_000 or previous is not None and key <= previous:
+        if index >= 10_000 or (previous is not None and key <= previous):
             raise OperationError(
                 "VALIDATION_FAILED", "Metric history order or population is invalid"
             )
@@ -166,12 +166,12 @@ def compare_reports(
                     raise OperationError("VALIDATION_FAILED", "Metric report schemas differ")
                 visit(value, counterpart, name + ".")
             elif value is None or counterpart is None:
-                result[name] = dict(
-                    baseline=value,
-                    candidate=counterpart,
-                    difference=None,
-                    percentage_difference=None,
-                )
+                result[name] = {
+                    "baseline": value,
+                    "candidate": counterpart,
+                    "difference": None,
+                    "percentage_difference": None,
+                }
             else:
                 result[name] = compare_values(identity, other, exact(value), exact(counterpart))
 

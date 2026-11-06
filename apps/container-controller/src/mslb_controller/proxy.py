@@ -4,6 +4,7 @@ import asyncio
 import secrets
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from http import HTTPStatus
 from typing import Literal
 from uuid import UUID
 
@@ -42,22 +43,22 @@ def reply(*, record: ResourceRecord, running: object = None) -> JSONResponse:
 
 async def body[T: BaseModel](*, request: Request, model: type[T]) -> T:
     if request.headers.get("content-type", "").split(";")[0] != "application/json":
-        raise Refusal(415, "JSON_REQUIRED")
+        raise Refusal(HTTPStatus.UNSUPPORTED_MEDIA_TYPE.value, "JSON_REQUIRED")
     if request.headers.get("content-encoding", "identity") != "identity":
-        raise Refusal(415, "ENCODING_REJECTED")
+        raise Refusal(HTTPStatus.UNSUPPORTED_MEDIA_TYPE.value, "ENCODING_REJECTED")
     raw = bytearray()
     try:
         async with asyncio.timeout(2):
             async for chunk in request.stream():
                 if len(raw) + len(chunk) > 4096:
-                    raise Refusal(413, "BODY_LIMIT")
+                    raise Refusal(HTTPStatus.CONTENT_TOO_LARGE.value, "BODY_LIMIT")
                 raw.extend(chunk)
     except (TimeoutError, ClientDisconnect):
-        raise Refusal(408, "BODY_TIMEOUT") from None
+        raise Refusal(HTTPStatus.REQUEST_TIMEOUT.value, "BODY_TIMEOUT") from None
     try:
         return model.model_validate_json(raw)
     except ValidationError:
-        raise Refusal(422, "INVALID_CONTROL") from None
+        raise Refusal(HTTPStatus.UNPROCESSABLE_CONTENT.value, "INVALID_CONTROL") from None
 
 
 def create_app(
@@ -95,9 +96,13 @@ def create_app(
     ) -> Response:
         nonlocal active
         if request.headers.get("host") not in {"docker-proxy:8081", "127.0.0.1:8081"}:
-            return JSONResponse({"error": "HOST_REJECTED"}, status_code=400)
+            return JSONResponse(
+                {"error": "HOST_REJECTED"}, status_code=HTTPStatus.BAD_REQUEST.value
+            )
         if "origin" in request.headers or request.url.query:
-            return JSONResponse({"error": "ORIGIN_OR_QUERY_REJECTED"}, status_code=403)
+            return JSONResponse(
+                {"error": "ORIGIN_OR_QUERY_REJECTED"}, status_code=HTTPStatus.FORBIDDEN.value
+            )
         if request.url.path == "/health" and request.method == "GET":
             return JSONResponse({"ready": True})
         supplied = request.headers.get("authorization", "")
@@ -109,9 +114,13 @@ def create_app(
             or len(supplied) != 71
             or not secrets.compare_digest(supplied.encode(), ("Bearer " + expected).encode())
         ):
-            return JSONResponse({"error": "UNAUTHORIZED"}, status_code=401)
+            return JSONResponse(
+                {"error": "UNAUTHORIZED"}, status_code=HTTPStatus.UNAUTHORIZED.value
+            )
         if active >= 8:
-            return JSONResponse({"error": "CONTROL_BUSY"}, status_code=429)
+            return JSONResponse(
+                {"error": "CONTROL_BUSY"}, status_code=HTTPStatus.TOO_MANY_REQUESTS.value
+            )
         active += 1
         try:
             return await call_next(request)
@@ -124,11 +133,13 @@ def create_app(
 
     @app.exception_handler(RequestValidationError)
     async def invalid(_request: Request, _error: RequestValidationError) -> JSONResponse:
-        return JSONResponse({"error": "INVALID_CONTROL"}, status_code=422)
+        return JSONResponse(
+            {"error": "INVALID_CONTROL"}, status_code=HTTPStatus.UNPROCESSABLE_CONTENT.value
+        )
 
     @app.exception_handler(HTTPException)
     async def missing(_request: Request, _error: HTTPException) -> JSONResponse:
-        return JSONResponse({"error": "CONTROL_NOT_FOUND"}, status_code=404)
+        return JSONResponse({"error": "CONTROL_NOT_FOUND"}, status_code=HTTPStatus.NOT_FOUND.value)
 
     async def execute(
         *, operation: Callable[[], Awaitable[JSONResponse]], readonly: bool = False
@@ -137,7 +148,7 @@ def create_app(
         # No waiter queue: the slot is held until the task settles, including error receipts.
         owning = probing if readonly else pending
         if owning:
-            raise Refusal(429, "CONTROL_BUSY")
+            raise Refusal(HTTPStatus.TOO_MANY_REQUESTS.value, "CONTROL_BUSY")
 
         async def bounded() -> JSONResponse:
             try:
@@ -145,18 +156,25 @@ def create_app(
                     return await operation()
             except StoreError as error:
                 status = (
-                    404
+                    HTTPStatus.NOT_FOUND.value
                     if error.code == "NOT_FOUND"
-                    else 429
+                    else HTTPStatus.TOO_MANY_REQUESTS.value
                     if error.code == "RATE_LIMITED"
-                    else 409
+                    else HTTPStatus.CONFLICT.value
                 )
                 return JSONResponse({"error": error.code}, status_code=status)
             except (EngineError, TrafficError) as error:
-                status = 409 if error.code in {"OWNERSHIP_CONFLICT", "INVALID_STATE"} else 502
+                status = (
+                    HTTPStatus.CONFLICT.value
+                    if error.code in {"OWNERSHIP_CONFLICT", "INVALID_STATE"}
+                    else HTTPStatus.BAD_GATEWAY.value
+                )
                 return JSONResponse({"error": error.code}, status_code=status)
             except (SQLAlchemyError, TimeoutError):
-                return JSONResponse({"error": "CONTROL_UNAVAILABLE"}, status_code=503)
+                return JSONResponse(
+                    {"error": "CONTROL_UNAVAILABLE"},
+                    status_code=HTTPStatus.SERVICE_UNAVAILABLE.value,
+                )
 
         task = asyncio.create_task(coro=bounded())
         owning.add(task)

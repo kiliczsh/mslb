@@ -1,7 +1,7 @@
 import type { z } from "zod";
-import { eventSchema } from "../../features/results/resultContracts.js";
 import { type Api, ApiError } from "./api.js";
 import { type Run, runSchema, terminal } from "./contracts.js";
+import { eventSchema } from "./resultContracts.js";
 
 export type TraceEvent = z.infer<typeof eventSchema>;
 const progressSchema = runSchema.pick({

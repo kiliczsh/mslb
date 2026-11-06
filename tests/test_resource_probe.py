@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from http import HTTPStatus
 
 import httpx
 import pytest
@@ -58,7 +59,8 @@ def test_probe_reads_only_fixed_project_identity_and_immutable_id_stats(fault: s
                     }
                 }
             return httpx.Response(
-                status_code=200, stream=httpx.ByteStream(stream=json.dumps(obj=data).encode())
+                status_code=HTTPStatus.OK.value,
+                stream=httpx.ByteStream(stream=json.dumps(obj=data).encode()),
             )
 
         engine = ProbeEngine(transport=httpx.MockTransport(handler=respond))

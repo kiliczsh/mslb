@@ -3,8 +3,8 @@ import { useState } from "react";
 import { type Api, ApiError } from "../../shared/api/api.js";
 import type { Run } from "../../shared/api/contracts.js";
 import { Feedback } from "../../shared/ui/Feedback.js";
-import { MetricNumber } from "../../shared/ui/MetricNumber.js";
 import { compatibleRuns } from "./comparison.js";
+import { MetricNumber } from "./MetricNumber.js";
 
 export function RunComparison({ api, run }: { api: Api; run: Run }) {
   const [cursor, setCursor] = useState<string | null>(null);

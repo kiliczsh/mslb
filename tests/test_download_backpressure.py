@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+from http import HTTPStatus
 from pathlib import Path
 
 import httpx
@@ -77,14 +78,16 @@ def test_stalled_download_closes_files_and_releases_real_guard_capacity(
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=guard), base_url="http://testserver"
             ) as client:
-                assert (await client.get(url="/api/v1/servers")).status_code == 429
+                assert (
+                    await client.get(url="/api/v1/servers")
+                ).status_code == HTTPStatus.TOO_MANY_REQUESTS.value
                 await asyncio.wait_for(fut=task, timeout=2)
                 assert guard.active == 0
                 assert all(stream.closed for stream in response.files)
                 assert response.stopped.is_set()
                 with pytest.raises(expected_exception=StopAsyncIteration):
                     await anext(response.source)
-                assert (await client.get(url="/api/v1/servers")).status_code == 200
+                assert (await client.get(url="/api/v1/servers")).status_code == HTTPStatus.OK.value
         finally:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)

@@ -41,15 +41,15 @@ def test_docker_settings_are_distinct_strict_and_bounded() -> None:
 def test_snapshot_rejects_arrivals_outside_real_runtime_and_changes_identity_with_provenance() -> (
     None
 ):
-    body = dict(
-        dataset_id=uuid4(),
-        dataset_digest="a" * 64,
-        request_count=2,
-        latest_arrival=1,
-        deployment_id=uuid4(),
-        deployment_digest="b" * 64,
-        configuration=DockerSettings(duration_seconds=2),
-    )
+    body = {
+        "dataset_id": uuid4(),
+        "dataset_digest": "a" * 64,
+        "request_count": 2,
+        "latest_arrival": 1,
+        "deployment_id": uuid4(),
+        "deployment_digest": "b" * 64,
+        "configuration": DockerSettings(duration_seconds=2),
+    }
     snapshot = DockerSnapshot.model_validate(body)
     assert (
         DockerSnapshot.model_validate_json(snapshot.model_dump_json()).digest() == snapshot.digest()
@@ -131,17 +131,17 @@ def test_deployment_and_artifact_namespaces_cannot_alias_logical_output() -> Non
         name: {"key": f"docker/{identifier.hex}/3/{name}", "sha256": "e" * 64, "size_bytes": 1}
         for name in ("http_events.jsonl", "runtime_summary.json", "container_lifecycle.jsonl")
     }
-    data = dict(
-        run_id=str(identifier),
-        publication_fence=3,
-        snapshot_digest="f" * 64,
-        total=2,
-        completed=1,
-        failed=1,
-        dropped=0,
-        unexecuted=0,
-        artifacts=files,
-    )
+    data = {
+        "run_id": str(identifier),
+        "publication_fence": 3,
+        "snapshot_digest": "f" * 64,
+        "total": 2,
+        "completed": 1,
+        "failed": 1,
+        "dropped": 0,
+        "unexecuted": 0,
+        "artifacts": files,
+    }
     valid = DockerManifest.model_validate_json(json.dumps(data))
     assert valid.total == 2
     for invalid in (True, 1.0, "1"):

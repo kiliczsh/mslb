@@ -66,17 +66,19 @@ def test_worker_executes_queued_run_and_matches_independent_cli_bundle(
         async with scratch() as database:
             settings = RunSettings.model_validate_json(
                 json.dumps(
-                    dict(
-                        mode=mode,
-                        strategy=strategy,
-                        autoscaling=dict(
-                            enabled=scaling,
-                            max_servers=3,
-                            server_template=dict(
-                                cpu_units_per_tick=10, mem_mb=1024, rate_limit_per_sec=2
-                            ),
-                        ),
-                    )
+                    {
+                        "mode": mode,
+                        "strategy": strategy,
+                        "autoscaling": {
+                            "enabled": scaling,
+                            "max_servers": 3,
+                            "server_template": {
+                                "cpu_units_per_tick": 10,
+                                "mem_mb": 1024,
+                                "rate_limit_per_sec": 2,
+                            },
+                        },
+                    }
                 )
             )
             source = (

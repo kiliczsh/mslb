@@ -237,8 +237,7 @@ class Catalog:
         if (
             not re.fullmatch(r"[0-9a-f]{64}", body_digest)
             or not 1 <= len(scope.encode()) <= 128
-            or key is not None
-            and not 1 <= len(key.encode()) <= 128
+            or (key is not None and not 1 <= len(key.encode()) <= 128)
         ):
             raise StoreError("VALIDATION_ERROR", "Invalid idempotency identity")
         key_hash = hashlib.sha256(key.encode()).hexdigest() if key is not None else None

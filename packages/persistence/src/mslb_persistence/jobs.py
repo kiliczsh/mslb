@@ -205,7 +205,7 @@ class Jobs:
             "VALIDATION_FAILED",
             "INTERNAL_ERROR",
         }
-        if error_code not in allowed or retryable and error_code != "INFRASTRUCTURE_FAILURE":
+        if error_code not in allowed or (retryable and error_code != "INFRASTRUCTURE_FAILURE"):
             raise StoreError(
                 "VALIDATION_ERROR", "Only infrastructure failures may retry automatically"
             )

@@ -10,31 +10,31 @@ from mslb_application.playback import read_playback
 
 def frame(tick: int, duration: int, terminal: bool = False) -> dict[str, object]:
     servers = [
-        dict(id=f"s{i:02d}", cpu_units_per_tick=10, mem_mb=1000, rate_limit_per_sec=10)
+        {"id": f"s{i:02d}", "cpu_units_per_tick": 10, "mem_mb": 1000, "rate_limit_per_sec": 10}
         for i in range(64)
     ]
-    return dict(
-        t=tick,
-        duration_ticks=duration,
-        terminal=terminal,
-        membership=servers,
-        pending_ids=[] if terminal else [f"q{i:04d}" for i in range(501)],
-        servers=[]
+    return {
+        "t": tick,
+        "duration_ticks": duration,
+        "terminal": terminal,
+        "membership": servers,
+        "pending_ids": [] if terminal else [f"q{i:04d}" for i in range(501)],
+        "servers": []
         if terminal
         else [
-            dict(
-                server_id=server["id"],
-                active_ids=[f"r{i:04d}" for i in range(501)] if server["id"] == "s00" else [],
-                reserved_mem_mb=501 if server["id"] == "s00" else 0,
-                capacity=10,
-                memory_capacity=1000,
-                starts=0,
-                allocated_cpu=10,
-                consumed_cpu=dict(numerator="1", denominator="3"),
-            )
+            {
+                "server_id": server["id"],
+                "active_ids": [f"r{i:04d}" for i in range(501)] if server["id"] == "s00" else [],
+                "reserved_mem_mb": 501 if server["id"] == "s00" else 0,
+                "capacity": 10,
+                "memory_capacity": 1000,
+                "starts": 0,
+                "allocated_cpu": 10,
+                "consumed_cpu": {"numerator": "1", "denominator": "3"},
+            }
             for server in servers
         ],
-    )
+    }
 
 
 def records(*values: Mapping[str, object]) -> io.BytesIO:
@@ -75,15 +75,15 @@ def test_playback_reports_membership_changes_and_decision_activation_without_ree
     samples = second["servers"]
     assert isinstance(samples, list)
     samples[-1]["server_id"] = "s64"
-    decision = dict(
-        t=0,
-        action="scale_out",
-        trigger=["cpu_mean_high"],
-        applied_at=1,
-        server_ids_added=["s64"],
-        server_ids_removed=[],
-        reason=None,
-    )
+    decision = {
+        "t": 0,
+        "action": "scale_out",
+        "trigger": ["cpu_mean_high"],
+        "applied_at": 1,
+        "server_ids_added": ["s64"],
+        "server_ids_removed": [],
+        "reason": None,
+    }
     result = read_playback(
         records(first, second), records(decision), UUID(int=1), "a" * 64, 1, 0, "pending", None, 0
     )

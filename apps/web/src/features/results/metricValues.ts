@@ -1,5 +1,5 @@
+import type { MetricValue } from "../../shared/api/resultContracts.js";
 import { parseFraction } from "../../shared/fractions.js";
-import type { MetricValue } from "./resultContracts.js";
 
 function parts(value: MetricValue) {
   return typeof value === "number"

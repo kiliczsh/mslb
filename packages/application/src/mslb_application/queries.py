@@ -109,7 +109,7 @@ class Queries:
         items: list[T] = []
         for row in rows:
             trial = Page[T](
-                items=tuple([*items, row]), next_cursor=self.cursors.encode(context, position(row))
+                items=(*items, row), next_cursor=self.cursors.encode(context, position(row))
             )
             if len(trial.model_dump_json().encode()) > self.response_bytes:
                 if not items:
@@ -283,11 +283,13 @@ class Queries:
             or any(type(value) is not int for value in (start_tick, end_tick, max_points))
             or not 0 <= start_tick < end_tick <= 1_000_000
             or not 1 <= max_points <= 2000
-            or server_id is not None
-            and (
-                type(server_id) is not str
-                or not 1 <= len(server_id.encode()) <= 128
-                or metric == "pending_depth"
+            or (
+                server_id is not None
+                and (
+                    type(server_id) is not str
+                    or not 1 <= len(server_id.encode()) <= 128
+                    or metric == "pending_depth"
+                )
             )
         ):
             raise OperationError("VALIDATION_ERROR", "Invalid chart query")
@@ -342,8 +344,10 @@ class Queries:
             or not 0 <= request_offset <= 10_000
             or request_kind not in {"pending", "active"}
             or (request_kind == "active") != (server_id is not None)
-            or server_id is not None
-            and (type(server_id) is not str or not 1 <= len(server_id.encode()) <= 128)
+            or (
+                server_id is not None
+                and (type(server_id) is not str or not 1 <= len(server_id.encode()) <= 128)
+            )
         ):
             raise OperationError("VALIDATION_ERROR", "Invalid playback query")
         _, manifest, _ = await self.completed(run_id)

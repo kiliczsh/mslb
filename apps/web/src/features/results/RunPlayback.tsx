@@ -2,14 +2,14 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useStore } from "zustand";
 import type { Api } from "../../shared/api/api.js";
+import type { Playback } from "../../shared/api/resultContracts.js";
 import { Feedback } from "../../shared/ui/Feedback.js";
 import { PauseIcon, PlayIcon } from "../../shared/ui/Icons.js";
-import { MetricNumber } from "../../shared/ui/MetricNumber.js";
 import { VirtualList } from "../../shared/ui/VirtualList.js";
 import { usePageVisible } from "../../shared/usePageVisible.js";
 import { FlowTopology } from "./FlowTopology.js";
+import { MetricNumber } from "./MetricNumber.js";
 import { createPlaybackStore } from "./playbackStore.js";
-import type { Playback } from "./resultContracts.js";
 
 export function RunPlayback({
   api,

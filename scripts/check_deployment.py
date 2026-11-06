@@ -48,14 +48,12 @@ def check(payload: bytes) -> None:
                     "docker-proxy",
                     "docker-proxy-check",
                 }
-                or name != "control-init"
-                and not mount.read_only
+                or (name != "control-init" and not mount.read_only)
             ):
                 raise ValueError("Controller credential mounts are private and read-only")
             if "guard-auth" in mount.source and (
                 name not in {"control-init", "resource-guard", "docker-proxy", "docker-proxy-check"}
-                or name != "control-init"
-                and not mount.read_only
+                or (name != "control-init" and not mount.read_only)
             ):
                 raise ValueError("Guard credential mounts are isolated and read-only")
             if "host-memory" in mount.source and (

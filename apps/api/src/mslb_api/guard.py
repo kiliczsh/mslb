@@ -1,6 +1,7 @@
 """ASGI access/body/admission checks happen before framework body parsing."""
 
 import hmac
+from http import HTTPStatus
 from uuid import uuid4
 
 from mslb_application.errors import OperationError
@@ -68,7 +69,7 @@ class Guard:
                     "FORBIDDEN", "Cross-origin preflight is not enabled", request_id
                 )
                 if origin is not None and origin in self.settings.allowed_origins:
-                    response.status_code = 204
+                    response.status_code = HTTPStatus.NO_CONTENT.value
                     response.body = b""
                     response.headers["Content-Length"] = "0"
                     response.headers["Access-Control-Allow-Origin"] = origin
@@ -90,10 +91,8 @@ class Guard:
             if not health:
                 if (
                     self.active >= self.settings.request_limit
-                    or streaming
-                    and self.streams >= self.settings.stream_limit
-                    or upload
-                    and self.uploading
+                    or (streaming and self.streams >= self.settings.stream_limit)
+                    or (upload and self.uploading)
                 ):
                     raise OperationError("RATE_LIMITED", "API request capacity is occupied")
                 self.active += 1
@@ -137,7 +136,7 @@ class Guard:
                             (b"cache-control", b"no-store"),
                         ]
                     )
-                    if message["status"] == 503 and not any(
+                    if message["status"] == HTTPStatus.SERVICE_UNAVAILABLE.value and not any(
                         key.lower() == b"retry-after" for key, _ in response_headers
                     ):
                         response_headers.append((b"retry-after", b"1"))

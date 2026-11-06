@@ -76,12 +76,12 @@ class TrafficSummary(DockerModel):
         if self.completed + self.failed + self.dropped + self.unexecuted != self.total:
             raise ValueError("Every HTTP request requires exactly one terminal outcome")
         if (
-            self.status == "cancelled"
-            and self.stop_reason != "CANCELLED"
-            or self.status == "failed"
-            and self.stop_reason not in {"FENCE_LOST", "RESOURCE_PRESSURE"}
-            or self.status == "completed"
-            and self.stop_reason not in {None, "RUN_DEADLINE"}
+            (self.status == "cancelled" and self.stop_reason != "CANCELLED")
+            or (
+                self.status == "failed"
+                and self.stop_reason not in {"FENCE_LOST", "RESOURCE_PRESSURE"}
+            )
+            or (self.status == "completed" and self.stop_reason not in {None, "RUN_DEADLINE"})
         ):
             raise ValueError("HTTP run status and stop reason conflict")
         return self

@@ -32,7 +32,7 @@ def write_health() -> None:
     if metadata.st_uid != os.getuid() or metadata.st_mode & 0o077:
         raise ValueError("Worker health directory must be private")
     temporary = HEALTH.with_suffix(suffix=".tmp")
-    temporary.write_text(data=json.dumps(obj=dict(updated=time.monotonic())))
+    temporary.write_text(data=json.dumps(obj={"updated": time.monotonic()}))
     temporary.replace(target=HEALTH)
 
 

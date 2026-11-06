@@ -103,14 +103,14 @@ async def _verify_index(
             try:
                 event = PersistedEvent.model_validate_json(
                     canonical_bytes(
-                        dict(
-                            sequence=row.sequence,
-                            t=row.t,
-                            event=row.event,
-                            request_id=row.request_id,
-                            server_id=row.server_id,
-                            reason=row.reason,
-                        )
+                        {
+                            "sequence": row.sequence,
+                            "t": row.t,
+                            "event": row.event,
+                            "request_id": row.request_id,
+                            "server_id": row.server_id,
+                            "reason": row.reason,
+                        }
                     )
                 )
             except ValidationError:
@@ -124,7 +124,7 @@ async def _verify_index(
             if event.reason is not None:
                 drops.update(
                     canonical_bytes(
-                        dict(t=event.t, request_id=event.request_id, reason=event.reason)
+                        {"t": event.t, "request_id": event.request_id, "reason": event.reason}
                     )
                 )
     finally:
@@ -325,15 +325,17 @@ class Durability:
                 )
             for event in data.events:
                 session.add(IndexedEvent(run_id=lease.run_id, **event.model_dump()))
-            values = dict(
-                revision=revision,
-                kind=data.kind,
-                reference=data.reference.model_dump(mode="json"),
-                next_tick=data.next_tick,
-                executed_intervals=data.executed_intervals,
-                prefixes=[p.model_dump(mode="json") for p in data.prefixes],
-                metrics=data.metrics.model_dump(mode="json") if data.metrics is not None else None,
-            )
+            values = {
+                "revision": revision,
+                "kind": data.kind,
+                "reference": data.reference.model_dump(mode="json"),
+                "next_tick": data.next_tick,
+                "executed_intervals": data.executed_intervals,
+                "prefixes": [p.model_dump(mode="json") for p in data.prefixes],
+                "metrics": data.metrics.model_dump(mode="json")
+                if data.metrics is not None
+                else None,
+            }
             if previous is None:
                 session.add(OutputProgress(run_id=lease.run_id, **values))
             else:
@@ -402,15 +404,15 @@ class Durability:
             return tuple(
                 OutputChunk.model_validate_json(
                     canonical_bytes(
-                        dict(
-                            name=row.name,
-                            file=row.file,
-                            first_sequence=row.first_sequence,
-                            last_sequence=row.last_sequence,
-                            byte_offset=row.byte_offset,
-                            first_tick=row.first_tick,
-                            last_tick=row.last_tick,
-                        )
+                        {
+                            "name": row.name,
+                            "file": row.file,
+                            "first_sequence": row.first_sequence,
+                            "last_sequence": row.last_sequence,
+                            "byte_offset": row.byte_offset,
+                            "first_tick": row.first_tick,
+                            "last_tick": row.last_tick,
+                        }
                     )
                 )
                 for row in rows
@@ -452,14 +454,14 @@ class Durability:
             return tuple(
                 PersistedEvent.model_validate_json(
                     canonical_bytes(
-                        dict(
-                            sequence=row.sequence,
-                            t=row.t,
-                            event=row.event,
-                            request_id=row.request_id,
-                            server_id=row.server_id,
-                            reason=row.reason,
-                        )
+                        {
+                            "sequence": row.sequence,
+                            "t": row.t,
+                            "event": row.event,
+                            "request_id": row.request_id,
+                            "server_id": row.server_id,
+                            "reason": row.reason,
+                        }
                     )
                 )
                 for row in rows

@@ -42,8 +42,7 @@ class Settings:
     def __post_init__(self) -> None:
         if (
             type(self.auth_enabled) is not bool
-            or self.auth_enabled
-            and re.fullmatch(r"[A-Za-z0-9_-]{32,256}", self.token) is None
+            or (self.auth_enabled and re.fullmatch(r"[A-Za-z0-9_-]{32,256}", self.token) is None)
             or not 1 <= self.request_limit <= 32
             or not 1 <= self.stream_limit <= 20
             or not 0.05 <= self.mcp_session_idle_seconds <= 1800

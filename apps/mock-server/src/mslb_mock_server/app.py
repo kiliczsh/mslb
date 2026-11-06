@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from http import HTTPStatus
 
 from fastapi import FastAPI, Request
 from mslb_contracts.traffic import WorkRequest
@@ -41,30 +42,30 @@ def create_app(settings: Settings, backend: Backend | None = None) -> FastAPI:
     @app.post("/work")
     async def work(request: Request) -> JSONResponse:
         if request.headers.get("content-type", "").split(";")[0].lower() != "application/json":
-            return _error("UNSUPPORTED_MEDIA_TYPE", 415)
+            return _error("UNSUPPORTED_MEDIA_TYPE", HTTPStatus.UNSUPPORTED_MEDIA_TYPE.value)
         raw = bytearray()
         try:
             async with asyncio.timeout(2):
                 async for chunk in request.stream():
                     if len(raw) + len(chunk) > 64 * 1024:
-                        return _error("PAYLOAD_TOO_LARGE", 413)
+                        return _error("PAYLOAD_TOO_LARGE", HTTPStatus.CONTENT_TOO_LARGE.value)
                     raw.extend(chunk)
             payload = WorkRequest.model_validate_json(raw)
         except TimeoutError:
-            return _error("BODY_TIMEOUT", 408)
+            return _error("BODY_TIMEOUT", HTTPStatus.REQUEST_TIMEOUT.value)
         except ClientDisconnect:
-            return _error("CLIENT_DISCONNECTED", 400)
+            return _error("CLIENT_DISCONNECTED", HTTPStatus.BAD_REQUEST.value)
         except ValidationError:
-            return _error("VALIDATION_ERROR", 422)
+            return _error("VALIDATION_ERROR", HTTPStatus.UNPROCESSABLE_CONTENT.value)
         try:
             result = await service.run(payload)
         except WorkStopped as error:
             status = (
-                429
+                HTTPStatus.TOO_MANY_REQUESTS.value
                 if error.code == "BACKEND_BUSY"
-                else 503
+                else HTTPStatus.SERVICE_UNAVAILABLE.value
                 if error.code == "RESOURCE_PRESSURE"
-                else 504
+                else HTTPStatus.GATEWAY_TIMEOUT.value
             )
             return _error(error.code, status)
         return JSONResponse(result.model_dump())

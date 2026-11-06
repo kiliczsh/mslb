@@ -6,6 +6,7 @@ keeps the real middleware/response lifecycle suspended when the client pauses.
 
 import asyncio
 from collections.abc import AsyncIterator
+from contextlib import suppress
 from typing import override
 
 import httpx
@@ -104,11 +105,9 @@ class SlowHttpTransport(httpx.AsyncBaseTransport):
                 raise
             finally:
                 self.finished.set()
-                try:
+                # A retained data chunk is drained before __aiter__ can finish.
+                with suppress(asyncio.QueueFull):
                     self.frames.put_nowait(item=None)
-                except asyncio.QueueFull:
-                    # A retained data chunk is drained before __aiter__ can finish.
-                    pass
 
         self.task = asyncio.create_task(coro=run())
         try:

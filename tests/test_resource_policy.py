@@ -201,7 +201,7 @@ def test_model_rejects_inconsistent_memory_identity_and_unbounded_topology() -> 
         {"services": value.services[:-1]},
         {"services": (value.services[0], *value.services[1:-1], value.services[0])},
         {"available_memory_bytes": value.engine_memory_bytes + 1},
-        {"measured_at": datetime(year=2026, month=11, day=6)},
+        {"measured_at": datetime(year=2026, month=11, day=6, tzinfo=UTC).replace(tzinfo=None)},
     ):
         with pytest.raises(expected_exception=ValidationError):
             ResourceProbe.model_validate(obj=value.model_dump() | changes)

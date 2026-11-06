@@ -1,6 +1,7 @@
 """REST servers routes over shared application services."""
 
 import re
+from http import HTTPStatus
 
 from fastapi import APIRouter, Request
 from mslb_application.errors import OperationError
@@ -13,7 +14,6 @@ from mslb_contracts.inputs import ServerInput
 from mslb_contracts.pagination import Page
 from starlette.responses import Response
 
-from mslb_api.multipart import _Multipart as _Multipart
 from mslb_api.responses import json_response
 from mslb_api.route_values import Cursor, Limit
 
@@ -35,10 +35,10 @@ def register_servers(*, router: APIRouter, services: Services) -> None:
     async def servers(limit: Limit = 100, cursor: Cursor = None) -> Response:
         return json_response(await services.list_servers(limit, cursor))
 
-    @router.post("/servers", status_code=201, response_model=ServerView)
+    @router.post("/servers", status_code=HTTPStatus.CREATED.value, response_model=ServerView)
     async def create_server(body: ServerInput) -> Response:
         value = await services.create_server(body)
-        return json_response(value, 201, {"ETag": f'"{value.version}"'})
+        return json_response(value, HTTPStatus.CREATED.value, {"ETag": f'"{value.version}"'})
 
     @router.get("/servers/{server_id:path}", response_model=ServerView)
     async def get_server(server_id: str) -> Response:
@@ -51,8 +51,8 @@ def register_servers(*, router: APIRouter, services: Services) -> None:
         value = await services.update_server(server_id, body, expected)
         return json_response(value, headers={"ETag": f'"{value.version}"'})
 
-    @router.delete("/servers/{server_id:path}", status_code=204)
+    @router.delete("/servers/{server_id:path}", status_code=HTTPStatus.NO_CONTENT.value)
     async def delete_server(server_id: str, request: Request) -> Response:
         expected = version(request)
         await services.delete_server(server_id, expected)
-        return Response(status_code=204)
+        return Response(status_code=HTTPStatus.NO_CONTENT.value)

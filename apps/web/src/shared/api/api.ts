@@ -1,15 +1,5 @@
 import type { z } from "zod";
 import {
-  type Chart,
-  chartSchema,
-  comparisonSchema,
-  eventSchema,
-  metricsSchema,
-  type PlaybackSelection,
-  playbackSchema,
-  serverMetricSchema,
-} from "../../features/results/resultContracts.js";
-import {
   acceptedSchema,
   datasetSchema,
   detailSchema,
@@ -21,6 +11,16 @@ import {
   type Settings,
   serverSchema,
 } from "./contracts.js";
+import {
+  type Chart,
+  chartSchema,
+  comparisonSchema,
+  eventSchema,
+  metricsSchema,
+  type PlaybackSelection,
+  playbackSchema,
+  serverMetricSchema,
+} from "./resultContracts.js";
 
 export class ApiError extends Error {
   constructor(

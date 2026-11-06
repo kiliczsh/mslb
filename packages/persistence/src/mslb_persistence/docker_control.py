@@ -225,10 +225,8 @@ class DockerControl:
     ) -> ControlLease:
         if (
             outcome not in {"completed", "failed", "cancelled"}
-            or outcome == "failed"
-            and error_code not in FAILURES
-            or outcome != "failed"
-            and error_code is not None
+            or (outcome == "failed" and error_code not in FAILURES)
+            or (outcome != "failed" and error_code is not None)
         ):
             raise StoreError("VALIDATION_ERROR", "Invalid Docker terminal outcome")
 

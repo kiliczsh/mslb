@@ -99,7 +99,8 @@ def test_arrivals_and_four_strategies_preserve_one_terminal_outcome_without_task
                 clock=clock,
             )
             try:
-                inputs = rows(count=6) + (
+                inputs = (
+                    *rows(count=6),
                     RequestInput(t=1, request_id="later", work_units=1, mem_mb=1),
                 )
                 summary = await driver.execute(requests=inputs)
@@ -220,7 +221,8 @@ def test_stop_does_not_send_pending_or_future_arrivals(reason: StopReason) -> No
             stop=stop,
         )
         try:
-            inputs = rows(count=2) + (
+            inputs = (
+                *rows(count=2),
                 RequestInput(t=2, request_id="z-future", work_units=1, mem_mb=1),
             )
             summary = await driver.execute(requests=inputs)

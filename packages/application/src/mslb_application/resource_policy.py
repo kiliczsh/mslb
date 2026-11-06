@@ -27,10 +27,8 @@ class ResourcePolicy:
         stop_running = False
         if probe is None:
             reason, stop_running = "MEASUREMENTS_UNAVAILABLE", True
-        elif (
-            not 0 <= (now - probe.measured_at).total_seconds() <= 3
-            or self.last_measurement is not None
-            and probe.measured_at < self.last_measurement
+        elif not 0 <= (now - probe.measured_at).total_seconds() <= 3 or (
+            self.last_measurement is not None and probe.measured_at < self.last_measurement
         ):
             reason, stop_running = "MEASUREMENTS_STALE", True
         elif probe.engine_memory_bytes < 8 * 1024**3 or caps + reserve > probe.engine_memory_bytes:
@@ -69,8 +67,10 @@ class ResourcePolicy:
                 and probe.measured_at != self.last_measurement
                 and (
                     not probe.desktop_engine
-                    or probe.host_memory is not None
-                    and probe.host_memory.measured_at != self.last_host_measurement
+                    or (
+                        probe.host_memory is not None
+                        and probe.host_memory.measured_at != self.last_host_measurement
+                    )
                 )
             ):
                 self.cool_samples = (

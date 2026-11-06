@@ -583,21 +583,21 @@ class OutputFixture:
             self.pending.append(
                 PersistedEvent.model_validate_json(
                     canonical_bytes(
-                        dict(
-                            sequence=sequence,
-                            t=event.t,
-                            event=event.event,
-                            request_id=event.request_id,
-                            server_id=event.server_id,
-                            reason=event.reason,
-                        )
+                        {
+                            "sequence": sequence,
+                            "t": event.t,
+                            "event": event.event,
+                            "request_id": event.request_id,
+                            "server_id": event.server_id,
+                            "reason": event.reason,
+                        }
                     )
                 )
             )
             if event.reason is not None:
                 self.streams["drop_reasons.jsonl"].write(
                     canonical_bytes(
-                        dict(t=event.t, request_id=event.request_id, reason=event.reason)
+                        {"t": event.t, "request_id": event.request_id, "reason": event.reason}
                     )
                 )
         if frame.scale_decision is not None:

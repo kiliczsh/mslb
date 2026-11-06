@@ -29,7 +29,16 @@ line-length = 100
 extend-exclude = ["scripts/validate_run.py", "docs/assignment/test-data"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "ASYNC", "S", "ANN"]
+select = [
+  "E", "F", "I", "UP", "B", "ASYNC", "S", "ANN",
+  "A001", "A002", "A003", "A004", "A005", "A006", "C4",
+  "N801", "N802", "N803", "N804", "N805", "N806",
+  "SIM", "PIE", "RSE", "RET", "DTZ", "LOG", "G", "FAST", "RUF005", "RUF021",
+  "D2", "D3", "D4",
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]

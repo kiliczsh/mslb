@@ -1,6 +1,7 @@
 """Actual PostgreSQL ownership around ambiguous/foreign daemon observations."""
 
 import asyncio
+from http import HTTPStatus
 from typing import override
 
 import httpx
@@ -26,7 +27,11 @@ from tests.test_docker_engine import fixture
 
 class ObservedEngine(Engine):
     def __init__(self, intent: CreationIntent) -> None:
-        super().__init__(httpx.MockTransport(lambda _request: httpx.Response(500)))
+        super().__init__(
+            httpx.MockTransport(
+                lambda _request: httpx.Response(HTTPStatus.INTERNAL_SERVER_ERROR.value)
+            )
+        )
         _intent, self.approved_image, self.approved_network, self.info = fixture(intent)
         self.absent = False
         self.image_absent = False
@@ -36,7 +41,7 @@ class ObservedEngine(Engine):
     @override
     async def image(self, image_id: str | None = None) -> ImageInfo:
         if self.image_absent:
-            raise EngineError("ENGINE_STATUS", 404)
+            raise EngineError("ENGINE_STATUS", HTTPStatus.NOT_FOUND.value)
         return self.approved_image
 
     @override
@@ -46,7 +51,7 @@ class ObservedEngine(Engine):
     @override
     async def inspect(self, reference: str) -> ContainerInfo:
         if self.absent:
-            raise EngineError("ENGINE_STATUS", 404)
+            raise EngineError("ENGINE_STATUS", HTTPStatus.NOT_FOUND.value)
         return self.info
 
     @override
@@ -104,7 +109,12 @@ def test_unknown_create_adopts_exact_definition_under_replacement_cleanup_only()
 
 @pytest.mark.parametrize(
     "status,state",
-    [(400, "abandoned"), (409, "unresolved"), (500, "unresolved"), (None, "unresolved")],
+    [
+        (HTTPStatus.BAD_REQUEST.value, "abandoned"),
+        (HTTPStatus.CONFLICT.value, "unresolved"),
+        (HTTPStatus.INTERNAL_SERVER_ERROR.value, "unresolved"),
+        (None, "unresolved"),
+    ],
 )
 def test_create_receipts_do_not_retry_or_release_uncertain_capacity(
     monkeypatch: pytest.MonkeyPatch, status: int | None, state: str

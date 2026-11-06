@@ -1,5 +1,6 @@
 """REST results routes over shared application services."""
 
+from http import HTTPStatus
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -14,7 +15,6 @@ from mslb_contracts.playback import PlaybackView
 from mslb_persistence.database import Database
 from starlette.responses import Response
 
-from mslb_api.multipart import _Multipart as _Multipart
 from mslb_api.responses import json_response
 from mslb_api.route_values import Cursor, Limit, Tick
 from mslb_api.streams import ArtifactResponse, EventResponse
@@ -78,7 +78,7 @@ def register_results(*, router: APIRouter, queries: Queries, database: Database)
         "/simulations/{run_id}/artifact",
         response_class=Response,
         responses={
-            200: {
+            HTTPStatus.OK.value: {
                 "content": {
                     "application/x-ndjson": {"schema": {"type": "string"}},
                     "text/csv": {"schema": {"type": "string"}},
@@ -94,7 +94,7 @@ def register_results(*, router: APIRouter, queries: Queries, database: Database)
         "/simulations/{run_id}/inputs",
         response_class=Response,
         responses={
-            200: {
+            HTTPStatus.OK.value: {
                 "content": {"application/zip": {"schema": {"type": "string", "format": "binary"}}}
             }
         },
@@ -111,7 +111,9 @@ def register_results(*, router: APIRouter, queries: Queries, database: Database)
     @router.get(
         "/simulations/{run_id}/stream",
         response_class=Response,
-        responses={200: {"content": {"text/event-stream": {"schema": {"type": "string"}}}}},
+        responses={
+            HTTPStatus.OK.value: {"content": {"text/event-stream": {"schema": {"type": "string"}}}}
+        },
     )
     async def stream(run_id: UUID, request: Request) -> Response:
         last = request.headers.get("last-event-id", "0")

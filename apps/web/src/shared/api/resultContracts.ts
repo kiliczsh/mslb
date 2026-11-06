@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { serverInputSchema, settingsSchema } from "../../shared/api/contracts.js";
-import { fractionSchema } from "../../shared/fractions.js";
+import { fractionSchema } from "../fractions.js";
+import { serverInputSchema, settingsSchema } from "./contracts.js";
 
 const tick = z.number().int().min(0).max(1_000_000);
 const count = z.number().int().min(0).max(10_000);

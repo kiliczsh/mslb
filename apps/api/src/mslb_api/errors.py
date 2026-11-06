@@ -1,23 +1,25 @@
 """Safe shared error envelopes without raw validation inputs or SQL details."""
 
+from http import HTTPStatus
+
 from mslb_contracts.http import ErrorEnvelope, ErrorInfo, FieldError
 from starlette.responses import Response
 
 STATUS = {
-    "VALIDATION_ERROR": 422,
-    "NOT_FOUND": 404,
-    "CONFLICT": 409,
-    "INVALID_STATE": 409,
-    "UNAUTHORIZED": 401,
-    "FORBIDDEN": 403,
-    "RATE_LIMITED": 429,
-    "PAYLOAD_TOO_LARGE": 413,
-    "RESOURCE_PRESSURE": 503,
-    "NOT_READY": 503,
-    "INTERNAL_ERROR": 500,
-    "VALIDATION_FAILED": 500,
-    "STORAGE_LIMIT_EXCEEDED": 503,
-    "RESOURCE_LIMIT_EXCEEDED": 413,
+    "VALIDATION_ERROR": HTTPStatus.UNPROCESSABLE_CONTENT.value,
+    "NOT_FOUND": HTTPStatus.NOT_FOUND.value,
+    "CONFLICT": HTTPStatus.CONFLICT.value,
+    "INVALID_STATE": HTTPStatus.CONFLICT.value,
+    "UNAUTHORIZED": HTTPStatus.UNAUTHORIZED.value,
+    "FORBIDDEN": HTTPStatus.FORBIDDEN.value,
+    "RATE_LIMITED": HTTPStatus.TOO_MANY_REQUESTS.value,
+    "PAYLOAD_TOO_LARGE": HTTPStatus.CONTENT_TOO_LARGE.value,
+    "RESOURCE_PRESSURE": HTTPStatus.SERVICE_UNAVAILABLE.value,
+    "NOT_READY": HTTPStatus.SERVICE_UNAVAILABLE.value,
+    "INTERNAL_ERROR": HTTPStatus.INTERNAL_SERVER_ERROR.value,
+    "VALIDATION_FAILED": HTTPStatus.INTERNAL_SERVER_ERROR.value,
+    "STORAGE_LIMIT_EXCEEDED": HTTPStatus.SERVICE_UNAVAILABLE.value,
+    "RESOURCE_LIMIT_EXCEEDED": HTTPStatus.CONTENT_TOO_LARGE.value,
 }
 
 
@@ -34,7 +36,7 @@ def error_response(
     )
     return Response(
         envelope.model_dump_json(),
-        status_code=STATUS.get(code, 500),
+        status_code=STATUS.get(code, HTTPStatus.INTERNAL_SERVER_ERROR.value),
         media_type="application/json",
         headers=headers,
     )

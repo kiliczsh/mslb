@@ -3,6 +3,7 @@
 import asyncio
 import json
 from contextvars import ContextVar
+from http import HTTPStatus
 from pathlib import Path
 from threading import Event
 from uuid import UUID, uuid4
@@ -61,7 +62,7 @@ def test_stateful_disconnect_releases_tokens_and_rejects_active_token_reuse(tmp_
                         },
                     },
                 )
-                assert opened.status_code == 200, opened.text
+                assert opened.status_code == HTTPStatus.OK.value, opened.text
                 headers = base | {"Mcp-Session-Id": opened.headers["mcp-session-id"]}
                 initialized = await raw.post(
                     url=workspace.url,
@@ -72,7 +73,7 @@ def test_stateful_disconnect_releases_tokens_and_rejects_active_token_reuse(tmp_
                         "params": {},
                     },
                 )
-                assert initialized.status_code == 202
+                assert initialized.status_code == HTTPStatus.ACCEPTED.value
 
                 def body(*, request_id: str, seconds: int) -> dict[str, object]:
                     return {
@@ -95,7 +96,7 @@ def test_stateful_disconnect_releases_tokens_and_rejects_active_token_reuse(tmp_
                     headers=headers,
                     json=body(request_id="first", seconds=20),
                 ) as first:
-                    assert first.status_code == 200
+                    assert first.status_code == HTTPStatus.OK.value
                     async for line in first.aiter_lines():
                         if line.startswith("data:"):
                             item = json.loads(s=line.removeprefix("data:"))
@@ -376,8 +377,9 @@ def test_wait_cleanup_preserves_execution_and_reconnects(tmp_path: Path, ending:
                             },
                         },
                     }
-                    async with httpx.AsyncClient(timeout=5) as raw:
-                        async with raw.stream(
+                    async with (
+                        httpx.AsyncClient(timeout=5) as raw,
+                        raw.stream(
                             method="POST",
                             url=workspace.url,
                             json=body,
@@ -387,16 +389,17 @@ def test_wait_cleanup_preserves_execution_and_reconnects(tmp_path: Path, ending:
                                 "MCP-Method": "tools/call",
                                 "MCP-Name": "wait_for_simulations",
                             },
-                        ) as response:
-                            assert response.status_code == 200, response.text
-                            async for line in response.aiter_lines():
-                                if line.startswith("data:"):
-                                    notification = json.loads(s=line.removeprefix("data:"))
-                                    if notification.get("method") == "notifications/progress":
-                                        assert notification["params"]["progressToken"] == 0
-                                        break
-                            else:
-                                pytest.fail("No progress before disconnect")
+                        ) as response,
+                    ):
+                        assert response.status_code == HTTPStatus.OK.value, response.text
+                        async for line in response.aiter_lines():
+                            if line.startswith("data:"):
+                                notification = json.loads(s=line.removeprefix("data:"))
+                                if notification.get("method") == "notifications/progress":
+                                    assert notification["params"]["progressToken"] == 0
+                                    break
+                        else:
+                            pytest.fail("No progress before disconnect")
                 else:
                     async with Client(server=streamable_http_client(url=workspace.url)) as client:
                         task = asyncio.create_task(

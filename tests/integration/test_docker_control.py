@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 from dataclasses import dataclass
 from datetime import timedelta
+from http import HTTPStatus
 from uuid import uuid4
 
 import pytest
@@ -228,7 +229,11 @@ def test_reservations_are_bounded_and_ambiguous_creation_is_not_retried() -> Non
             await data.resources.transition(lease, first.id, "uncertain")
             with pytest.raises(StoreError):
                 await data.resources.transition(lease, first.id, "abandon")
-            for status in (409, 500, 504):
+            for status in (
+                HTTPStatus.CONFLICT.value,
+                HTTPStatus.INTERNAL_SERVER_ERROR.value,
+                HTTPStatus.GATEWAY_TIMEOUT.value,
+            ):
                 with pytest.raises(StoreError):
                     await data.resources.reject_create(lease, first.id, status)
             assert (await data.resources.list(lease))[2].state == "unresolved"
@@ -412,7 +417,7 @@ def test_automatic_cleanup_retries_are_bounded_and_explicit_retry_does_not_relea
             assert retried.phase == "cleanup" and len(await data.resources.list(retried)) == 1
             with pytest.raises(StoreError):
                 await data.control.finish_cleanup(retried)
-            await data.resources.reject_create(retried, resource.id, 404)
+            await data.resources.reject_create(retried, resource.id, HTTPStatus.NOT_FOUND.value)
             assert (await data.control.finish_cleanup(retried)).status == "failed"
 
     asyncio.run(scenario())

@@ -1,5 +1,6 @@
 """REST simulations routes over shared application services."""
 
+from http import HTTPStatus
 from uuid import UUID
 
 from fastapi import APIRouter, Request
@@ -17,7 +18,6 @@ from mslb_contracts.pagination import Page
 from mslb_contracts.run_views import RunView
 from starlette.responses import Response
 
-from mslb_api.multipart import _Multipart as _Multipart
 from mslb_api.responses import json_response
 from mslb_api.route_values import Cursor, Limit
 
@@ -33,12 +33,14 @@ def register_simulations(*, router: APIRouter, services: Services, queries: Quer
     async def compare(body: CompareRequest) -> Response:
         return json_response(await queries.compare(body.run_ids))
 
-    @router.post("/simulations", status_code=202, response_model=SimulationAccepted)
+    @router.post(
+        "/simulations", status_code=HTTPStatus.ACCEPTED.value, response_model=SimulationAccepted
+    )
     async def submit(body: SimulationCreate, request: Request) -> Response:
         run = await services.submit(body, request.headers.get("idempotency-key"))
         return json_response(
             run,
-            202,
+            HTTPStatus.ACCEPTED.value,
             {"Location": f"/api/v1/simulations/{run.run_id}"},
         )
 

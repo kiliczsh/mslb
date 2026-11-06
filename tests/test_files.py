@@ -96,9 +96,8 @@ def test_immutable_publication_and_verified_read_reject_corruption(tmp_path: Pat
         files.publish(first.key, (b"change",), 6)
     assert files.path(first.key).read_bytes() == b"onetwo"
     files.path(first.key).write_bytes(b"damage")
-    with pytest.raises(OperationError, match="identity"):
-        with files.verified_stream(first):
-            pytest.fail("Corrupt data became visible")
+    with pytest.raises(OperationError, match="identity"), files.verified_stream(first):
+        pytest.fail("Corrupt data became visible")
     assert not list((tmp_path / ".staging").iterdir())
 
 

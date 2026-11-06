@@ -167,8 +167,7 @@ class ManagedFiles:
         parts = key.split("/")
         if len(parts) >= 3 and (
             parts[0] == "runs"
-            or parts[0] == "docker"
-            and re.fullmatch(pattern=r"[0-9a-f]{32}", string=parts[1])
+            or (parts[0] == "docker" and re.fullmatch(pattern=r"[0-9a-f]{32}", string=parts[1]))
         ):
             return "/".join(parts[:2])
         return None
@@ -271,25 +270,29 @@ class ManagedFiles:
 
     def ingest(self, source: BinaryIO, filename: str) -> DatasetRegistration:
         """Preserve source bytes and publish normalized data only after full validation."""
-        with self._lock(".upload-lock", wait=False):
-            with self._stage(_read_chunks(source), MAX_UPLOAD_BYTES) as original:
-                with original.path.open("rb") as stream:
-                    requests = read_requests(stream)
-                digest = input_digest(requests)
-                with self._stage(request_bytes(requests), MAX_UPLOAD_BYTES) as normalized:
-                    data = DatasetRegistration(
-                        digest=digest,
-                        source_filename=filename,
-                        request_count=len(requests),
-                        earliest_arrival=requests[0].t,
-                        latest_arrival=requests[-1].t,
-                        size_bytes=normalized.size_bytes,
-                        original_digest=original.sha256,
-                        source_size_bytes=original.size_bytes,
-                    )
-                    self._publish(original, f"uploads/{original.sha256}.csv")
-                    self._publish(normalized, f"datasets/{digest}.csv")
-                return data
+        with (
+            self._lock(name=".upload-lock", wait=False),
+            self._stage(chunks=_read_chunks(stream=source), maximum=MAX_UPLOAD_BYTES) as original,
+        ):
+            with original.path.open("rb") as stream:
+                requests = read_requests(stream=stream)
+            digest = input_digest(records=requests)
+            with self._stage(
+                chunks=request_bytes(requests=requests), maximum=MAX_UPLOAD_BYTES
+            ) as normalized:
+                data = DatasetRegistration(
+                    digest=digest,
+                    source_filename=filename,
+                    request_count=len(requests),
+                    earliest_arrival=requests[0].t,
+                    latest_arrival=requests[-1].t,
+                    size_bytes=normalized.size_bytes,
+                    original_digest=original.sha256,
+                    source_size_bytes=original.size_bytes,
+                )
+                self._publish(staged=original, key=f"uploads/{original.sha256}.csv")
+                self._publish(staged=normalized, key=f"datasets/{digest}.csv")
+            return data
 
     def load_requests(self, digest: str, size_bytes: int) -> tuple[RequestInput, ...]:
         path = self.path(f"datasets/{digest}.csv")

@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from http import HTTPStatus
 from pathlib import Path
 
 from fastapi import APIRouter, FastAPI, Request, Security
@@ -87,7 +88,18 @@ def create_app(
     app.add_middleware(Guard, settings=settings)
     app.state.mcp = mcp
     responses: dict[int | str, dict[str, object]] = {
-        status: {"model": ErrorEnvelope} for status in (401, 403, 404, 409, 413, 422, 429, 500, 503)
+        status: {"model": ErrorEnvelope}
+        for status in (
+            HTTPStatus.UNAUTHORIZED.value,
+            HTTPStatus.FORBIDDEN.value,
+            HTTPStatus.NOT_FOUND.value,
+            HTTPStatus.CONFLICT.value,
+            HTTPStatus.CONTENT_TOO_LARGE.value,
+            HTTPStatus.UNPROCESSABLE_CONTENT.value,
+            HTTPStatus.TOO_MANY_REQUESTS.value,
+            HTTPStatus.INTERNAL_SERVER_ERROR.value,
+            HTTPStatus.SERVICE_UNAVAILABLE.value,
+        )
     }
     router = APIRouter(
         prefix="/api/v1", dependencies=[Security(HTTPBearer(auto_error=False))], responses=responses
@@ -116,7 +128,11 @@ def create_app(
                 "VALIDATION_ERROR", "Request validation failed", identifier, details
             )
         if isinstance(error, HTTPException):
-            code = "NOT_FOUND" if error.status_code == 404 else "VALIDATION_ERROR"
+            code = (
+                "NOT_FOUND"
+                if error.status_code == HTTPStatus.NOT_FOUND.value
+                else "VALIDATION_ERROR"
+            )
             return error_response(
                 code,
                 "Route not found" if code == "NOT_FOUND" else "Malformed or unsupported request",

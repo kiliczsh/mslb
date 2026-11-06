@@ -2,6 +2,7 @@ import asyncio
 import io
 import json
 import secrets
+from http import HTTPStatus
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -128,26 +129,28 @@ def test_verified_playback_matches_saved_intervals_events_and_http_bounds(
                 outputs,
                 b"p" * 32,
             )
-            async with app.router.lifespan_context(app):
-                async with httpx.AsyncClient(
+            async with (
+                app.router.lifespan_context(app),
+                httpx.AsyncClient(
                     transport=httpx.ASGITransport(app), base_url="http://testserver/api/v1/"
-                ) as client:
-                    if authenticated:
-                        assert (
-                            await client.get(f"simulations/{runs[0]}/playback")
-                        ).status_code == 401
-                        client.headers["Authorization"] = "Bearer " + token
-                    response = await client.get(f"simulations/{runs[0]}/playback?tick=0")
+                ) as client,
+            ):
+                if authenticated:
                     assert (
-                        response.status_code == 200
-                        and response.json()["bundle_digest"] == view.bundle_digest
-                    )
-                    assert (
-                        await client.get(f"simulations/{runs[0]}/playback?request_offset=10001")
-                    ).status_code == 422
-                    assert (
-                        await client.get(f"simulations/{runs[0]}/playback?tick=7")
-                    ).status_code == 404
+                        await client.get(f"simulations/{runs[0]}/playback")
+                    ).status_code == HTTPStatus.UNAUTHORIZED.value
+                    client.headers["Authorization"] = "Bearer " + token
+                response = await client.get(f"simulations/{runs[0]}/playback?tick=0")
+                assert (
+                    response.status_code == HTTPStatus.OK.value
+                    and response.json()["bundle_digest"] == view.bundle_digest
+                )
+                assert (
+                    await client.get(f"simulations/{runs[0]}/playback?request_offset=10001")
+                ).status_code == HTTPStatus.UNPROCESSABLE_CONTENT.value
+                assert (
+                    await client.get(f"simulations/{runs[0]}/playback?tick=7")
+                ).status_code == HTTPStatus.NOT_FOUND.value
             source = "t,request_id,work_units,mem_mb\n" + "".join(
                 f"0,request-{i:02d}-{'x' * 80},1,1\n" for i in range(12)
             )
@@ -295,9 +298,12 @@ def test_metrics_charts_downloads_and_comparison_use_completed_verified_output(
                 await queries.metrics(runs[0], ("absent",))
             comparison = await queries.compare(runs)
             assert comparison.baseline_run_id == runs[0]
-            assert comparison.runs[0].metrics["finished"] == dict(
-                baseline=4, candidate=4, difference=0, percentage_difference=0
-            )
+            assert comparison.runs[0].metrics["finished"] == {
+                "baseline": 4,
+                "candidate": 4,
+                "difference": 0,
+                "percentage_difference": 0,
+            }
             assert comparison.runs[1].differing_settings == ("strategy",)
             assert ComparisonView.model_validate_json(comparison.model_dump_json()) == comparison
             for name in ("run.jsonl", "requests.csv", "snapshot.json", "manifest.json"):
@@ -402,12 +408,18 @@ def test_all_dropped_comparison_preserves_null_latency_and_zero_baseline(tmp_pat
             assert await worker.run_once() and await worker.run_once()
             queries = Queries(database, outputs, b"null-metric-signing-key" * 2)
             result = await queries.compare(runs)
-            assert result.runs[1].metrics["waiting.mean"] == dict(
-                baseline=None, candidate=None, difference=None, percentage_difference=None
-            )
-            assert result.runs[1].metrics["finished"] == dict(
-                baseline=0, candidate=0, difference=0, percentage_difference=None
-            )
+            assert result.runs[1].metrics["waiting.mean"] == {
+                "baseline": None,
+                "candidate": None,
+                "difference": None,
+                "percentage_difference": None,
+            }
+            assert result.runs[1].metrics["finished"] == {
+                "baseline": 0,
+                "candidate": 0,
+                "difference": 0,
+                "percentage_difference": None,
+            }
 
     asyncio.run(scenario())
 

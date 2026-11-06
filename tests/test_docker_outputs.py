@@ -223,10 +223,12 @@ def test_hash_mismatch_and_scoped_candidate_quota_are_enforced(tmp_path: Path) -
     root = tmp_path / "quota"
     files = ManagedFiles(root=root, limits=StorageLimits(quota_bytes=32, min_free_bytes=0))
     key = f"docker/{uuid4().hex}/1/.http.spool"
-    with pytest.raises(expected_exception=OperationError, match="quota"):
-        with files.work_file(key=key) as stream:
-            stream.write(data=b"x" * 33)
-            stream.sync()
+    with (
+        pytest.raises(expected_exception=OperationError, match="quota"),
+        files.work_file(key=key) as stream,
+    ):
+        stream.write(data=b"x" * 33)
+        stream.sync()
     assert not files.path(key=key).exists()
 
 

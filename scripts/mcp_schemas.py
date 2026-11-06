@@ -29,29 +29,31 @@ def artifacts() -> dict[str, bytes]:
             canonical_bytes(schema(tool.input)),
             canonical_bytes(output_schema(tool)),
         )
-        tools.append(dict(name=tool.name, input_schema=source, output_schema=result))
+        tools.append({"name": tool.name, "input_schema": source, "output_schema": result})
     for name, uri, model in RESOURCES:
         path = f"resources/{name}.schema.json"
         files[path] = canonical_bytes(schema(model))
-        resources.append(dict(name=name, uri=uri, schema=path))
+        resources.append({"name": name, "uri": uri, "schema": path})
     for name, _, model in PROMPTS:
         path = f"prompts/{name}.arguments.schema.json"
         files[path] = canonical_bytes(schema(model))
-        prompts.append(dict(name=name, arguments_schema=path))
+        prompts.append({"name": name, "arguments_schema": path})
     common = {}
     for name, model in COMMON.items():
         path = f"common/{name}.schema.json"
         files[path] = canonical_bytes(schema(model))
         common[name] = path
     files["manifest.json"] = canonical_bytes(
-        dict(
-            contract_version=CONTRACT_VERSION,
-            tools=tools,
-            resources=resources,
-            prompts=prompts,
-            common=common,
-            files={path: hashlib.sha256(data).hexdigest() for path, data in sorted(files.items())},
-        )
+        {
+            "contract_version": CONTRACT_VERSION,
+            "tools": tools,
+            "resources": resources,
+            "prompts": prompts,
+            "common": common,
+            "files": {
+                path: hashlib.sha256(data).hexdigest() for path, data in sorted(files.items())
+            },
+        }
     )
     return files
 

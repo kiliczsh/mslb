@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import UTC, datetime
+from http import HTTPStatus
 from pathlib import Path
 
 from mslb_contracts.resources import (
@@ -62,7 +63,7 @@ class ProbeEngine(Engine):
                 method="GET", path=f"/containers/{name}/json", model=InspectedMemory
             )
         except EngineError as error:
-            if error.status != 404:
+            if error.status != HTTPStatus.NOT_FOUND.value:
                 raise
             return ServiceMemory(
                 service=service,

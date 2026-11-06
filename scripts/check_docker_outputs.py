@@ -3,6 +3,7 @@
 import asyncio
 import io
 import tempfile
+from http import HTTPStatus
 from pathlib import Path
 
 import httpx
@@ -106,7 +107,7 @@ async def check_outputs(
                     content=reference.model_dump_json(),
                 )
                 require(
-                    condition=response.status_code == 200,
+                    condition=response.status_code == HTTPStatus.OK.value,
                     message="Real output static cleanup failed",
                 )
                 await writer.observe(

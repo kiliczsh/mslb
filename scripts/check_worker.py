@@ -56,12 +56,12 @@ async def main() -> None:
                 manifest = await asyncio.to_thread(verify_completion, outputs, pointer)
                 print(
                     json.dumps(
-                        dict(
-                            run_id=str(run.id),
-                            bundle_digest=manifest.bundle_digest,
-                            terminal_tick=manifest.terminal_tick,
-                            status="worker completion verified",
-                        )
+                        {
+                            "run_id": str(run.id),
+                            "bundle_digest": manifest.bundle_digest,
+                            "terminal_tick": manifest.terminal_tick,
+                            "status": "worker completion verified",
+                        }
                     )
                 )
                 return

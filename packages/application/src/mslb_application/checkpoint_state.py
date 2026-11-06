@@ -251,8 +251,10 @@ def _restore(snapshot: RunSnapshot, state: IntervalCheckpoint) -> RestoredCheckp
             (server.cpu_units_per_tick, server.mem_mb) == capacity(server.id)
             and (
                 server.id in original
-                or template is not None
-                and server.rate_limit_per_sec == template.rate_limit_per_sec
+                or (
+                    template is not None
+                    and server.rate_limit_per_sec == template.rate_limit_per_sec
+                )
             ),
             "Membership capacities differ from frozen inputs",
         )
@@ -398,8 +400,7 @@ def _restore(snapshot: RunSnapshot, state: IntervalCheckpoint) -> RestoredCheckp
     simulation.anchor = state.round_robin_anchor
     _require(
         simulation.anchor is None
-        or simulation.config.strategy == "round_robin"
-        and simulation.anchor in metrics.servers,
+        or (simulation.config.strategy == "round_robin" and simulation.anchor in metrics.servers),
         "Invalid scheduler anchor",
     )
     simulation.recorded_samples = state.recorded_samples
@@ -497,12 +498,8 @@ def _restore_scaler(
             and pending.applied_at == state.next_tick
             and saved.next_eligible_tick == pending.t + policy.cooldown_ticks + 1
             and (
-                pending.action == "scale_out"
-                and bool(added)
-                and not removed
-                or pending.action == "scale_in"
-                and bool(removed)
-                and not added
+                (pending.action == "scale_out" and bool(added) and not removed)
+                or (pending.action == "scale_in" and bool(removed) and not added)
             )
             and len(added) == len(pending.server_ids_added)
             and len(removed) == len(pending.server_ids_removed)

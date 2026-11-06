@@ -4,8 +4,6 @@ from typing import Annotated
 
 from fastapi import Query
 
-from mslb_api.multipart import _Multipart as _Multipart
-
 type Limit = Annotated[int, Query(ge=1, le=500)]
 
 type Cursor = Annotated[str | None, Query(max_length=2048)]

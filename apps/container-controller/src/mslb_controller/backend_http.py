@@ -1,6 +1,7 @@
 """Bounded private HTTP backend transport and response validation."""
 
 import asyncio
+from http import HTTPStatus
 
 import httpx
 from mslb_contracts.traffic import BackendHealth, WorkCompleted
@@ -11,7 +12,7 @@ from mslb_controller.routing_models import BackendSpec, Reservation
 
 
 async def _json(response: httpx.Response, model: type[BaseModel]) -> BaseModel:
-    if response.status_code != 200:
+    if response.status_code != HTTPStatus.OK.value:
         raise TrafficError(code="HTTP_STATUS", status_code=response.status_code)
     if (
         response.headers.get(key="content-type", default="").split(sep=";")[0].lower()

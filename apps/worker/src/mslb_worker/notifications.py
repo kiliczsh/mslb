@@ -17,13 +17,13 @@ class Notifications:
     def observe(self, phase: str, lease: Lease, tick: int) -> None:
         try:
             self.messages.put_nowait(
-                item=dict(
-                    event=phase,
-                    run_id=str(lease.run_id),
-                    attempt=lease.attempt,
-                    fence=lease.fence,
-                    tick=tick,
-                )
+                item={
+                    "event": phase,
+                    "run_id": str(lease.run_id),
+                    "attempt": lease.attempt,
+                    "fence": lease.fence,
+                    "tick": tick,
+                }
             )
         except queue.Full:
             return

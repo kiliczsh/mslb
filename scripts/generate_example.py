@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import tempfile
+from contextlib import ExitStack
 from pathlib import Path
 
 from mslb_contracts.inputs import read_requests, read_servers
@@ -44,16 +45,16 @@ def generate(
         requests=requests, servers=servers, max_series=config.max_metric_series
     )
     output.parent.mkdir(parents=True, exist_ok=True)
-    stream = tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        newline="\n",
-        dir=output.parent,
-        delete=False,
-    )
-    temporary = Path(stream.name)
-    try:
-        with stream:
+    with ExitStack() as cleanup:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="\n",
+            dir=output.parent,
+            delete=False,
+        ) as stream:
+            temporary = Path(stream.name)
+            cleanup.callback(temporary.unlink, missing_ok=True)
             for frame in simulation.iter_ticks():
                 metrics.observe(frame)
                 for event in frame.events:
@@ -67,8 +68,6 @@ def generate(
         report = metrics.summary()
         os.replace(temporary, output)
         return report
-    finally:
-        temporary.unlink(missing_ok=True)
 
 
 class Arguments(argparse.Namespace):

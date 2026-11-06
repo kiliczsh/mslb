@@ -1,5 +1,6 @@
 """Trusted lifecycle orchestration: every action derives from a current persisted intent."""
 
+from http import HTTPStatus
 from uuid import UUID
 
 from mslb_contracts.docker_ownership import ContainerObservation, CreationIntent, StaticReservation
@@ -80,7 +81,12 @@ class Lifecycle:
         try:
             created = await self.engine.create(intent)
         except EngineError as error:
-            if error.status in {400, 403, 404, 422}:
+            if error.status in {
+                HTTPStatus.BAD_REQUEST.value,
+                HTTPStatus.FORBIDDEN.value,
+                HTTPStatus.NOT_FOUND.value,
+                HTTPStatus.UNPROCESSABLE_CONTENT.value,
+            }:
                 await self.resources.reject_create(lease, identifier, error.status)
             else:
                 await self.resources.transition(lease, identifier, "uncertain")
@@ -117,7 +123,7 @@ class Lifecycle:
         try:
             record, info = await self.observe(lease, identifier)
         except EngineError as error:
-            if error.status == 404 and record.container_id is not None:
+            if error.status == HTTPStatus.NOT_FOUND.value and record.container_id is not None:
                 return await self.resources.confirm_absent(lease, identifier, record.container_id)
             # A name lookup returning 404 cannot prove a sent create will not arrive later.
             raise

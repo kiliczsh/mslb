@@ -1,6 +1,7 @@
 """Guard-side read-only measurement RPC, with no controller credential or daemon access."""
 
 import asyncio
+from http import HTTPStatus
 
 import httpx
 from mslb_contracts.resources import ResourceProbe
@@ -34,7 +35,7 @@ class ResourceClient:
                 asyncio.timeout(delay=5),
                 self.client.stream(method="GET", url="/guard/probe") as response,
             ):
-                if response.status_code != 200:
+                if response.status_code != HTTPStatus.OK.value:
                     raise EngineError(code="RESOURCE_UNAVAILABLE", status=response.status_code)
                 if (
                     response.headers.get(key="content-encoding", default="identity") != "identity"

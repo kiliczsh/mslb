@@ -224,21 +224,23 @@ class Journal:
             self.pending.append(
                 PersistedEvent.model_validate_json(
                     canonical_bytes(
-                        dict(
-                            sequence=self.records["run.jsonl"],
-                            t=event.t,
-                            event=event.event,
-                            request_id=event.request_id,
-                            server_id=event.server_id,
-                            reason=event.reason,
-                        )
+                        {
+                            "sequence": self.records["run.jsonl"],
+                            "t": event.t,
+                            "event": event.event,
+                            "request_id": event.request_id,
+                            "server_id": event.server_id,
+                            "reason": event.reason,
+                        }
                     )
                 )
             )
             if event.reason is not None:
                 self._record(
                     "drop_reasons.jsonl",
-                    json_chunks(dict(t=event.t, request_id=event.request_id, reason=event.reason)),
+                    json_chunks(
+                        {"t": event.t, "request_id": event.request_id, "reason": event.reason}
+                    ),
                     frame.t,
                 )
         if frame.scale_decision is not None:
@@ -379,10 +381,10 @@ class Journal:
         self.files.publish(
             f"{directory_key}/servers.json",
             json_chunks(
-                dict(
-                    tick_seconds=1,
-                    servers=[server.model_dump() for server in self.snapshot.servers],
-                )
+                {
+                    "tick_seconds": 1,
+                    "servers": [server.model_dump() for server in self.snapshot.servers],
+                }
             ),
             256 * 1024,
         )

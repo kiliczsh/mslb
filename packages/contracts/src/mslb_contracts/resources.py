@@ -174,8 +174,10 @@ def safe_to_admit(*, probe: ResourceProbe, now: datetime | None = None) -> bool:
         and host_memory_fresh(probe=probe, now=probe.measured_at if now is None else now)
         and (
             not probe.desktop_engine
-            or probe.host_memory is not None
-            and probe.host_memory.available_memory_bytes >= host_memory_headroom(probe=probe)
+            or (
+                probe.host_memory is not None
+                and probe.host_memory.available_memory_bytes >= host_memory_headroom(probe=probe)
+            )
         )
         and all(
             item.healthy

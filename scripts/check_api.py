@@ -69,11 +69,11 @@ async def main() -> None:
             )
         print(
             json.dumps(
-                dict(
-                    run_id=run_id,
-                    bundle_digest=detail.json()["validation"]["bundle_digest"],
-                    status="HTTP workflow verified",
-                )
+                {
+                    "run_id": run_id,
+                    "bundle_digest": detail.json()["validation"]["bundle_digest"],
+                    "status": "HTTP workflow verified",
+                }
             )
         )
 

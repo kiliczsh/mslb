@@ -25,11 +25,10 @@ def _frame(timeline: BinaryIO, tick: int) -> tuple[TimelineFrame, set[str] | Non
             frame.t != previous_end
             or frame.terminal != (frame.duration_ticks == 0)
             or ids != sorted(set(ids))
-            or not frame.terminal
-            and [sample.server_id for sample in frame.servers] != ids
+            or (not frame.terminal and [sample.server_id for sample in frame.servers] != ids)
         ):
             raise OperationError("VALIDATION_FAILED", "Timeline interval or membership is invalid")
-        if frame.t <= tick < end or frame.terminal and tick == frame.t:
+        if frame.t <= tick < end or (frame.terminal and tick == frame.t):
             return frame, previous_ids
         if frame.terminal or frame.t > tick:
             raise OperationError("NOT_FOUND", "Tick is outside the completed run")

@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import AsyncGenerator
 from datetime import datetime
+from http import HTTPStatus
 from pathlib import Path
 from threading import Event
 from uuid import UUID
@@ -40,45 +41,49 @@ def test_invalid_and_chunked_oversized_uploads_leave_no_dataset_or_staging(tmp_p
                 outputs,
                 b"limit-check-signing-key" * 2,
             )
-            async with app.router.lifespan_context(app):
-                async with httpx.AsyncClient(
+            async with (
+                app.router.lifespan_context(app),
+                httpx.AsyncClient(
                     transport=httpx.ASGITransport(app=app), base_url="http://testserver/api/v1/"
-                ) as client:
-                    for files in (
-                        {"file": ("bad.csv", b"private-input-must-not-be-echoed", "text/csv")},
-                        {"other": ("bad.csv", b"invalid", "text/csv")},
-                        [("file", ("a.csv", b"invalid")), ("file", ("b.csv", b"invalid"))],
-                    ):
-                        response = await client.post("datasets", files=files)
-                        assert response.status_code == 422, response.text
-                        assert "private-input-must-not-be-echoed" not in response.text
-                    malformed = await client.post(
-                        "datasets",
-                        content=b"broken",
-                        headers={"Content-Type": "multipart/form-data"},
+                ) as client,
+            ):
+                for files in (
+                    {"file": ("bad.csv", b"private-input-must-not-be-echoed", "text/csv")},
+                    {"other": ("bad.csv", b"invalid", "text/csv")},
+                    [("file", ("a.csv", b"invalid")), ("file", ("b.csv", b"invalid"))],
+                ):
+                    response = await client.post("datasets", files=files)
+                    assert response.status_code == HTTPStatus.UNPROCESSABLE_CONTENT.value, (
+                        response.text
                     )
-                    assert malformed.status_code == 422
+                    assert "private-input-must-not-be-echoed" not in response.text
+                malformed = await client.post(
+                    "datasets",
+                    content=b"broken",
+                    headers={"Content-Type": "multipart/form-data"},
+                )
+                assert malformed.status_code == HTTPStatus.UNPROCESSABLE_CONTENT.value
 
-                    async def oversized() -> AsyncGenerator[bytes]:
-                        yield (
-                            b"--b\r\nContent-Disposition: form-data; "
-                            b'name="file"; filename="data.csv"\r\n\r\n'
-                        )
-                        for _ in range(163):
-                            yield b"x" * 65536
-                        yield b"\r\n--b--\r\n"
+                async def oversized() -> AsyncGenerator[bytes]:
+                    yield (
+                        b"--b\r\nContent-Disposition: form-data; "
+                        b'name="file"; filename="data.csv"\r\n\r\n'
+                    )
+                    for _ in range(163):
+                        yield b"x" * 65536
+                    yield b"\r\n--b--\r\n"
 
-                    response = await client.post(
-                        "datasets",
-                        content=oversized(),
-                        headers={"Content-Type": "multipart/form-data; boundary=b"},
-                    )
-                    assert response.status_code == 413, response.text
-                    assert (await client.get("datasets")).json()["items"] == []
-                    assert (
-                        await asyncio.to_thread(lambda: list((inputs.root / ".staging").iterdir()))
-                        == []
-                    )
+                response = await client.post(
+                    "datasets",
+                    content=oversized(),
+                    headers={"Content-Type": "multipart/form-data; boundary=b"},
+                )
+                assert response.status_code == HTTPStatus.CONTENT_TOO_LARGE.value, response.text
+                assert (await client.get("datasets")).json()["items"] == []
+                assert (
+                    await asyncio.to_thread(lambda: list((inputs.root / ".staging").iterdir()))
+                    == []
+                )
 
     asyncio.run(scenario())
 
@@ -112,7 +117,10 @@ def test_dependency_error_envelope_redacts_sql_and_private_values(
                     transport=httpx.ASGITransport(app=app), base_url="http://testserver/api/v1/"
                 ) as client:
                     response = await client.get("simulations")
-                    assert response.status_code == 503 and response.headers["retry-after"] == "1"
+                    assert (
+                        response.status_code == HTTPStatus.SERVICE_UNAVAILABLE.value
+                        and response.headers["retry-after"] == "1"
+                    )
                     assert response.json()["error"]["code"] == "RESOURCE_PRESSURE"
                     assert "private-" not in response.text
                     assert response.headers["x-request-id"] == response.json()["request_id"]
@@ -149,49 +157,51 @@ def test_identical_http_retries_share_materialization_and_survive_owner_cancella
                 outputs,
                 b"retry-check-signing-key" * 2,
             )
-            async with app.router.lifespan_context(app):
-                async with httpx.AsyncClient(
+            async with (
+                app.router.lifespan_context(app),
+                httpx.AsyncClient(
                     transport=httpx.ASGITransport(app=app), base_url="http://testserver/api/v1/"
-                ) as client:
-                    dataset = await client.post(
-                        "datasets",
-                        files={
-                            "file": (
-                                "requests.csv",
-                                b"t,request_id,work_units,mem_mb\n0,r,1,1\n",
-                                "text/csv",
-                            )
-                        },
-                    )
-                    body = {"dataset_id": dataset.json()["id"]}
-                    monkeypatch.setattr(ManagedFiles, "load_requests", blocked)
-                    first = asyncio.create_task(
-                        client.post("simulations", json=body, headers={"Idempotency-Key": "same"})
-                    )
-                    assert await asyncio.to_thread(entered.wait, 5)
-                    second = asyncio.create_task(
-                        client.post("simulations", json=body, headers={"Idempotency-Key": "same"})
-                    )
-                    await asyncio.sleep(0.03)
-                    conflict = await client.post(
-                        "simulations",
-                        json=body | {"strategy": "round_robin"},
-                        headers={"Idempotency-Key": "same"},
-                    )
-                    assert conflict.status_code == 409
-                    rejected = await client.post(
-                        "simulations", json=body, headers={"Idempotency-Key": "different"}
-                    )
-                    assert rejected.status_code == 429
-                    first.cancel()
-                    await asyncio.sleep(0.03)
-                    assert not first.done() and calls == 1
-                    release.set()
-                    with pytest.raises(asyncio.CancelledError):
-                        await first
-                    duplicate = await second
-                    assert duplicate.status_code == 202, duplicate.text
-                    assert len(await Reads(database).runs()) == 1 and calls == 1
+                ) as client,
+            ):
+                dataset = await client.post(
+                    "datasets",
+                    files={
+                        "file": (
+                            "requests.csv",
+                            b"t,request_id,work_units,mem_mb\n0,r,1,1\n",
+                            "text/csv",
+                        )
+                    },
+                )
+                body = {"dataset_id": dataset.json()["id"]}
+                monkeypatch.setattr(ManagedFiles, "load_requests", blocked)
+                first = asyncio.create_task(
+                    client.post("simulations", json=body, headers={"Idempotency-Key": "same"})
+                )
+                assert await asyncio.to_thread(entered.wait, 5)
+                second = asyncio.create_task(
+                    client.post("simulations", json=body, headers={"Idempotency-Key": "same"})
+                )
+                await asyncio.sleep(0.03)
+                conflict = await client.post(
+                    "simulations",
+                    json=body | {"strategy": "round_robin"},
+                    headers={"Idempotency-Key": "same"},
+                )
+                assert conflict.status_code == HTTPStatus.CONFLICT.value
+                rejected = await client.post(
+                    "simulations", json=body, headers={"Idempotency-Key": "different"}
+                )
+                assert rejected.status_code == HTTPStatus.TOO_MANY_REQUESTS.value
+                first.cancel()
+                await asyncio.sleep(0.03)
+                assert not first.done() and calls == 1
+                release.set()
+                with pytest.raises(asyncio.CancelledError):
+                    await first
+                duplicate = await second
+                assert duplicate.status_code == HTTPStatus.ACCEPTED.value, duplicate.text
+                assert len(await Reads(database).runs()) == 1 and calls == 1
 
     try:
         asyncio.run(scenario())
@@ -254,144 +264,136 @@ def test_blocked_http_sse_consumer_releases_admission_and_replays_complete_durab
                 outputs=outputs,
                 signing_key=b"sse-check-signing-key" * 2,
             )
-            async with app.router.lifespan_context(app):
-                async with httpx.AsyncClient(
+            async with (
+                app.router.lifespan_context(app),
+                httpx.AsyncClient(
                     transport=httpx.ASGITransport(app=app), base_url="http://testserver/api/v1/"
-                ) as client:
-                    source = (
-                        "t,request_id,work_units,mem_mb\n"
-                        + "".join(f"0,r{i:04d}{'x' * identifier_padding},1,1\n" for i in range(251))
-                    ).encode()
-                    dataset = await client.post(
-                        url="datasets", files={"file": ("requests.csv", source, "text/csv")}
-                    )
-                    assert dataset.status_code == 201, dataset.text
-                    run = await client.post(
-                        url="simulations", json={"dataset_id": dataset.json()["id"]}
-                    )
-                    assert run.status_code == 202, run.text
-                    run_id = run.json()["run_id"]
+                ) as client,
+            ):
+                source = (
+                    "t,request_id,work_units,mem_mb\n"
+                    + "".join(f"0,r{i:04d}{'x' * identifier_padding},1,1\n" for i in range(251))
+                ).encode()
+                dataset = await client.post(
+                    url="datasets", files={"file": ("requests.csv", source, "text/csv")}
+                )
+                assert dataset.status_code == HTTPStatus.CREATED.value, dataset.text
+                run = await client.post(
+                    url="simulations", json={"dataset_id": dataset.json()["id"]}
+                )
+                assert run.status_code == HTTPStatus.ACCEPTED.value, run.text
+                run_id = run.json()["run_id"]
 
-                    def hold_terminal(phase: str, lease: object, tick: int) -> None:
-                        if phase == "terminal_committed":
-                            assert release_validation.wait(timeout=12), (
-                                "Test did not release worker validation"
-                            )
+                def hold_terminal(phase: str, lease: object, tick: int) -> None:
+                    if phase == "terminal_committed":
+                        assert release_validation.wait(timeout=12), (
+                            "Test did not release worker validation"
+                        )
 
-                    transport = SlowHttpTransport(app=app)
-                    async with httpx.AsyncClient(
+                transport = SlowHttpTransport(app=app)
+                async with (
+                    httpx.AsyncClient(
                         transport=transport, base_url="http://testserver/api/v1/"
-                    ) as slow:
-                        async with slow.stream(
-                            method="GET", url=f"simulations/{run_id}/stream"
-                        ) as response:
-                            assert response.status_code == 200
-                            assert response.headers["content-type"].startswith("text/event-stream")
-                            worker = asyncio.create_task(
-                                coro=Worker(
-                                    database=database,
-                                    inputs=inputs,
-                                    outputs=outputs,
-                                    observer=hold_terminal,
-                                ).run_once()
+                    ) as slow,
+                    slow.stream(method="GET", url=f"simulations/{run_id}/stream") as response,
+                ):
+                    assert response.status_code == HTTPStatus.OK.value
+                    assert response.headers["content-type"].startswith("text/event-stream")
+                    worker = asyncio.create_task(
+                        coro=Worker(
+                            database=database,
+                            inputs=inputs,
+                            outputs=outputs,
+                            observer=hold_terminal,
+                        ).run_once()
+                    )
+                    lines = response.aiter_lines()
+                    assert isinstance(lines, AsyncGenerator)
+                    received: list[PersistedEvent] = []
+                    last_received_id = 0
+                    try:
+                        async with asyncio.timeout(delay=6):
+                            async for line in lines:
+                                if line.startswith("id: "):
+                                    last_received_id = int(line[4:])
+                                if line.startswith("data: ") and '"sequence":' in line:
+                                    received.append(
+                                        PersistedEvent.model_validate_json(json_data=line[6:])
+                                    )
+                                    assert received[-1].sequence == last_received_id
+                                    break
+                        assert [event.sequence for event in received] == [1]
+                        assert transport.sending.is_set() and not transport.finished.is_set()
+                        await asyncio.wait_for(fut=overflow.wait(), timeout=3)
+                        assert 0 < peak_frames <= 500
+                        assert 0 < peak_bytes <= 64 * 1024
+                        if identifier_padding:
+                            assert peak_frames < 500, (
+                                "Long frames did not exercise the byte ceiling"
                             )
-                            lines = response.aiter_lines()
-                            assert isinstance(lines, AsyncGenerator)
-                            received: list[PersistedEvent] = []
-                            last_received_id = 0
-                            try:
-                                async with asyncio.timeout(delay=6):
-                                    async for line in lines:
-                                        if line.startswith("id: "):
-                                            last_received_id = int(line[4:])
-                                        if line.startswith("data: ") and '"sequence":' in line:
-                                            received.append(
-                                                PersistedEvent.model_validate_json(
-                                                    json_data=line[6:]
-                                                )
-                                            )
-                                            assert received[-1].sequence == last_received_id
-                                            break
-                                assert [event.sequence for event in received] == [1]
-                                assert (
-                                    transport.sending.is_set() and not transport.finished.is_set()
-                                )
-                                await asyncio.wait_for(fut=overflow.wait(), timeout=3)
-                                assert 0 < peak_frames <= 500
-                                assert 0 < peak_bytes <= 64 * 1024
-                                if identifier_padding:
-                                    assert peak_frames < 500, (
-                                        "Long frames did not exercise the byte ceiling"
-                                    )
-                                    assert peak_bytes > 60 * 1024
-                                else:
-                                    assert peak_frames == 500, (
-                                        "Short frames did not exercise the frame ceiling"
-                                    )
-                                assert transport.peak_frames == 1
-                                denied = await client.get(url=f"simulations/{run_id}/stream")
-                                assert denied.status_code == 429, (
-                                    "Blocked connection did not retain stream admission"
-                                )
-                                assert (await client.get(url=f"simulations/{run_id}")).json()[
-                                    "status"
-                                ] == "running"
-                                release_validation.set()
-                                assert await asyncio.wait_for(fut=worker, timeout=5)
-                                assert (
-                                    await Reads(database=database).run(run_id=UUID(hex=run_id))
-                                ).status == "completed"
-                                assert not transport.finished.is_set(), (
-                                    "Worker completed only after the blocked stream ended"
-                                )
-                                if close_kind == "client_disconnect":
-                                    await response.aclose()
-                                try:
-                                    await asyncio.wait_for(
-                                        fut=transport.finished.wait(),
-                                        timeout=SEND_TIMEOUT_SECONDS + 2,
-                                    )
-                                except TimeoutError:
-                                    raise AssertionError(
-                                        "Blocked HTTP SSE connection missed its cleanup deadline"
-                                    ) from None
-                                assert transport.task is not None and transport.task.done()
-                                await transport.task
-                                assert feeds[0].closed.is_set()
-                                # Retain the response so GC cannot hide missing cleanup.
-                                with pytest.raises(expected_exception=StopAsyncIteration):
-                                    await asyncio.wait_for(
-                                        fut=anext(responses[0].source), timeout=1
-                                    )
-                            finally:
-                                release_validation.set()
-                                await lines.aclose()
-                                await asyncio.wait_for(fut=worker, timeout=8)
+                            assert peak_bytes > 60 * 1024
+                        else:
+                            assert peak_frames == 500, (
+                                "Short frames did not exercise the frame ceiling"
+                            )
+                        assert transport.peak_frames == 1
+                        denied = await client.get(url=f"simulations/{run_id}/stream")
+                        assert denied.status_code == HTTPStatus.TOO_MANY_REQUESTS.value, (
+                            "Blocked connection did not retain stream admission"
+                        )
+                        assert (await client.get(url=f"simulations/{run_id}")).json()[
+                            "status"
+                        ] == "running"
+                        release_validation.set()
+                        assert await asyncio.wait_for(fut=worker, timeout=5)
+                        assert (
+                            await Reads(database=database).run(run_id=UUID(hex=run_id))
+                        ).status == "completed"
+                        assert not transport.finished.is_set(), (
+                            "Worker completed only after the blocked stream ended"
+                        )
+                        if close_kind == "client_disconnect":
+                            await response.aclose()
+                        try:
+                            await asyncio.wait_for(
+                                fut=transport.finished.wait(),
+                                timeout=SEND_TIMEOUT_SECONDS + 2,
+                            )
+                        except TimeoutError:
+                            raise AssertionError(
+                                "Blocked HTTP SSE connection missed its cleanup deadline"
+                            ) from None
+                        assert transport.task is not None and transport.task.done()
+                        await transport.task
+                        assert feeds[0].closed.is_set()
+                        # Retain the response so GC cannot hide missing cleanup.
+                        with pytest.raises(expected_exception=StopAsyncIteration):
+                            await asyncio.wait_for(fut=anext(responses[0].source), timeout=1)
+                    finally:
+                        release_validation.set()
+                        await lines.aclose()
+                        await asyncio.wait_for(fut=worker, timeout=8)
 
-                    replay = await client.get(
-                        url=f"simulations/{run_id}/stream",
-                        headers={"Last-Event-ID": str(last_received_id)},
-                    )
-                    assert replay.status_code == 200, (
-                        "Stream admission was not released after cleanup"
-                    )
-                    replayed = [
-                        PersistedEvent.model_validate_json(json_data=line[6:])
-                        for line in replay.text.splitlines()
-                        if line.startswith("data: ") and '"sequence":' in line
-                    ]
-                    ids = [event.sequence for event in (*received, *replayed)]
-                    assert ids == list(range(1, 754)), (
-                        "Reconnect lost, duplicated or reordered a durable event"
-                    )
-                    assert [
-                        int(line[4:])
-                        for line in replay.text.splitlines()
-                        if line.startswith("id: ")
-                    ] == list(range(last_received_id + 1, 754))
-                    assert (
-                        "event: status\n" in replay.text and '"status":"completed"' in replay.text
-                    )
+                replay = await client.get(
+                    url=f"simulations/{run_id}/stream",
+                    headers={"Last-Event-ID": str(last_received_id)},
+                )
+                assert replay.status_code == HTTPStatus.OK.value, (
+                    "Stream admission was not released after cleanup"
+                )
+                replayed = [
+                    PersistedEvent.model_validate_json(json_data=line[6:])
+                    for line in replay.text.splitlines()
+                    if line.startswith("data: ") and '"sequence":' in line
+                ]
+                ids = [event.sequence for event in (*received, *replayed)]
+                assert ids == list(range(1, 754)), (
+                    "Reconnect lost, duplicated or reordered a durable event"
+                )
+                assert [
+                    int(line[4:]) for line in replay.text.splitlines() if line.startswith("id: ")
+                ] == list(range(last_received_id + 1, 754))
+                assert "event: status\n" in replay.text and '"status":"completed"' in replay.text
 
     try:
         asyncio.run(main=scenario())

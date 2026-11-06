@@ -4,6 +4,7 @@ import asyncio
 import os
 import sys
 from dataclasses import replace
+from http import HTTPStatus
 from uuid import UUID
 
 import httpx
@@ -51,7 +52,9 @@ async def server(database: Database) -> asyncio.subprocess.Process:
             if process.returncode is not None:
                 break
             try:
-                if (await client.get("http://127.0.0.1:8081/health")).status_code == 200:
+                if (
+                    await client.get("http://127.0.0.1:8081/health")
+                ).status_code == HTTPStatus.OK.value:
                     return process
             except httpx.HTTPError:
                 pass
@@ -76,7 +79,11 @@ async def stop(process: asyncio.subprocess.Process, *, crash: bool = False) -> N
 
 
 async def rpc(
-    client: httpx.AsyncClient, lease: ControlLease, identifier: UUID, action: str, status: int = 200
+    client: httpx.AsyncClient,
+    lease: ControlLease,
+    identifier: UUID,
+    action: str,
+    status: int = HTTPStatus.OK.value,
 ) -> None:
     reference = LeaseRef(
         run_id=lease.run_id, fence=lease.fence, owner=lease.owner, phase=lease.phase
@@ -157,7 +164,8 @@ async def main() -> None:
                 base_url="http://127.0.0.1:8081", headers=auth, trust_env=False, timeout=50
             ) as client:
                 require(
-                    (await client.post("/containers/create", json={})).status_code == 404,
+                    (await client.post("/containers/create", json={})).status_code
+                    == HTTPStatus.NOT_FOUND.value,
                     "Raw API exposed",
                 )
                 require(
@@ -166,7 +174,7 @@ async def main() -> None:
                             "/control/enroll", json={}, headers={"Authorization": "Bearer invalid"}
                         )
                     ).status_code
-                    == 401,
+                    == HTTPStatus.UNAUTHORIZED.value,
                     "Bad token accepted",
                 )
                 lease = await enqueue(database)
@@ -175,7 +183,11 @@ async def main() -> None:
                 owned_id: str | None = None
                 try:
                     await rpc(
-                        client, replace(lease, fence=lease.fence + 1), record.id, "create", 409
+                        client,
+                        replace(lease, fence=lease.fence + 1),
+                        record.id,
+                        "create",
+                        HTTPStatus.CONFLICT.value,
                     )
                     await rpc(client, lease, record.id, "create")
                     owned = await resources.get(lease, record.id)
@@ -184,7 +196,7 @@ async def main() -> None:
                         owned_id is not None and owned.state == "observed",
                         "ID not saved before start",
                     )
-                    await rpc(client, lease, record.id, "create", 409)
+                    await rpc(client, lease, record.id, "create", HTTPStatus.CONFLICT.value)
                     await rpc(client, lease, record.id, "start")
                     spec = BackendSpec(record.name)
                     router = Router((spec,), "first_fit", backend)
@@ -202,7 +214,7 @@ async def main() -> None:
                         result.backend_id == record.name and result.operations == 2048,
                         "Actual work was not executed",
                     )
-                    await rpc(client, lease, static.id, "start", 409)
+                    await rpc(client, lease, static.id, "start", HTTPStatus.CONFLICT.value)
                 finally:
                     cleanup = await control.begin_cleanup(lease, "failed", "CONTROLLER_FAILURE")
                     await rpc(client, cleanup, record.id, "cleanup")
@@ -213,7 +225,10 @@ async def main() -> None:
                 try:
                     await engine.inspect(owned_id)
                 except EngineError as error:
-                    require(error.status == 404, "Removed container absence not verified")
+                    require(
+                        error.status == HTTPStatus.NOT_FOUND.value,
+                        "Removed container absence not verified",
+                    )
                 else:
                     raise RuntimeError("Owned container survived cleanup")
                 # Before create, after daemon success, and after ID persistence: never replay work.
@@ -246,7 +261,7 @@ async def main() -> None:
                     if recovered is None:
                         raise RuntimeError("Cleanup claim missing")
                     process = await server(database)
-                    await rpc(client, lease, record.id, "start", 409)
+                    await rpc(client, lease, record.id, "start", HTTPStatus.CONFLICT.value)
                     await rpc(client, recovered, record.id, "cleanup")
                     require(
                         (await resources.get(recovered, record.id)).state

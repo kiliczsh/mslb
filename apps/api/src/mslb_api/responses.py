@@ -1,14 +1,14 @@
 """Bounded shared REST JSON response encoding."""
 
+from http import HTTPStatus
+
 from mslb_application.errors import OperationError
 from pydantic import BaseModel
 from starlette.responses import Response
 
-from mslb_api.multipart import _Multipart as _Multipart
-
 
 def json_response(
-    model: BaseModel, status: int = 200, headers: dict[str, str] | None = None
+    model: BaseModel, status: int = HTTPStatus.OK.value, headers: dict[str, str] | None = None
 ) -> Response:
     payload = model.model_dump_json().encode()
     if len(payload) > 1024**2:

@@ -1,5 +1,6 @@
 """REST datasets routes over shared application services."""
 
+from http import HTTPStatus
 from uuid import UUID
 
 from fastapi import APIRouter, Request
@@ -11,7 +12,7 @@ from mslb_contracts.pagination import Page
 from starlette.datastructures import UploadFile
 from starlette.responses import Response
 
-from mslb_api.multipart import _Multipart as _Multipart
+from mslb_api.multipart import _Multipart
 from mslb_api.responses import json_response
 from mslb_api.route_values import Cursor, Limit
 
@@ -21,7 +22,7 @@ def register_datasets(*, router: APIRouter, submissions: Submissions, queries: Q
 
     @router.post(
         "/datasets",
-        status_code=201,
+        status_code=HTTPStatus.CREATED.value,
         response_model=DatasetView,
         openapi_extra={
             "requestBody": {
@@ -57,7 +58,7 @@ def register_datasets(*, router: APIRouter, submissions: Submissions, queries: Q
             ):
                 raise OperationError("PAYLOAD_TOO_LARGE", "CSV upload exceeds 10 MiB")
             data = await submissions.upload(source.file, source.filename or "requests.csv")
-            return json_response(await queries.dataset(data.id), 201)
+            return json_response(await queries.dataset(data.id), HTTPStatus.CREATED.value)
         finally:
             await form.close()
 

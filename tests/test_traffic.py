@@ -2,6 +2,7 @@ import asyncio
 import json
 import time
 from collections.abc import AsyncIterator
+from http import HTTPStatus
 from threading import Event
 from typing import override
 
@@ -50,7 +51,7 @@ class Body(httpx.AsyncByteStream):
         self.closed = True
 
 
-def response(value: object, status: int = 200) -> httpx.Response:
+def response(value: object, status: int = HTTPStatus.OK.value) -> httpx.Response:
     return httpx.Response(
         status,
         headers={"content-type": "application/json"},
@@ -143,19 +144,25 @@ def test_backend_http_validates_streamed_bodies_and_exposes_real_health_without_
                 actual = await client.post(
                     "/work", json=payload("real", 1_000_000_000).model_dump()
                 )
-                assert actual.status_code == 200 and actual.json()["operations"] == 2048
+                assert (
+                    actual.status_code == HTTPStatus.OK.value
+                    and actual.json()["operations"] == 2048
+                )
                 assert actual.json()["request_id"] == "real"
                 for body in (
                     {"request_id": "sensitive-row", "work_units": "1", "mem_mb": 1},
                     {**payload().model_dump(), "command": "sensitive-row"},
                 ):
                     invalid = await client.post("/work", json=body)
-                    assert invalid.status_code == 422 and "sensitive-row" not in invalid.text
+                    assert (
+                        invalid.status_code == HTTPStatus.UNPROCESSABLE_CONTENT.value
+                        and "sensitive-row" not in invalid.text
+                    )
                 assert (
                     await client.post(
                         "/work", content=b"{}", headers={"content-type": "text/plain"}
                     )
-                ).status_code == 415
+                ).status_code == HTTPStatus.UNSUPPORTED_MEDIA_TYPE.value
 
                 async def large() -> AsyncIterator[bytes]:
                     for _ in range(17):
@@ -164,7 +171,7 @@ def test_backend_http_validates_streamed_bodies_and_exposes_real_health_without_
                 too_large = await client.post(
                     "/work", content=large(), headers={"content-type": "application/json"}
                 )
-                assert too_large.status_code == 413
+                assert too_large.status_code == HTTPStatus.CONTENT_TOO_LARGE.value
                 assert backend.inflight == backend.reserved == 0
         finally:
             await backend.close()
@@ -184,11 +191,13 @@ def test_backend_timeout_is_an_explicit_error_and_shutdown_stops_admission() -> 
             base_url="http://backend-b",
         ) as client:
             timed_out = await client.post("/work", json=payload().model_dump())
-            assert timed_out.status_code == 504
+            assert timed_out.status_code == HTTPStatus.GATEWAY_TIMEOUT.value
             assert timed_out.json() == {"error": {"code": "WORK_TIMEOUT"}}
             await backend.close()
             assert not (await client.get("/health")).json()["ready"]
-            assert (await client.post("/work", json=payload().model_dump())).status_code == 429
+            assert (
+                await client.post("/work", json=payload().model_dump())
+            ).status_code == HTTPStatus.TOO_MANY_REQUESTS.value
 
     asyncio.run(scenario())
 
@@ -294,9 +303,18 @@ def test_real_transport_contracts_release_every_reservation_without_retries(kind
             }
             if kind == "oversized":
                 return httpx.Response(
-                    200, headers={"content-type": "application/json"}, stream=Body(b"x" * 65537)
+                    HTTPStatus.OK.value,
+                    headers={"content-type": "application/json"},
+                    stream=Body(b"x" * 65537),
                 )
-            return response(result, 503 if kind == "status" else 302 if kind == "redirect" else 200)
+            return response(
+                result,
+                HTTPStatus.SERVICE_UNAVAILABLE.value
+                if kind == "status"
+                else HTTPStatus.FOUND.value
+                if kind == "redirect"
+                else HTTPStatus.OK.value,
+            )
 
         http = BackendHttp(httpx.MockTransport(serve))
         router = Router((BackendSpec("backend-a"),), "first_fit", http)
@@ -317,7 +335,11 @@ def test_real_transport_contracts_release_every_reservation_without_retries(kind
                 assert "sensitive" not in str(error.value)
                 assert error.value.backend_id == "backend-a"
                 if kind in {"status", "redirect"}:
-                    assert error.value.status_code == (503 if kind == "status" else 302)
+                    assert error.value.status_code == (
+                        HTTPStatus.SERVICE_UNAVAILABLE.value
+                        if kind == "status"
+                        else HTTPStatus.FOUND.value
+                    )
             assert calls == 1
             assert router.states["backend-a"].inflight == 0
             assert router.states["backend-a"].reserved_mem_mb == 0

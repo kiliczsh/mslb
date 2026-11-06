@@ -3,6 +3,7 @@ import ipaddress
 import json
 import os
 from collections.abc import AsyncGenerator
+from http import HTTPStatus
 from pathlib import Path
 
 import httpx
@@ -43,8 +44,10 @@ def test_guard_auth_origin_host_preflight_and_bounded_chunked_body() -> None:
             transport=httpx.ASGITransport(app=Guard(application, policy)),
             base_url="http://testserver",
         ) as client:
-            assert (await client.get("/api/v1/servers")).status_code == 401
-            assert (await client.get("/api/v1/health/live")).status_code == 200
+            assert (
+                await client.get("/api/v1/servers")
+            ).status_code == HTTPStatus.UNAUTHORIZED.value
+            assert (await client.get("/api/v1/health/live")).status_code == HTTPStatus.OK.value
             headers = {"Authorization": "Bearer " + token}
             for path in (
                 "/api/v1/servers",
@@ -56,17 +59,20 @@ def test_guard_auth_origin_host_preflight_and_bounded_chunked_body() -> None:
                     path,
                     headers={"Authorization": "Bearer wrong", "Origin": "https://dashboard.test"},
                 )
-                assert response.status_code == 401 and token not in response.text
+                assert (
+                    response.status_code == HTTPStatus.UNAUTHORIZED.value
+                    and token not in response.text
+                )
                 assert response.headers["access-control-allow-origin"] == "https://dashboard.test"
             assert (
                 await client.get("/", headers=headers | {"Host": "attacker.test"})
-            ).status_code == 403
+            ).status_code == HTTPStatus.FORBIDDEN.value
             assert (
                 await client.get("/", headers=headers | {"Origin": "https://attacker.test"})
-            ).status_code == 403
+            ).status_code == HTTPStatus.FORBIDDEN.value
             valid = await client.get("/", headers=headers | {"Origin": "https://dashboard.test"})
             assert (
-                valid.status_code == 200
+                valid.status_code == HTTPStatus.OK.value
                 and valid.headers["access-control-allow-origin"] == "https://dashboard.test"
             )
             assert (
@@ -80,16 +86,20 @@ def test_guard_auth_origin_host_preflight_and_bounded_chunked_body() -> None:
                     "Access-Control-Request-Method": "POST",
                 },
             )
-            assert preflight.status_code == 204
-            assert (await client.get("/?token=not-accepted", headers=headers)).status_code == 401
-            assert (await client.get("/?%74oken=not-accepted", headers=headers)).status_code == 401
+            assert preflight.status_code == HTTPStatus.NO_CONTENT.value
+            assert (
+                await client.get("/?token=not-accepted", headers=headers)
+            ).status_code == HTTPStatus.UNAUTHORIZED.value
+            assert (
+                await client.get("/?%74oken=not-accepted", headers=headers)
+            ).status_code == HTTPStatus.UNAUTHORIZED.value
 
             async def body() -> AsyncGenerator[bytes]:
                 for _ in range(20):
                     yield b"x" * 4096
 
             oversized = await client.post("/api/v1/servers", content=body(), headers=headers)
-            assert oversized.status_code == 413
+            assert oversized.status_code == HTTPStatus.CONTENT_TOO_LARGE.value
             assert oversized.json()["error"]["code"] == "PAYLOAD_TOO_LARGE"
 
     asyncio.run(scenario())
@@ -119,10 +129,10 @@ def test_request_upload_and_stream_admission_leave_health_available() -> None:
             ) as client:
                 held = asyncio.create_task(client.post(path))
                 await entered.wait()
-                assert (await client.post(path)).status_code == 429
-                assert (await client.get("/api/v1/health/live")).status_code == 200
+                assert (await client.post(path)).status_code == HTTPStatus.TOO_MANY_REQUESTS.value
+                assert (await client.get("/api/v1/health/live")).status_code == HTTPStatus.OK.value
                 release.set()
-                assert (await held).status_code == 200
+                assert (await held).status_code == HTTPStatus.OK.value
                 assert guard.active == 0 and guard.streams == 0 and not guard.uploading
                 entered.clear()
                 release.clear()
@@ -185,7 +195,7 @@ def test_disconnect_closes_verified_file_and_archive_resources(
 
         async def send(message: Message) -> None:
             if message["type"] == "http.response.body":
-                raise ClientDisconnect()
+                raise ClientDisconnect
 
         await asyncio.wait_for(
             response(

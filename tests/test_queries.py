@@ -37,15 +37,15 @@ def test_metric_selection_streams_large_server_map_in_bounded_reads() -> None:
             assert size is not None and 0 <= size <= 65536
             return super().read(size)
 
-    data = dict(
-        finished=10_000,
-        cluster=dict(cpu_consumed=dict(numerator="1", denominator="3")),
-        servers={f"server-{i:05d}": dict(finished=i) for i in range(10_000)},
-    )
+    data = {
+        "finished": 10_000,
+        "cluster": {"cpu_consumed": {"numerator": "1", "denominator": "3"}},
+        "servers": {f"server-{i:05d}": {"finished": i} for i in range(10_000)},
+    }
     stream = BoundedReads(json.dumps(data, sort_keys=True).encode())
     summary, selected = metric_report(stream, ("server-09999",))
-    assert summary == dict(finished=10_000, cluster=data["cluster"])
-    assert selected == {"server-09999": dict(finished=9999)}
+    assert summary == {"finished": 10_000, "cluster": data["cluster"]}
+    assert selected == {"server-09999": {"finished": 9999}}
     stream.seek(0)
     page = server_metric_page(stream, "server-09997", 100)
     assert [row.id for row in page] == ["server-09998", "server-09999"]

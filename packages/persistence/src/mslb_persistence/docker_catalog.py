@@ -132,10 +132,8 @@ class DockerCatalog:
     async def enqueue(
         self, snapshot: DockerSnapshot, key: str | None = None, scope: str = "local"
     ) -> RunRecord:
-        if (
-            not 1 <= len(scope.encode()) <= 128
-            or key is not None
-            and not 1 <= len(key.encode()) <= 128
+        if not 1 <= len(scope.encode()) <= 128 or (
+            key is not None and not 1 <= len(key.encode()) <= 128
         ):
             raise StoreError("VALIDATION_ERROR", "Invalid idempotency identity")
         body_digest = hashlib.sha256(

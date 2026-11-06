@@ -46,10 +46,8 @@ def write_frame(*, raw: bytes, directory: Path, previous: datetime | None) -> da
     if len(raw) > FRAME_BYTES or not raw.endswith(b"\n"):
         raise ValueError("Host memory evidence exceeds its fixed frame")
     frame = HostMemoryEvidence.model_validate_json(json_data=raw)
-    if (
-        not 0 <= (datetime.now(tz=UTC) - frame.measured_at).total_seconds() <= 3
-        or previous is not None
-        and frame.measured_at <= previous
+    if not 0 <= (datetime.now(tz=UTC) - frame.measured_at).total_seconds() <= 3 or (
+        previous is not None and frame.measured_at <= previous
     ):
         raise ValueError("Host memory evidence is stale or repeated")
     temporary = directory / "memory.tmp"

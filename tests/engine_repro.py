@@ -111,11 +111,11 @@ def outputs(*, reverse_inputs: bool) -> dict[str, dict[str, str]]:
             if scaling.enabled
             else None,
         )
-        result[f"{mode}/{strategy}/{name}"] = dict(
-            trace=trace_text,
-            decisions=decision_text,
-            metrics=canonical_bytes(value=metrics.summary()).decode(encoding="utf-8"),
-        )
+        result[f"{mode}/{strategy}/{name}"] = {
+            "trace": trace_text,
+            "decisions": decision_text,
+            "metrics": canonical_bytes(value=metrics.summary()).decode(encoding="utf-8"),
+        }
     return result
 
 

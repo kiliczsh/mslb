@@ -96,11 +96,12 @@ def decode(*, row: ResourceEvidence, now: datetime) -> EvidenceRecord:
         row.lease_expires_at is None
         or row.lease_expires_at <= now
         or not 0 <= (now - row.received_at).total_seconds() <= 3
-        or probe is not None
-        and (
-            not 0 <= (now - probe.measured_at).total_seconds() <= 3
-            or decision.admit
-            and not host_memory_fresh(probe=probe, now=now)
+        or (
+            probe is not None
+            and (
+                not 0 <= (now - probe.measured_at).total_seconds() <= 3
+                or (decision.admit and not host_memory_fresh(probe=probe, now=now))
+            )
         )
     ):
         return unavailable(revision=row.revision, stale=True)

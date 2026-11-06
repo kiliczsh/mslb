@@ -1,5 +1,5 @@
+import type { Chart } from "../../shared/api/resultContracts.js";
 import { chartNumber } from "./metricValues.js";
-import type { Chart } from "./resultContracts.js";
 
 type PlotPoint = { t: number; minimum: number | null; maximum: number | null; mean: number | null };
 

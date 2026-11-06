@@ -1,11 +1,11 @@
 """REST health routes over shared application services."""
 
+from http import HTTPStatus
+
 from fastapi import FastAPI
 from mslb_contracts.canonical import canonical_bytes
 from mslb_persistence.database import Database
 from starlette.responses import Response
-
-from mslb_api.multipart import _Multipart as _Multipart
 
 
 def register_health(*, app: FastAPI, database: Database) -> None:
@@ -20,20 +20,20 @@ def register_health(*, app: FastAPI, database: Database) -> None:
         api_ready = await database.ready()
         return Response(
             canonical_bytes(
-                dict(
-                    ready=False,
-                    api_ready=api_ready,
-                    complete_product=False,
-                    capabilities=dict(
-                        logical_rest="ready" if api_ready else "unavailable",
-                        mcp="ready",
-                        dashboard="incomplete",
-                        docker_traffic="not_implemented",
-                        telemetry="not_implemented",
-                        resource_guard="not_implemented",
-                    ),
-                )
+                {
+                    "ready": False,
+                    "api_ready": api_ready,
+                    "complete_product": False,
+                    "capabilities": {
+                        "logical_rest": "ready" if api_ready else "unavailable",
+                        "mcp": "ready",
+                        "dashboard": "incomplete",
+                        "docker_traffic": "not_implemented",
+                        "telemetry": "not_implemented",
+                        "resource_guard": "not_implemented",
+                    },
+                }
             ),
-            status_code=503,
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE.value,
             media_type="application/json",
         )

@@ -1,6 +1,7 @@
 import asyncio
 import io
 from collections.abc import Mapping
+from http import HTTPStatus
 from pathlib import Path
 from uuid import UUID
 
@@ -81,7 +82,12 @@ def test_official_client_discovers_and_exercises_all_tools_resources_and_prompts
                     created = await call(
                         client,
                         "create_server",
-                        dict(id=" s3/test ", cpu_units_per_tick=1, mem_mb=10, rate_limit_per_sec=1),
+                        {
+                            "id": " s3/test ",
+                            "cpu_units_per_tick": 1,
+                            "mem_mb": 10,
+                            "rate_limit_per_sec": 1,
+                        },
                     )
                     assert created["id"] == "s3/test"
                     assert (await call(client, "get_server", {"server_id": "s3/test"}))[
@@ -263,7 +269,7 @@ def test_tool_and_resource_failures_redact_dependency_details_and_leave_rest_usa
                 async with httpx.AsyncClient(
                     transport=httpx.ASGITransport(app=app), base_url="http://testserver"
                 ) as rest:
-                    assert (await rest.get("/api/v1/servers")).status_code == 200
+                    assert (await rest.get("/api/v1/servers")).status_code == HTTPStatus.OK.value
                 assert not await get_mcp(app).services.queries.reads.runs()
 
     asyncio.run(scenario())
@@ -338,47 +344,50 @@ def test_stateful_http_session_limit_delete_reconnect_and_idle_cleanup(tmp_path:
                 outputs,
                 b"session-check-signing-key" * 2,
             )
-            async with app.router.lifespan_context(app):
-                async with httpx.AsyncClient(
+            async with (
+                app.router.lifespan_context(app),
+                httpx.AsyncClient(
                     transport=httpx.ASGITransport(app=app), base_url="http://testserver"
-                ) as client:
-                    opening = {
-                        "jsonrpc": "2.0",
-                        "id": 1,
-                        "method": "initialize",
-                        "params": {
-                            "protocolVersion": "2025-11-25",
-                            "capabilities": {},
-                            "clientInfo": {"name": "session-limit-test", "version": "1"},
-                        },
-                    }
-                    base = {"Accept": "application/json,text/event-stream"}
-                    ids = []
-                    for _ in range(10):
-                        response = await client.post("/mcp", json=opening, headers=base)
-                        assert response.status_code == 200, response.text
-                        ids.append(response.headers["mcp-session-id"])
-                    excess = await client.post("/mcp", json=opening, headers=base)
-                    assert excess.status_code == 503 and excess.headers["retry-after"] == "1"
-                    removed = await client.delete(
-                        "/mcp",
-                        headers=base
-                        | {"Mcp-Session-Id": ids[0], "MCP-Protocol-Version": "2025-11-25"},
-                    )
-                    assert removed.status_code == 200
-                    replacement = await client.post("/mcp", json=opening, headers=base)
-                    assert replacement.status_code == 200
-                    assert replacement.headers["mcp-session-id"] not in ids
-                    await asyncio.sleep(1.1)
-                    stale = await client.post(
-                        "/mcp",
-                        json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
-                        headers=base
-                        | {"Mcp-Session-Id": ids[1], "MCP-Protocol-Version": "2025-11-25"},
-                    )
-                    assert stale.status_code == 404
-                    reopened = await client.post("/mcp", json=opening, headers=base)
-                    assert reopened.status_code == 200
+                ) as client,
+            ):
+                opening = {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2025-11-25",
+                        "capabilities": {},
+                        "clientInfo": {"name": "session-limit-test", "version": "1"},
+                    },
+                }
+                base = {"Accept": "application/json,text/event-stream"}
+                ids = []
+                for _ in range(10):
+                    response = await client.post("/mcp", json=opening, headers=base)
+                    assert response.status_code == HTTPStatus.OK.value, response.text
+                    ids.append(response.headers["mcp-session-id"])
+                excess = await client.post("/mcp", json=opening, headers=base)
+                assert (
+                    excess.status_code == HTTPStatus.SERVICE_UNAVAILABLE.value
+                    and excess.headers["retry-after"] == "1"
+                )
+                removed = await client.delete(
+                    "/mcp",
+                    headers=base | {"Mcp-Session-Id": ids[0], "MCP-Protocol-Version": "2025-11-25"},
+                )
+                assert removed.status_code == HTTPStatus.OK.value
+                replacement = await client.post("/mcp", json=opening, headers=base)
+                assert replacement.status_code == HTTPStatus.OK.value
+                assert replacement.headers["mcp-session-id"] not in ids
+                await asyncio.sleep(1.1)
+                stale = await client.post(
+                    "/mcp",
+                    json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+                    headers=base | {"Mcp-Session-Id": ids[1], "MCP-Protocol-Version": "2025-11-25"},
+                )
+                assert stale.status_code == HTTPStatus.NOT_FOUND.value
+                reopened = await client.post("/mcp", json=opening, headers=base)
+                assert reopened.status_code == HTTPStatus.OK.value
 
     asyncio.run(scenario())
 
@@ -420,23 +429,25 @@ def test_official_http_client_auth_origin_and_request_correlation(
                     if "content-length" in response.headers:
                         assert int(response.headers["content-length"]) <= 1024**2
 
-                async with httpx2.AsyncClient(
-                    transport=transport,
-                    headers=headers,
-                    timeout=10,
-                    event_hooks={"response": [observed]},
-                ) as http:
-                    async with Client(
+                async with (
+                    httpx2.AsyncClient(
+                        transport=transport,
+                        headers=headers,
+                        timeout=10,
+                        event_hooks={"response": [observed]},
+                    ) as http,
+                    Client(
                         streamable_http_client("http://testserver/mcp", http_client=http)
-                    ) as client:
-                        assert client.server_info is not None
-                        assert client.server_info.name == "mslb"
-                        assert client.server_info.version == "2.0.0"
-                        assert len((await client.list_tools()).tools) == 13
-                        result = await client.call_tool("list_strategies", {})
-                        assert not result.is_error and result.meta is not None
-                        assert result.meta["request_id"] == request_ids[-1]
-                        protocol_version = client.protocol_version
+                    ) as client,
+                ):
+                    assert client.server_info is not None
+                    assert client.server_info.name == "mslb"
+                    assert client.server_info.version == "2.0.0"
+                    assert len((await client.list_tools()).tools) == 13
+                    result = await client.call_tool("list_strategies", {})
+                    assert not result.is_error and result.meta is not None
+                    assert result.meta["request_id"] == request_ids[-1]
+                    protocol_version = client.protocol_version
                 async with httpx.AsyncClient(
                     transport=httpx.ASGITransport(app=app),
                     base_url="http://testserver",
@@ -462,7 +473,7 @@ def test_official_http_client_auth_origin_and_request_correlation(
                     refused = await raw.post(
                         "/mcp", json=body, headers=request_headers | {"Origin": "https://bad.test"}
                     )
-                    assert refused.status_code == 403
+                    assert refused.status_code == HTTPStatus.FORBIDDEN.value
                     malformed = await raw.post(
                         "/mcp",
                         content=canonical_bytes(body),
@@ -473,7 +484,7 @@ def test_official_http_client_auth_origin_and_request_correlation(
                             "MCP-Name": "list_strategies",
                         },
                     )
-                    assert malformed.status_code == 400
+                    assert malformed.status_code == HTTPStatus.BAD_REQUEST.value
                     assert malformed.text == "Invalid Content-Type header"
                     if authenticated:
                         unauthorized = await raw.post(
@@ -481,6 +492,9 @@ def test_official_http_client_auth_origin_and_request_correlation(
                             json=body,
                             headers=request_headers | {"Authorization": "Bearer wrong"},
                         )
-                        assert unauthorized.status_code == 401 and token not in unauthorized.text
+                        assert (
+                            unauthorized.status_code == HTTPStatus.UNAUTHORIZED.value
+                            and token not in unauthorized.text
+                        )
 
     asyncio.run(scenario())

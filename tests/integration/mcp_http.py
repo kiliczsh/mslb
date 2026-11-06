@@ -4,7 +4,7 @@ import asyncio
 import io
 import socket
 from collections.abc import AsyncGenerator, Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID
@@ -88,10 +88,8 @@ async def eventually(*, predicate: Callable[[], bool], seconds: float = 5) -> No
     wakeup = asyncio.Event()
     async with asyncio.timeout(delay=seconds):
         while not predicate():
-            try:
+            with suppress(TimeoutError):
                 await asyncio.wait_for(fut=wakeup.wait(), timeout=0.01)
-            except TimeoutError:
-                pass
 
 
 def worker(*, workspace: HttpWorkspace) -> Worker:

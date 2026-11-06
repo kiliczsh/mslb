@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from http import HTTPStatus
 from uuid import uuid4
 
 import httpx
@@ -132,12 +133,12 @@ def test_fixed_engine_paths_and_no_automatic_retry() -> None:
             requests.append(request)
             if request.url.path.endswith("/create"):
                 return httpx.Response(
-                    201,
+                    HTTPStatus.CREATED.value,
                     stream=httpx.ByteStream(
                         json.dumps({"Id": "c" * 64, "Warnings": ["retain ID"]}).encode()
                     ),
                 )
-            return httpx.Response(204)
+            return httpx.Response(HTTPStatus.NO_CONTENT.value)
 
         engine = Engine(httpx.MockTransport(respond))
         intent, _image, _net, _info = fixture()
@@ -165,11 +166,16 @@ def test_fixed_engine_paths_and_no_automatic_retry() -> None:
 @pytest.mark.parametrize(
     "status,body,headers,code",
     [
-        (302, b"private details", {"location": "http://elsewhere"}, "ENGINE_STATUS"),
-        (500, b"private details", {}, "ENGINE_STATUS"),
-        (200, b"x" * (256 * 1024 + 1), {}, "ENGINE_RESPONSE"),
-        (200, b"{}", {"content-encoding": "br"}, "ENGINE_RESPONSE"),
-        (200, b'{"Id":true}', {}, "ENGINE_RESPONSE"),
+        (
+            HTTPStatus.FOUND.value,
+            b"private details",
+            {"location": "http://elsewhere"},
+            "ENGINE_STATUS",
+        ),
+        (HTTPStatus.INTERNAL_SERVER_ERROR.value, b"private details", {}, "ENGINE_STATUS"),
+        (HTTPStatus.OK.value, b"x" * (256 * 1024 + 1), {}, "ENGINE_RESPONSE"),
+        (HTTPStatus.OK.value, b"{}", {"content-encoding": "br"}, "ENGINE_RESPONSE"),
+        (HTTPStatus.OK.value, b'{"Id":true}', {}, "ENGINE_RESPONSE"),
     ],
 )
 def test_daemon_errors_are_bounded_and_do_not_echo_host_details(

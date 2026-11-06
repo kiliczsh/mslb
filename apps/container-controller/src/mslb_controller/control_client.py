@@ -1,6 +1,7 @@
 """Scoped controller-side RPC: fixed private URL, no daemon socket or caller URLs."""
 
 import asyncio
+from http import HTTPStatus
 from typing import Literal
 from uuid import UUID
 
@@ -40,7 +41,7 @@ class ControlClient:
                     "POST", path, content=payload, headers={"Content-Type": "application/json"}
                 ) as response,
             ):
-                if response.status_code != 200:
+                if response.status_code != HTTPStatus.OK.value:
                     raise EngineError("CONTROL_REFUSED", response.status_code)
                 if response.headers.get("content-encoding", "identity") != "identity":
                     raise EngineError("CONTROL_RESPONSE")

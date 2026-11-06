@@ -2,6 +2,7 @@
 
 import asyncio
 import re
+from http import HTTPStatus
 
 import httpx
 from mslb_contracts.docker_ownership import CreationIntent
@@ -44,7 +45,7 @@ class Engine:
         model: type[T],
         *,
         body: dict[str, object] | None = None,
-        expected: tuple[int, ...] = (200,),
+        expected: tuple[int, ...] = (HTTPStatus.OK.value,),
     ) -> T | None:
         try:
             async with (
@@ -53,7 +54,10 @@ class Engine:
             ):
                 if response.status_code not in expected:
                     raise EngineError("ENGINE_STATUS", response.status_code)
-                if response.status_code in {204, 304}:
+                if response.status_code in {
+                    HTTPStatus.NO_CONTENT.value,
+                    HTTPStatus.NOT_MODIFIED.value,
+                }:
                     return None
                 if response.headers.get("content-encoding", "identity") != "identity":
                     raise EngineError("ENGINE_RESPONSE")
@@ -102,7 +106,7 @@ class Engine:
             f"/containers/create?name={intent.name}",
             Created,
             body=intent.daemon_body(),
-            expected=(201,),
+            expected=(HTTPStatus.CREATED.value,),
         )
         if value is None:
             raise EngineError("ENGINE_RESPONSE")
@@ -112,19 +116,28 @@ class Engine:
     async def start(self, container_id: str) -> None:
         self._id(container_id)
         await self._request(
-            "POST", f"/containers/{container_id}/start", Created, expected=(204, 304)
+            "POST",
+            f"/containers/{container_id}/start",
+            Created,
+            expected=(HTTPStatus.NO_CONTENT.value, HTTPStatus.NOT_MODIFIED.value),
         )
 
     async def stop(self, container_id: str) -> None:
         self._id(container_id)
         await self._request(
-            "POST", f"/containers/{container_id}/stop?t=3", Created, expected=(204, 304)
+            "POST",
+            f"/containers/{container_id}/stop?t=3",
+            Created,
+            expected=(HTTPStatus.NO_CONTENT.value, HTTPStatus.NOT_MODIFIED.value),
         )
 
     async def remove(self, container_id: str) -> None:
         self._id(container_id)
         await self._request(
-            "DELETE", f"/containers/{container_id}?force=false&v=false", Created, expected=(204,)
+            "DELETE",
+            f"/containers/{container_id}?force=false&v=false",
+            Created,
+            expected=(HTTPStatus.NO_CONTENT.value,),
         )
 
     @staticmethod

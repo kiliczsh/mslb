@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { defaultSettings, type Run } from "../../shared/api/contracts.js";
+import { valueSchema } from "../../shared/api/resultContracts.js";
 import { chartPoints } from "./chartPoints.js";
 import { compatibleRuns } from "./comparison.js";
 import { chartNumber, displayValue, exactText } from "./metricValues.js";
 import { createPlaybackStore } from "./playbackStore.js";
-import { valueSchema } from "./resultContracts.js";
 
 describe("exact result presentation", () => {
   it("closes the last chart interval and breaks sparse membership without bridging gaps", () => {

@@ -38,21 +38,21 @@ def run_view(run: Run, job: Job, progress: OutputProgress | None) -> RunView:
         configuration = public_settings(
             settings=LegacyRunSettings.model_validate(obj=configuration)
         ).model_dump(mode="json")
-    data = dict(
-        id=str(run.id),
-        dataset_id=str(run.dataset_id),
-        snapshot_digest=run.snapshot_digest,
-        dataset_digest=run.dataset_digest,
-        server_snapshot_digest=run.server_snapshot_digest,
-        engine_version=run.engine_version,
-        configuration=configuration,
-        status=job.status,
-        attempts=job.attempts,
-        created_at=run.created_at.isoformat(),
-        completed_at=job.completed_at.isoformat() if job.completed_at else None,
-        error_code=job.error_code,
-        progress=None,
-    )
+    data = {
+        "id": str(run.id),
+        "dataset_id": str(run.dataset_id),
+        "snapshot_digest": run.snapshot_digest,
+        "dataset_digest": run.dataset_digest,
+        "server_snapshot_digest": run.server_snapshot_digest,
+        "engine_version": run.engine_version,
+        "configuration": configuration,
+        "status": job.status,
+        "attempts": job.attempts,
+        "created_at": run.created_at.isoformat(),
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+        "error_code": job.error_code,
+        "progress": None,
+    }
     view = RunView.model_validate_json(canonical_bytes(data))
     if progress is None:
         return view
@@ -63,13 +63,13 @@ def run_view(run: Run, job: Job, progress: OutputProgress | None) -> RunView:
         update={
             "progress": RunProgress.model_validate_json(
                 canonical_bytes(
-                    dict(
-                        revision=progress.revision,
-                        kind=progress.kind,
-                        next_tick=progress.next_tick,
-                        executed_intervals=progress.executed_intervals,
-                        committed_events=counts[0],
-                    )
+                    {
+                        "revision": progress.revision,
+                        "kind": progress.kind,
+                        "next_tick": progress.next_tick,
+                        "executed_intervals": progress.executed_intervals,
+                        "committed_events": counts[0],
+                    }
                 )
             )
         }

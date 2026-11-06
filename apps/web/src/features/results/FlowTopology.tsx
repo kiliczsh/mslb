@@ -1,8 +1,8 @@
+import type { MetricValue, Playback } from "../../shared/api/resultContracts.js";
 import { GraphIcon, HardDrivesIcon } from "../../shared/ui/Icons.js";
-import { MetricNumber } from "../../shared/ui/MetricNumber.js";
 import { Ribbon } from "../../shared/ui/Ribbon.js";
+import { MetricNumber } from "./MetricNumber.js";
 import { chartNumber } from "./metricValues.js";
-import type { MetricValue, Playback } from "./resultContracts.js";
 
 function ResourceBar({
   label,

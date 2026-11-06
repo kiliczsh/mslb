@@ -39,8 +39,7 @@ class PersistedEvent(CheckpointModel):
             (self.server_id is not None) != (self.event in {"REQUEST_STARTED", "REQUEST_FINISHED"})
             or (self.reason is not None) != (self.event == "REQUEST_DROPPED")
             or len(self.request_id.encode()) > 128
-            or self.server_id is not None
-            and len(self.server_id.encode()) > 128
+            or (self.server_id is not None and len(self.server_id.encode()) > 128)
         ):
             raise ValueError("invalid_event_fields")
         return self

@@ -12,16 +12,16 @@ import {
 } from "recharts";
 import type { z } from "zod";
 import type { Api } from "../../shared/api/api.js";
-import { Feedback } from "../../shared/ui/Feedback.js";
-import { MetricNumber } from "../../shared/ui/MetricNumber.js";
-import { chartPoints } from "./chartPoints.js";
-import { exactText } from "./metricValues.js";
 import {
   type Chart,
   chartMetricSchema,
   type serverMetricSchema,
   type totalsSchema,
-} from "./resultContracts.js";
+} from "../../shared/api/resultContracts.js";
+import { Feedback } from "../../shared/ui/Feedback.js";
+import { chartPoints } from "./chartPoints.js";
+import { MetricNumber } from "./MetricNumber.js";
+import { exactText } from "./metricValues.js";
 
 function Totals({ value }: { value: z.infer<typeof totalsSchema> }) {
   return (

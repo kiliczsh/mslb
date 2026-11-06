@@ -3,6 +3,7 @@
 import asyncio
 import os
 from datetime import UTC, datetime
+from http import HTTPStatus
 
 from mslb_application.resource_policy import ResourcePolicy
 from mslb_contracts.resources import ResourceProbe
@@ -19,7 +20,7 @@ async def diagnostic_probe(*, guard: ResourceClient) -> ResourceProbe:
         try:
             return await guard.probe()
         except EngineError as error:
-            if error.status != 429 or attempt == 3:
+            if error.status != HTTPStatus.TOO_MANY_REQUESTS.value or attempt == 3:
                 raise
             await asyncio.sleep(delay=0.2)
     raise RuntimeError("Diagnostic measurement retry exhausted")
@@ -57,10 +58,10 @@ async def check_resource_probe() -> None:
             await database.close()
         for path in ("/control/enroll", "/containers/create"):
             response = await guard.client.post(url=path, json={})
-            if response.status_code != 401:
+            if response.status_code != HTTPStatus.UNAUTHORIZED.value:
                 raise RuntimeError("Read-only credential reached a mutation/control endpoint")
         response = await controller.client.get(url="/guard/probe")
-        if response.status_code != 401:
+        if response.status_code != HTTPStatus.UNAUTHORIZED.value:
             raise RuntimeError("Controller credential crossed the guard role boundary")
     finally:
         await guard.close()

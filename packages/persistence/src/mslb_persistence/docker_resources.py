@@ -1,5 +1,6 @@
 """Fenced static reservations and durable dynamic creation/cleanup intentions."""
 
+from http import HTTPStatus
 from uuid import UUID, uuid4
 
 from mslb_contracts.canonical import canonical_bytes
@@ -232,10 +233,8 @@ class DockerResources:
             record = resource_record(row)
             if row.kind != "dynamic" or row.state in {"prepared", "removed", "abandoned"}:
                 raise StoreError("INVALID_STATE", "Resource is not awaiting a daemon observation")
-            conflict = (
-                observed.definition != record.definition
-                or row.container_id is not None
-                and row.container_id != observed.container_id
+            conflict = observed.definition != record.definition or (
+                row.container_id is not None and row.container_id != observed.container_id
             )
             duplicate = await session.scalar(
                 select(DockerResource.id)
@@ -323,7 +322,12 @@ class DockerResources:
         self, lease: ControlLease, resource_id: UUID, daemon_status: int
     ) -> ResourceRecord:
         """Only completed definitive rejection receipts resolve a sent create without an ID."""
-        if type(daemon_status) is not int or daemon_status not in {400, 403, 404, 422}:
+        if type(daemon_status) is not int or daemon_status not in {
+            HTTPStatus.BAD_REQUEST.value,
+            HTTPStatus.FORBIDDEN.value,
+            HTTPStatus.NOT_FOUND.value,
+            HTTPStatus.UNPROCESSABLE_CONTENT.value,
+        }:
             raise StoreError(
                 "VALIDATION_ERROR", "Timeout, conflict or server failure cannot prove absence"
             )
