@@ -27,19 +27,17 @@ from mslb_engine.simulator import Simulation
 from mslb_persistence.durability import Durability
 from mslb_persistence.records import Lease
 
-from mslb_application.artifacts import timeline_record, validate_artifact_files
-from mslb_application.checkpoints import (
-    PREFIX_NAMES,
-    CheckpointArtifact,
-    capture_terminal_seal,
-    checkpoint_due,
-    read_checkpoint,
-    read_terminal_seal,
-    write_checkpoint,
-)
+from mslb_application.artifact_validation import validate_artifact_files
+from mslb_application.artifact_writers import timeline_record
+from mslb_application.checkpoint_seals import capture_terminal_seal, read_terminal_seal
+from mslb_application.checkpoint_values import PREFIX_NAMES, CheckpointArtifact
+from mslb_application.checkpoints import checkpoint_due, read_checkpoint, write_checkpoint
 from mslb_application.errors import OperationError
-from mslb_application.files import FileReference, ManagedFiles, WorkFile, request_bytes
+from mslb_application.managed_files import ManagedFiles
 from mslb_application.snapshots import domain_config, domain_inputs
+from mslb_application.storage_encoding import request_bytes
+from mslb_application.storage_values import FileReference
+from mslb_application.work_file import WorkFile
 
 
 def on_loop[T](loop: asyncio.AbstractEventLoop, operation: Awaitable[T]) -> T:

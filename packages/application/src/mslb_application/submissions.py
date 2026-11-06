@@ -13,7 +13,7 @@ from mslb_persistence.records import DatasetRecord, RunRecord
 
 from mslb_application.admission import MaterializationAdmission, settle
 from mslb_application.errors import OperationError
-from mslb_application.files import ManagedFiles
+from mslb_application.managed_files import ManagedFiles
 from mslb_application.snapshots import make_snapshot
 
 

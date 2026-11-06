@@ -9,49 +9,13 @@ from mslb_contracts.docker_runs import DockerSettings, DockerSnapshot
 from mslb_persistence.catalog import Catalog
 from mslb_persistence.docker_catalog import DockerCatalog
 from mslb_persistence.records import RunRecord
-from pydantic import ValidationError
 
 from mslb_application.admission import MaterializationAdmission
+from mslb_application.docker_snapshots import MAX_SNAPSHOT_BYTES as MAX_SNAPSHOT_BYTES
+from mslb_application.docker_snapshots import load_docker_snapshot as load_docker_snapshot
+from mslb_application.docker_snapshots import save_docker_snapshot as save_docker_snapshot
 from mslb_application.errors import OperationError
-from mslb_application.files import FileReference, ManagedFiles
-
-MAX_SNAPSHOT_BYTES = 16 * 1024
-
-
-def save_docker_snapshot(*, files: ManagedFiles, snapshot: DockerSnapshot) -> FileReference:
-    # Frozen models can still be constructed with an unchecked model_copy update.
-    checked = DockerSnapshot.model_validate(obj=snapshot.model_dump())
-    return files.publish(
-        key=f"docker/snapshots/{checked.digest()}.json",
-        chunks=(canonical_bytes(value=checked.model_dump(mode="json")),),
-        maximum=MAX_SNAPSHOT_BYTES,
-    )
-
-
-def load_docker_snapshot(*, files: ManagedFiles, key: str, expected_digest: str) -> DockerSnapshot:
-    if key != f"docker/snapshots/{expected_digest}.json":
-        raise OperationError(code="VALIDATION_FAILED", message="Docker snapshot namespace differs")
-    try:
-        with files.path(key=key).open(mode="rb") as stream:
-            raw = stream.read(MAX_SNAPSHOT_BYTES + 1)
-        if (
-            len(raw) > MAX_SNAPSHOT_BYTES
-            or hashlib.sha256(string=raw).hexdigest() != expected_digest
-        ):
-            raise OperationError(code="VALIDATION_FAILED", message="Docker snapshot bytes differ")
-        snapshot = DockerSnapshot.model_validate_json(json_data=raw)
-        if (
-            snapshot.digest() != expected_digest
-            or canonical_bytes(value=snapshot.model_dump(mode="json")) != raw
-        ):
-            raise OperationError(
-                code="VALIDATION_FAILED", message="Docker snapshot identity differs"
-            )
-        return snapshot
-    except (OSError, ValidationError):
-        raise OperationError(
-            code="VALIDATION_FAILED", message="Docker snapshot is unavailable or invalid"
-        ) from None
+from mslb_application.managed_files import ManagedFiles
 
 
 class DockerSubmissions:

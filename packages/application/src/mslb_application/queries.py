@@ -2,11 +2,9 @@
 
 import asyncio
 import hashlib
-from collections.abc import Callable, Generator
-from contextlib import contextmanager
-from dataclasses import dataclass
+from collections.abc import Callable
 from datetime import datetime
-from typing import BinaryIO, Literal
+from typing import Literal
 from uuid import UUID
 
 from ijson.common import JSONError
@@ -31,10 +29,11 @@ from mslb_persistence.durability import Durability
 from mslb_persistence.reads import Reads, check_limit
 from pydantic import BaseModel
 
-from mslb_application.artifacts import ARTIFACT_NAMES
+from mslb_application.artifact_validation import ARTIFACT_NAMES
 from mslb_application.cursors import Cursors, Position
+from mslb_application.download import Download as Download
 from mslb_application.errors import OperationError
-from mslb_application.files import FileReference, ManagedFiles
+from mslb_application.managed_files import ManagedFiles
 from mslb_application.metric_queries import (
     chart_samples,
     compare_reports,
@@ -42,6 +41,7 @@ from mslb_application.metric_queries import (
     server_metric_page,
 )
 from mslb_application.playback import read_playback
+from mslb_application.storage_values import FileReference
 
 type ArtifactName = Literal[
     "run.jsonl",
@@ -54,26 +54,11 @@ type ArtifactName = Literal[
     "requests.csv",
     "manifest.json",
 ]
+
+
 type ChartMetric = Literal[
     "cpu_utilization", "memory_utilization", "pending_depth", "active_requests"
 ]
-
-
-@dataclass(frozen=True, slots=True)
-class Download:
-    """An internal handle; adapters must authorize the run before calling Queries."""
-
-    files: ManagedFiles
-    reference: FileReference
-    filename: str
-    media_type: str
-
-    @contextmanager
-    def open(self) -> Generator[BinaryIO]:
-        # Verify before sending headers; adapters stream this open file in 64 KiB
-        # chunks and close it on disconnect. No caller-provided path is accepted.
-        with self.files.verified_stream(self.reference) as stream:
-            yield stream
 
 
 class Queries:
