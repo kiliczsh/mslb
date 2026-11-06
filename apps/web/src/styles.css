@@ -288,3 +288,62 @@ footer {
     padding: 16px;
   }
 }
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.metric-grid > div {
+  padding: 12px;
+  border: 1px solid #d3dde2;
+  border-radius: 5px;
+  background: white;
+}
+.metric-grid dt {
+  font-size: 0.85rem;
+  color: #506371;
+}
+.metric-grid dd {
+  margin: 6px 0 0;
+  font-size: 1.15rem;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.chart-frame {
+  width: 100%;
+  min-width: 0;
+  height: 300px;
+  margin-block: 20px;
+}
+.comparison-picker {
+  padding: 0;
+  list-style: none;
+}
+.comparison-picker label {
+  overflow-wrap: anywhere;
+  padding-block: 8px;
+}
+.comparison-picker input {
+  display: inline;
+  width: auto;
+  margin-right: 10px;
+}
+.virtual-list {
+  height: 240px;
+  overflow: auto;
+  list-style: none;
+  padding: 0;
+  border: 1px solid #d3dde2;
+}
+.virtual-list li {
+  height: 48px;
+  padding: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-bottom: 1px solid #e0e6e9;
+}
+.virtual-list .virtual-spacer {
+  padding: 0;
+  border: 0;
+}

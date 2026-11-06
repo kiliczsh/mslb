@@ -1,0 +1,30 @@
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -830,7 +830,7 @@
+   name?: string;
+   message?: string;
+   stack?: string;
+-  code?: string;
++  code?: string | undefined;
+ }
+ declare class RejectWithValue<Payload, RejectedMeta> {
+   readonly payload: Payload;
+@@ -853,7 +853,7 @@
+ declare const miniSerializeError: (value: any) => SerializedError;
+ type AsyncThunkConfig = {
+   state?: unknown;
+-  dispatch?: ThunkDispatch$1<unknown, unknown, UnknownAction>;
++  dispatch?: ThunkDispatch$1<unknown, unknown, UnknownAction> | undefined;
+   extra?: unknown;
+   rejectValue?: unknown;
+   serializedErrorType?: unknown;
+@@ -1719,7 +1719,7 @@
+ /**
+  * Providing these as part of the config would cause circular types, so we disallow passing them
+  */
+-type PreventCircular<ThunkApiConfig> = { [K in keyof ThunkApiConfig]: K extends 'state' | 'dispatch' ? never : ThunkApiConfig[K]; };
++type PreventCircular<ThunkApiConfig> = { [K in keyof ThunkApiConfig]: K extends 'state' | 'dispatch' ? undefined : ThunkApiConfig[K]; };
+ interface AsyncThunkCreator<State, CurriedThunkApiConfig extends PreventCircular<AsyncThunkConfig> = PreventCircular<AsyncThunkConfig>> {
+   <Returned, ThunkArg = void>(payloadCreator: AsyncThunkPayloadCreator<Returned, ThunkArg, CurriedThunkApiConfig>, config?: AsyncThunkSliceReducerConfig<State, ThunkArg, Returned, CurriedThunkApiConfig>): AsyncThunkSliceReducerDefinition<State, ThunkArg, Returned, CurriedThunkApiConfig>;
+   <Returned, ThunkArg, ThunkApiConfig extends PreventCircular<AsyncThunkConfig> = {}>(payloadCreator: AsyncThunkPayloadCreator<Returned, ThunkArg, ThunkApiConfig>, config?: AsyncThunkSliceReducerConfig<State, ThunkArg, Returned, ThunkApiConfig>): AsyncThunkSliceReducerDefinition<State, ThunkArg, Returned, ThunkApiConfig>;

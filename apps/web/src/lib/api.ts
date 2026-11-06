@@ -11,6 +11,16 @@ import {
   type Settings,
   serverSchema,
 } from "./contracts.js";
+import {
+  type Chart,
+  chartSchema,
+  comparisonSchema,
+  eventSchema,
+  metricsSchema,
+  type PlaybackSelection,
+  playbackSchema,
+  serverMetricSchema,
+} from "./resultContracts.js";
 
 export class ApiError extends Error {
   constructor(
@@ -156,6 +166,41 @@ export class Api {
     });
   cancel = (id: string) =>
     this.request(`simulations/${encodeURIComponent(id)}/cancel`, runSchema, json({}));
+  metrics = (id: string, signal: AbortSignal) =>
+    this.request(`simulations/${encodeURIComponent(id)}/metrics`, metricsSchema, { signal });
+  serverMetrics = (id: string, cursor: string | null, signal: AbortSignal) =>
+    this.request(
+      `simulations/${encodeURIComponent(id)}/metrics/servers?limit=32${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+      pageSchema(serverMetricSchema),
+      { signal },
+    );
+  chart = (
+    id: string,
+    metric: Chart["metric"],
+    start: number,
+    end: number,
+    server: string | null,
+    signal: AbortSignal,
+  ) =>
+    this.request(
+      `simulations/${encodeURIComponent(id)}/metrics?${new URLSearchParams({ metric, start_tick: String(start), end_tick: String(end), max_points: "500", ...(server ? { server_id: server } : {}) })}`,
+      chartSchema.refine((value) => value.points.length <= 500),
+      { signal },
+    );
+  compare = (ids: string[], signal: AbortSignal) =>
+    this.request("simulations/compare", comparisonSchema, { ...json({ run_ids: ids }), signal });
+  playback = (id: string, selection: PlaybackSelection, signal: AbortSignal) =>
+    this.request(
+      `simulations/${encodeURIComponent(id)}/playback?${new URLSearchParams({ tick: String(selection.tick), server_offset: String(selection.server_offset), request_kind: selection.request_kind, request_offset: String(selection.request_offset), ...(selection.server_id ? { server_id: selection.server_id } : {}) })}`,
+      playbackSchema,
+      { signal },
+    );
+  events = (id: string, tick: number, cursor: string | null, signal: AbortSignal) =>
+    this.request(
+      `simulations/${encodeURIComponent(id)}/events?${new URLSearchParams({ limit: "100", start_tick: String(tick), end_tick: String(tick), ...(cursor ? { cursor } : {}) })}`,
+      pageSchema(eventSchema),
+      { signal },
+    );
 }
 
 export function json(body: unknown, method = "POST"): RequestInit {

@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { z } from "zod";
+import { acceptedSchema, detailSchema } from "../src/lib/contracts.js";
 
 test("gateway serves built assets with isolation headers and rejects untrusted hosts/origins", async ({
   request,
@@ -115,12 +117,68 @@ test("real gateway CRUD, CSV, queued worker completion and narrow-screen session
   await page.getByRole("button", { name: "Simulations", exact: true }).click();
   await page.getByRole("button", { name: "Review snapshot", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Review snapshot inputs" })).toBeVisible();
+  const firstAccepted = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/simulations") && response.request().method() === "POST",
+  );
   await page.getByRole("button", { name: "Confirm and queue run", exact: true }).click();
+  const firstResponse = await firstAccepted;
+  const firstRun = acceptedSchema.parse(await firstResponse.json());
+  const creation = z.object({ dataset_id: z.uuid() }).parse(firstResponse.request().postDataJSON());
   expect(await page.getByRole("alert").allTextContents()).toEqual([]);
   await expect(page.getByText("Independent replay: passed.", { exact: false })).toBeVisible();
   await expect(page.getByRole("button", { name: "Copy settings for a new run" })).toBeVisible();
   await page.getByText("Reproducibility and saved configuration", { exact: true }).click();
   await expect(page.getByText(/^Snapshot: [a-f0-9]{64}$/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Exact completed metrics" })).toBeVisible();
+  await page.getByRole("button", { name: "Inspect exact chart buckets" }).click();
+  await expect(page.getByRole("table", { name: /^Exact chart buckets/ })).toContainText("2/15");
+  await page.getByRole("button", { name: "Playback", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Playback from saved intervals" })).toBeVisible();
+  await expect(page.getByText("Saved resource interval [0, 1)", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "Inspect active on s1", exact: true }).click();
+  await expect(page.getByRole("list", { name: "Requests at selected interval" })).toContainText(
+    "browser-a",
+  );
+  await page.getByRole("button", { name: "Next tick", exact: true }).click();
+  await expect(page.getByText("Selected tick 1 of 2", { exact: false })).toBeVisible();
+  await expect(page.getByRole("list", { name: "Events at selected tick" })).toContainText(
+    "FINISHED",
+  );
+  await page.getByRole("button", { name: "Play playback", exact: true }).click();
+  await expect(page.getByText("Terminal boundary", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "Comparison", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Compare compatible completed runs" }),
+  ).toBeVisible();
+  const headers =
+    process.env.AUTH_ENABLED === "true"
+      ? { Authorization: `Bearer ${process.env.AUTH_TOKEN ?? ""}` }
+      : {};
+  const secondResponse = await page.request.post("/api/v1/simulations", {
+    headers,
+    data: { dataset_id: creation.dataset_id, strategy: "round_robin" },
+  });
+  expect(secondResponse.status()).toBe(202);
+  const second = acceptedSchema.parse(await secondResponse.json());
+  await expect
+    .poll(
+      async () =>
+        detailSchema.parse(
+          await (
+            await page.request.get(`/api/v1/simulations/${second.run_id}`, { headers })
+          ).json(),
+        ).status,
+    )
+    .toBe("completed");
+  await page.getByLabel("Saved comparison run ID").fill(second.run_id);
+  await page.getByRole("button", { name: "Add saved run", exact: true }).click();
+  await expect(page.getByText("2 selected across history pages.", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "Compare selected runs", exact: true }).click();
+  await expect(page.getByRole("table", { name: /^Exact baseline comparison/ })).toContainText(
+    "round_robin",
+  );
+  await expect(page.getByText(`Baseline: ${firstRun.run_id}`, { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole("heading", { name: "Simulations", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

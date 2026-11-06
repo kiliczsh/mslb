@@ -92,14 +92,14 @@ export function DatasetManager({
       </div>
       <div className="actions">
         <button type="button" disabled={cursor === null} onClick={() => setCursor(null)}>
-          Newest datasets
+          First datasets
         </button>
         <button
           type="button"
           disabled={!datasets.data?.next_cursor}
           onClick={() => setCursor(datasets.data?.next_cursor ?? null)}
         >
-          Older datasets
+          Next datasets
         </button>
       </div>
     </section>

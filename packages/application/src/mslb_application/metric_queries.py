@@ -79,7 +79,7 @@ def server_metric_page(
 type WireNumber = Annotated[int, Field(ge=0, le=2**53 - 1)] | FractionValue
 
 
-class _Sample(ReadModel):
+class TimelineSample(ReadModel):
     server_id: str
     active_ids: Annotated[tuple[str, ...], Field(max_length=10_000)]
     reserved_mem_mb: Annotated[int, Field(ge=0, le=64 * 10**9)]
@@ -90,13 +90,13 @@ class _Sample(ReadModel):
     consumed_cpu: WireNumber
 
 
-class _Frame(ReadModel):
+class TimelineFrame(ReadModel):
     t: Annotated[int, Field(ge=0, le=1_000_000)]
     duration_ticks: Annotated[int, Field(ge=0, le=1_000_000)]
     terminal: bool
     pending_ids: Annotated[tuple[str, ...], Field(max_length=10_000)]
     membership: Annotated[tuple[ServerInput, ...], Field(max_length=64)]
-    servers: Annotated[tuple[_Sample, ...], Field(max_length=64)]
+    servers: Annotated[tuple[TimelineSample, ...], Field(max_length=64)]
 
 
 def chart_samples(stream: BinaryIO, metric: str, server_id: str | None) -> Generator[ChartSample]:
@@ -107,7 +107,7 @@ def chart_samples(stream: BinaryIO, metric: str, server_id: str | None) -> Gener
             break
         if index > 1_000_000 or len(line) > 8 * 1024**2 or not line.endswith(b"\n"):
             raise OperationError("VALIDATION_FAILED", "Timeline exceeds supported frame bounds")
-        frame = _Frame.model_validate_json(line)
+        frame = TimelineFrame.model_validate_json(line)
         if server_id is not None and any(server.id == server_id for server in frame.membership):
             found = True
         if frame.terminal:

@@ -5,7 +5,7 @@ import re
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, override
+from typing import Annotated, Literal, override
 from uuid import UUID
 
 from fastapi import APIRouter, FastAPI, Query, Request, Security
@@ -31,6 +31,7 @@ from mslb_contracts.http import (
     StrategyView,
 )
 from mslb_contracts.inputs import InputError, ServerInput, read_servers
+from mslb_contracts.playback import PlaybackView
 from mslb_contracts.queries import (
     ChartView,
     ComparisonView,
@@ -360,6 +361,26 @@ def create_app(
     @router.get("/simulations/{run_id}/metrics/servers", response_model=Page[ServerMetricView])
     async def server_metrics(run_id: UUID, limit: Limit = 100, cursor: Cursor = None) -> Response:
         return json_response(await queries.server_metrics(run_id, limit, cursor))
+
+    @router.get("/simulations/{run_id}/playback", response_model=PlaybackView)
+    async def playback(
+        run_id: UUID,
+        tick: Tick = 0,
+        server_offset: Annotated[int, Query(ge=0, le=64)] = 0,
+        request_kind: Literal["pending", "active"] = "pending",
+        server_id: Annotated[str | None, Query(max_length=128)] = None,
+        request_offset: Annotated[int, Query(ge=0, le=10_000)] = 0,
+    ) -> Response:
+        return json_response(
+            await queries.playback(
+                run_id,
+                tick,
+                server_offset,
+                request_kind,
+                server_id,
+                request_offset,
+            )
+        )
 
     @router.get(
         "/simulations/{run_id}/artifact",

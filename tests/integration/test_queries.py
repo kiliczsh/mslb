@@ -1,5 +1,7 @@
 import asyncio
 import io
+import json
+import secrets
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -80,6 +82,122 @@ def test_run_history_uses_stable_tied_timestamp_order_and_byte_budget(tmp_path: 
                 await query.run(uuid4())
             with pytest.raises(StoreError, match="does not exist"):
                 await query.dataset(uuid4())
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("authenticated", [False, True])
+def test_verified_playback_matches_saved_intervals_events_and_http_bounds(
+    tmp_path: Path, authenticated: bool
+) -> None:
+    async def scenario() -> None:
+        async with scratch() as database:
+            outputs, service, runs = await prepare(database, tmp_path, (RunSettings(),))
+            query = Queries(database, outputs, b"test-playback-signing-key" * 2)
+            with pytest.raises(OperationError, match="completed"):
+                await query.playback(runs[0], 0)
+            worker = Worker(database, service.files, outputs, "playback-test")
+            assert await worker.run_once()
+            view = await query.playback(runs[0], 0, request_kind="active", server_id="s1")
+            assert view.run_id == runs[0] and view.servers[0].id == "s1"
+            assert view.active_count > 0 and view.request_ids
+            terminal = await query.playback(runs[0], 6)
+            assert terminal.terminal
+            with pytest.raises(OperationError, match="playback"):
+                await query.playback(runs[0], True)
+            with pytest.raises(OperationError, match="playback"):
+                await query.playback(runs[0], 0, request_kind="active")
+            with pytest.raises(OperationError, match="playback"):
+                await query.playback(runs[0], 0, server_offset=65)
+            import httpx
+            from mslb_api.app import create_app
+            from mslb_api.settings import Settings
+
+            token = secrets.token_urlsafe(32)
+            app = create_app(
+                Settings(
+                    allowed_hosts=("testserver",),
+                    auth_enabled=authenticated,
+                    token=token,
+                ),
+                database,
+                service.files,
+                outputs,
+                b"p" * 32,
+            )
+            async with app.router.lifespan_context(app):
+                async with httpx.AsyncClient(
+                    transport=httpx.ASGITransport(app), base_url="http://testserver/api/v1/"
+                ) as client:
+                    if authenticated:
+                        assert (
+                            await client.get(f"simulations/{runs[0]}/playback")
+                        ).status_code == 401
+                        client.headers["Authorization"] = "Bearer " + token
+                    response = await client.get(f"simulations/{runs[0]}/playback?tick=0")
+                    assert (
+                        response.status_code == 200
+                        and response.json()["bundle_digest"] == view.bundle_digest
+                    )
+                    assert (
+                        await client.get(f"simulations/{runs[0]}/playback?request_offset=10001")
+                    ).status_code == 422
+                    assert (
+                        await client.get(f"simulations/{runs[0]}/playback?tick=7")
+                    ).status_code == 404
+            source = "t,request_id,work_units,mem_mb\n" + "".join(
+                f"0,request-{i:02d}-{'x' * 80},1,1\n" for i in range(12)
+            )
+            dataset = await service.upload(io.BytesIO(source.encode()), "bounded-view.csv")
+            crowded = await service.submit(dataset.id, RunSettings())
+            assert await worker.run_once()
+            with pytest.raises(OperationError, match="budget"):
+                await Queries(database, outputs, b"p" * 32, response_bytes=1024).playback(
+                    crowded.id, 0
+                )
+
+    asyncio.run(scenario())
+
+
+def test_scaled_playback_matches_persisted_cpu_membership_and_policy_sidecar(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        settings = RunSettings.model_validate_json(
+            await asyncio.to_thread(Path("data/examples/scaling-config.json").read_bytes)
+        )
+        async with scratch() as database:
+            outputs, service, runs = await prepare(
+                database,
+                tmp_path,
+                (settings,),
+                await asyncio.to_thread(Path("data/examples/scaling-requests.csv").read_bytes),
+            )
+            assert await Worker(database, service.files, outputs).run_once()
+            query = Queries(database, outputs, b"scaled-playback-key" * 2)
+            timeline = await query.download(runs[0], "timeline.jsonl")
+            scaling = await query.download(runs[0], "autoscaling_decisions.jsonl")
+            with timeline.open() as source:
+                frames = [json.loads(line) for line in source]
+            with scaling.open() as source:
+                decisions = [json.loads(line) for line in source]
+            assert any(decision["action"] == "scale_out" for decision in decisions)
+            for saved in frames:
+                view = await query.playback(runs[0], saved["t"])
+                assert [server.id for server in view.servers] == [
+                    member["id"] for member in saved["membership"]
+                ]
+                assert view.queue_depth == len(saved["pending_ids"])
+                assert [decision.model_dump(mode="json") for decision in view.decisions] == [
+                    decision
+                    for decision in decisions
+                    if saved["t"] in (decision["t"], decision["applied_at"])
+                ]
+                if not saved["terminal"]:
+                    assert [
+                        server.model_dump(mode="json")["consumed_cpu"] for server in view.servers
+                    ] == [sample["consumed_cpu"] for sample in saved["servers"]]
+            assert any(len(frame["membership"]) == 3 for frame in frames)
 
     asyncio.run(scenario())
 

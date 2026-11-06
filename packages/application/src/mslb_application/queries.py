@@ -12,6 +12,7 @@ from uuid import UUID
 from ijson.common import JSONError
 from mslb_contracts.canonical import canonical_bytes
 from mslb_contracts.durability import PersistedEvent
+from mslb_contracts.playback import PlaybackView
 from mslb_contracts.queries import (
     ChartView,
     ComparisonRun,
@@ -40,6 +41,7 @@ from mslb_application.metric_queries import (
     metric_report,
     server_metric_page,
 )
+from mslb_application.playback import read_playback
 
 type ArtifactName = Literal[
     "run.jsonl",
@@ -338,6 +340,48 @@ class Queries:
 
         rows = await self._file_call(read)
         return self._page(rows, limit, context, lambda row: Position(key=row.id))
+
+    async def playback(
+        self,
+        run_id: UUID,
+        tick: int,
+        server_offset: int = 0,
+        request_kind: Literal["pending", "active"] = "pending",
+        server_id: str | None = None,
+        request_offset: int = 0,
+    ) -> PlaybackView:
+        if (
+            any(type(value) is not int for value in (tick, server_offset, request_offset))
+            or not 0 <= tick <= 1_000_000
+            or not 0 <= server_offset <= 64
+            or not 0 <= request_offset <= 10_000
+            or request_kind not in {"pending", "active"}
+            or (request_kind == "active") != (server_id is not None)
+            or server_id is not None
+            and (type(server_id) is not str or not 1 <= len(server_id.encode()) <= 128)
+        ):
+            raise OperationError("VALIDATION_ERROR", "Invalid playback query")
+        _, manifest, _ = await self.completed(run_id)
+        if tick > manifest.terminal_tick:
+            raise OperationError("NOT_FOUND", "Tick is outside the completed run")
+        timeline = await self.download(run_id, "timeline.jsonl")
+        scaling = await self.download(run_id, "autoscaling_decisions.jsonl")
+
+        def read() -> PlaybackView:
+            with timeline.open() as intervals, scaling.open() as decisions:
+                return read_playback(
+                    intervals,
+                    decisions,
+                    run_id,
+                    manifest.bundle_digest,
+                    tick,
+                    server_offset,
+                    request_kind,
+                    server_id,
+                    request_offset,
+                )
+
+        return self._bounded(await self._file_call(read))
 
     async def compare(self, run_ids: tuple[UUID, ...]) -> ComparisonView:
         if not 2 <= len(run_ids) <= 8 or len(set(run_ids)) != len(run_ids):

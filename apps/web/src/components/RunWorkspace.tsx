@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { lazy, Suspense, useRef, useState } from "react";
 import { type Api, idempotencyKey } from "../lib/api.js";
 import {
   type Dataset,
@@ -9,6 +9,10 @@ import {
   terminal,
 } from "../lib/contracts.js";
 import { Feedback } from "./Feedback.js";
+
+const ResultsExplorer = lazy(() =>
+  import("./ResultsExplorer.js").then((module) => ({ default: module.ResultsExplorer })),
+);
 
 export function RunWorkspace({ api, dataset }: { api: Api; dataset: Dataset | null }) {
   const client = useQueryClient();
@@ -320,14 +324,14 @@ export function RunWorkspace({ api, dataset }: { api: Api; dataset: Dataset | nu
           </ul>
           <div className="actions">
             <button type="button" disabled={cursor === null} onClick={() => setCursor(null)}>
-              Newest runs
+              First runs
             </button>
             <button
               type="button"
               disabled={!history.data?.next_cursor}
               onClick={() => setCursor(history.data?.next_cursor ?? null)}
             >
-              Older runs
+              Next runs
             </button>
           </div>
         </div>
@@ -396,6 +400,16 @@ export function RunWorkspace({ api, dataset }: { api: Api; dataset: Dataset | nu
           )}
         </div>
       </div>
+      {detail.data?.validation && (
+        <Suspense fallback={<p role="status">Loading result views…</p>}>
+          <ResultsExplorer
+            key={detail.data.id}
+            api={api}
+            run={detail.data}
+            terminalTick={detail.data.validation.terminal_tick}
+          />
+        </Suspense>
+      )}
     </section>
   );
 }
