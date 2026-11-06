@@ -13,6 +13,14 @@ class Port(BaseModel):
 class Service(BaseModel):
     model_config = ConfigDict(extra="ignore")
     ports: list[Port] = Field(default_factory=list)
+    volumes: list["Mount"] = Field(default_factory=list)
+
+
+class Mount(BaseModel):
+    type: str
+    source: str = ""
+    target: str
+    read_only: bool = False
 
 
 class Compose(BaseModel):
@@ -24,6 +32,26 @@ def check(payload: bytes) -> None:
         raise ValueError("Compose configuration exceeds preflight size limit")
     config = Compose.model_validate_json(payload)
     for name, service in config.services.items():
+        for mount in service.volumes:
+            if mount.type == "bind" and not (
+                name in {"docker-proxy", "docker-proxy-check"}
+                and mount.source == "/var/run/docker.sock"
+                and mount.target == "/var/run/docker.sock"
+                and mount.read_only
+            ):
+                raise ValueError("Only the restricted proxy boundary may bind the daemon socket")
+            if "controller-auth" in mount.source and (
+                name
+                not in {
+                    "control-init",
+                    "container-controller",
+                    "docker-proxy",
+                    "docker-proxy-check",
+                }
+                or name != "control-init"
+                and not mount.read_only
+            ):
+                raise ValueError("Controller credential mounts are private and read-only")
         for port in service.ports:
             if name in {
                 "postgres",
@@ -33,6 +61,8 @@ def check(payload: bytes) -> None:
                 "backend-b",
                 "container-controller",
                 "docker-proxy",
+                "docker-proxy-check",
+                "control-init",
                 "resource-guard",
             }:
                 raise ValueError("Private data/control/work services must not publish host ports")

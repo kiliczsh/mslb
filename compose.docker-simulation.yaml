@@ -6,7 +6,7 @@ x-backend: &backend
     dockerfile: infra/tooling/python.Dockerfile
   command: [python, -m, mslb_mock_server]
   read_only: true
-  tmpfs: [/tmp:size=16m]
+  tmpfs: ["/run/mslb-tmp:rw,noexec,nosuid,nodev,size=16m,uid=1000,gid=1000"]
   cap_drop: [ALL]
   security_opt: [no-new-privileges:true]
   mem_limit: 128m
@@ -32,19 +32,96 @@ x-backend: &backend
     com.mslb.backend-kind: static
 
 services:
+  control-init:
+    image: mslb-python-tools:local
+    command: [python, -m, mslb_controller.credentials]
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 64m
+    memswap_limit: 64m
+    cpus: 0.25
+    pids_limit: 16
+    network_mode: none
+    volumes: [controller-auth:/run/controller-auth]
+  docker-proxy:
+    image: mslb-python-tools:local
+    command: [python, -m, mslb_controller.proxy_main]
+    # Socket ownership requires UID 0. No Linux capabilities; GID 1000 reads only its credential.
+    user: "0:1000"
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=16m"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.5
+    pids_limit: 32
+    environment:
+      DATABASE_URL: postgresql://mslb:local-demo-only@postgres/mslb
+      PROXY_BIND_HOST: 0.0.0.0
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro", "controller-auth:/run/controller-auth:ro"]
+    networks: [docker-control, control-data, docker-traffic]
+    depends_on:
+      control-init: {condition: service_completed_successfully}
+      migrate: {condition: service_completed_successfully}
+      backend-a: {condition: service_healthy}
+      backend-b: {condition: service_healthy}
+    stop_grace_period: 55s
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/health', timeout=2).close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+        mode: non-blocking
+        max-buffer-size: 1m
+  docker-proxy-check:
+    profiles: [tools]
+    image: mslb-python-tools:local
+    command: [python, -m, scripts.check_lifecycle]
+    user: "0:1000"
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=16m"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 1
+    pids_limit: 48
+    environment:
+      TEST_DATABASE_URL: postgresql://mslb:local-demo-only@postgres/mslb
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro", "controller-auth:/run/controller-auth:ro"]
+    networks: [docker-control, control-data, docker-traffic]
+    depends_on:
+      docker-proxy: {condition: service_healthy}
   backend-a:
     <<: *backend
     environment:
       BACKEND_ID: backend-a
       LOGICAL_ADMISSION_MEM_MB: "1024"
       MAX_INFLIGHT: "4"
+      TMPDIR: /run/mslb-tmp
   backend-b:
     <<: *backend
     environment:
       BACKEND_ID: backend-b
       LOGICAL_ADMISSION_MEM_MB: "1024"
       MAX_INFLIGHT: "4"
+      TMPDIR: /run/mslb-tmp
 
 networks:
   docker-traffic:
     internal: true
+  docker-control:
+    internal: true
+  control-data:
+    internal: true
+
+volumes:
+  controller-auth:

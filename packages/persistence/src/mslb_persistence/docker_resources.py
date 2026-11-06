@@ -62,6 +62,31 @@ class DockerResources:
     def __init__(self, database: Database) -> None:
         self.database = database
 
+    async def get(self, lease: ControlLease, resource_id: UUID) -> ResourceRecord:
+        async def operation(session: AsyncSession) -> ResourceRecord:
+            await current(session, lease)
+            return resource_record(await _row(session, lease, resource_id))
+
+        return await self.database.transaction(operation)
+
+    async def confirm_absent(
+        self, lease: ControlLease, resource_id: UUID, container_id: str
+    ) -> ResourceRecord:
+        """Trusted adapter supplies an actual 404 for the already persisted immutable ID."""
+
+        async def operation(session: AsyncSession) -> ResourceRecord:
+            await current(session, lease)
+            row = await _row(session, lease, resource_id)
+            if row.container_id is None or row.container_id != container_id:
+                raise StoreError("INVALID_STATE", "Absence requires an already owned immutable ID")
+            if row.state not in {"observed", "starting", "started", "draining"}:
+                raise StoreError("INVALID_STATE", "Resource does not await cleanup")
+            row.state = "removed" if row.kind == "dynamic" else "released"
+            await guard(session, lease)
+            return resource_record(row)
+
+        return await self.database.transaction(operation)
+
     async def list(self, lease: ControlLease) -> tuple[ResourceRecord, ...]:
         async def operation(session: AsyncSession) -> tuple[ResourceRecord, ...]:
             await current(session, lease)

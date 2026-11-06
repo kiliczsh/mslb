@@ -1,0 +1,34 @@
+"""One private proxy process owns the raw socket; other services use semantic RPC."""
+
+import os
+
+import uvicorn
+from fastapi import FastAPI
+from mslb_persistence.database import Database
+
+from mslb_controller.credentials import read_token
+from mslb_controller.proxy import create_app
+
+
+def build() -> FastAPI:
+    return create_app(
+        Database(os.environ["DATABASE_URL"], os.environ.get("CONTROL_DATABASE_SCHEMA", "public")),
+        read_token(),
+    )
+
+
+if __name__ == "__main__":
+    uvicorn.run(
+        "mslb_controller.proxy_main:build",
+        factory=True,
+        host=os.environ.get("PROXY_BIND_HOST", "127.0.0.1"),
+        port=8081,
+        workers=1,
+        proxy_headers=False,
+        access_log=False,
+        limit_concurrency=24,
+        timeout_keep_alive=2,
+        timeout_graceful_shutdown=50,
+        backlog=32,
+        h11_max_incomplete_event_size=8192,
+    )

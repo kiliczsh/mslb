@@ -421,14 +421,20 @@ name = "mslb-controller"
 version = "0.1.0"
 source = { editable = "apps/container-controller" }
 dependencies = [
+    { name = "fastapi" },
     { name = "httpx" },
     { name = "mslb-contracts" },
+    { name = "mslb-persistence" },
+    { name = "uvicorn" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "fastapi", specifier = "==0.162.0" },
     { name = "httpx", specifier = "==0.28.1" },
     { name = "mslb-contracts", editable = "packages/contracts" },
+    { name = "mslb-persistence", editable = "packages/persistence" },
+    { name = "uvicorn", specifier = "==0.54.0" },
 ]
 
 [[package]]

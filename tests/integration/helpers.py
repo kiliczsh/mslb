@@ -13,7 +13,7 @@ from sqlalchemy.schema import CreateSchema, DropSchema
 
 
 @asynccontextmanager
-async def scratch() -> AsyncGenerator[Database]:
+async def scratch(*, retain_on_failure: bool = False) -> AsyncGenerator[Database]:
     url = os.environ["TEST_DATABASE_URL"]
     schema = "mslb_test_" + uuid4().hex
     admin, database = Database(url), Database(url, schema)
@@ -22,10 +22,19 @@ async def scratch() -> AsyncGenerator[Database]:
     try:
         await migrate(database)
         yield database
-    finally:
+    except BaseException:
+        await database.close()
+        if not retain_on_failure:
+            async with admin.engine.begin() as connection:
+                await connection.execute(DropSchema(schema, cascade=True))
+        else:
+            print("Retained lifecycle failure ownership schema:", schema)
+        raise
+    else:
         await database.close()
         async with admin.engine.begin() as connection:
             await connection.execute(DropSchema(schema, cascade=True))
+    finally:
         await admin.close()
 
 
