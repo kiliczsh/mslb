@@ -1,0 +1,70 @@
+"""Memory headroom and hysteresis, independent from logical scheduling and telemetry."""
+
+from dataclasses import dataclass
+from datetime import datetime
+
+from mslb_contracts.resources import ResourceDecision, ResourceProbe, memory_bounds
+
+
+@dataclass(slots=True, kw_only=True)
+class ResourcePolicy:
+    held: bool = True
+    cool_samples: int = 0
+    last_measurement: datetime | None = None
+
+    def evaluate(self, *, probe: ResourceProbe | None, now: datetime) -> ResourceDecision:
+        if now.utcoffset() is None:
+            raise ValueError("Resource evaluation requires an aware server clock")
+        caps, reserve, headroom = memory_bounds(probe=probe)
+        reason = None
+        stop_running = False
+        if probe is None:
+            reason, stop_running = "MEASUREMENTS_UNAVAILABLE", True
+        elif (
+            not 0 <= (now - probe.measured_at).total_seconds() <= 3
+            or self.last_measurement is not None
+            and probe.measured_at < self.last_measurement
+        ):
+            reason, stop_running = "MEASUREMENTS_STALE", True
+        elif probe.engine_memory_bytes < 8 * 1024**3 or caps + reserve > probe.engine_memory_bytes:
+            reason, stop_running = "ENGINE_CAPACITY", True
+        elif any(not item.healthy or item.container_id is None for item in probe.services):
+            reason, stop_running = "MISSING_SERVICE", True
+        elif any(
+            item.oom_killed or item.working_set_bytes * 100 >= item.limit_bytes * 85
+            for item in probe.services
+        ):
+            reason, stop_running = "RESOURCE_PRESSURE", True
+        elif probe.available_memory_bytes < headroom:
+            reason, stop_running = "MEMORY_HEADROOM", True
+        elif any(item.working_set_bytes * 100 >= item.limit_bytes * 70 for item in probe.services):
+            reason = "RESOURCE_PRESSURE"
+        if reason is not None:
+            self.held, self.cool_samples = True, 0
+        elif self.held:
+            if probe is not None and probe.measured_at != self.last_measurement:
+                self.cool_samples = (
+                    self.cool_samples + 1
+                    if all(
+                        item.working_set_bytes * 100 < item.limit_bytes * 60
+                        for item in probe.services
+                    )
+                    else 0
+                )
+            if self.cool_samples >= 3:
+                self.held = False
+            else:
+                reason = "WARMING_UP"
+        if (
+            probe is not None
+            and (reason != "MEASUREMENTS_STALE")
+            and (self.last_measurement is None or probe.measured_at > self.last_measurement)
+        ):
+            self.last_measurement = probe.measured_at
+        return ResourceDecision(
+            admit=not self.held,
+            stop_running=stop_running,
+            reason=reason,
+            cap_sum_bytes=caps,
+            required_headroom_bytes=headroom,
+        )

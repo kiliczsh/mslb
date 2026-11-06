@@ -20,6 +20,7 @@ from starlette.requests import ClientDisconnect
 
 from mslb_controller.engine import Engine, EngineError
 from mslb_controller.lifecycle import Lifecycle
+from mslb_controller.resource_probe import ProbeEngine
 from mslb_controller.routing import BackendHttp, TrafficError
 
 
@@ -33,7 +34,11 @@ class LeaseRef(BaseModel):
     def lease(self) -> ControlLease:
         # Expiry is read and enforced in PostgreSQL, never accepted from the caller.
         return ControlLease(
-            self.run_id, self.fence, self.owner, datetime.min.replace(tzinfo=UTC), self.phase
+            run_id=self.run_id,
+            fence=self.fence,
+            owner=self.owner,
+            expires_at=datetime.min.replace(tzinfo=UTC),
+            phase=self.phase,
         )
 
 
@@ -41,7 +46,7 @@ class Empty(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 
 
-def reply(record: ResourceRecord, running: object = None) -> JSONResponse:
+def reply(*, record: ResourceRecord, running: object = None) -> JSONResponse:
     return JSONResponse(
         {
             "id": str(record.id),
@@ -59,7 +64,7 @@ class Refusal(Exception):
         super().__init__(code)
 
 
-async def body[T: BaseModel](request: Request, model: type[T]) -> T:
+async def body[T: BaseModel](*, request: Request, model: type[T]) -> T:
     if request.headers.get("content-type", "").split(";")[0] != "application/json":
         raise Refusal(415, "JSON_REQUIRED")
     if request.headers.get("content-encoding", "identity") != "identity":
@@ -79,20 +84,30 @@ async def body[T: BaseModel](request: Request, model: type[T]) -> T:
         raise Refusal(422, "INVALID_CONTROL") from None
 
 
-def create_app(database: Database, token: str, engine: Engine | None = None) -> FastAPI:
+def create_app(
+    *,
+    database: Database,
+    token: str,
+    engine: Engine | None = None,
+    guard_token: str | None = None,
+    probe_engine: ProbeEngine | None = None,
+) -> FastAPI:
     daemon, http = engine or Engine(), BackendHttp()
-    lifecycle = Lifecycle(database, daemon, http)
+    inspector = probe_engine or ProbeEngine()
+    lifecycle = Lifecycle(database=database, engine=daemon, http=http)
     active = 0
     pending: set[asyncio.Task[JSONResponse]] = set()
+    probing: set[asyncio.Task[JSONResponse]] = set()
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         try:
             yield
         finally:
-            if pending:
-                await asyncio.gather(*pending, return_exceptions=True)
+            if pending or probing:
+                await asyncio.gather(*pending, *probing, return_exceptions=True)
             await daemon.close()
+            await inspector.close()
             await http.client.aclose()
             await database.close()
 
@@ -110,8 +125,13 @@ def create_app(database: Database, token: str, engine: Engine | None = None) -> 
         if request.url.path == "/health" and request.method == "GET":
             return JSONResponse({"ready": True})
         supplied = request.headers.get("authorization", "")
-        if len(supplied) != 71 or not secrets.compare_digest(
-            supplied.encode(), ("Bearer " + token).encode()
+        expected = (
+            guard_token if request.url.path == "/guard/probe" and request.method == "GET" else token
+        )
+        if (
+            expected is None
+            or len(supplied) != 71
+            or not secrets.compare_digest(supplied.encode(), ("Bearer " + expected).encode())
         ):
             return JSONResponse({"error": "UNAUTHORIZED"}, status_code=401)
         if active >= 8:
@@ -134,15 +154,18 @@ def create_app(database: Database, token: str, engine: Engine | None = None) -> 
     async def missing(_request: Request, _error: HTTPException) -> JSONResponse:
         return JSONResponse({"error": "CONTROL_NOT_FOUND"}, status_code=404)
 
-    async def execute(operation: Callable[[], Awaitable[JSONResponse]]) -> JSONResponse:
+    async def execute(
+        *, operation: Callable[[], Awaitable[JSONResponse]], readonly: bool = False
+    ) -> JSONResponse:
         # The single process keeps a sent mutation alive even if its HTTP caller disconnects.
         # No waiter queue: the slot is held until the task settles, including error receipts.
-        if pending:
+        owning = probing if readonly else pending
+        if owning:
             raise Refusal(429, "CONTROL_BUSY")
 
         async def bounded() -> JSONResponse:
             try:
-                async with asyncio.timeout(45):
+                async with asyncio.timeout(delay=45):
                     return await operation()
             except StoreError as error:
                 status = (
@@ -159,14 +182,22 @@ def create_app(database: Database, token: str, engine: Engine | None = None) -> 
             except (SQLAlchemyError, TimeoutError):
                 return JSONResponse({"error": "CONTROL_UNAVAILABLE"}, status_code=503)
 
-        task = asyncio.create_task(bounded())
-        pending.add(task)
-        task.add_done_callback(pending.discard)
-        return await asyncio.shield(task)
+        task = asyncio.create_task(coro=bounded())
+        owning.add(task)
+        task.add_done_callback(owning.discard)
+        return await asyncio.shield(arg=task)
+
+    @app.get(path="/guard/probe")
+    async def resource_probe() -> JSONResponse:
+        async def operation() -> JSONResponse:
+            probe = await inspector.probe()
+            return JSONResponse(content=probe.model_dump(mode="json"))
+
+        return await execute(operation=operation, readonly=True)
 
     @app.post("/control/enroll")
     async def enroll(request: Request) -> JSONResponse:
-        await body(request, Empty)
+        await body(request=request, model=Empty)
 
         async def operation() -> JSONResponse:
             value = await lifecycle.enroll()
@@ -174,25 +205,25 @@ def create_app(database: Database, token: str, engine: Engine | None = None) -> 
                 {"id": str(value.id), "definition": value.definition.model_dump(mode="json")}
             )
 
-        return await execute(operation)
+        return await execute(operation=operation)
 
     @app.post("/control/resources/{identifier}/{action}")
     async def resource(
         request: Request, identifier: UUID, action: Literal["create", "inspect", "start", "cleanup"]
     ) -> JSONResponse:
-        lease = (await body(request, LeaseRef)).lease()
+        lease = (await body(request=request, model=LeaseRef)).lease()
 
         async def operation() -> JSONResponse:
             if action == "inspect":
-                record, info = await lifecycle.observe(lease, identifier)
-                return reply(record, info.State.get("Running"))
+                record, info = await lifecycle.observe(lease=lease, identifier=identifier)
+                return reply(record=record, running=info.State.get("Running"))
             method = {
                 "create": lifecycle.create,
                 "start": lifecycle.start,
                 "cleanup": lifecycle.cleanup,
             }[action]
-            return reply(await method(lease, identifier))
+            return reply(record=await method(lease=lease, identifier=identifier))
 
-        return await execute(operation)
+        return await execute(operation=operation)
 
     return app

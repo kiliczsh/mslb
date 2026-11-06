@@ -10,6 +10,6 @@ COPY . /app/
 RUN uv sync --locked --all-packages --group dev
 COPY docs/assignment/test-data/ /fixtures/
 ENV PATH="/app/.venv/bin:$PATH"
-RUN mkdir -p /data/exports /data/outputs /data/inputs/.staging /data/inputs/uploads /data/inputs/datasets /data/inputs/snapshots /data/api-state /run/controller-auth && chmod 700 /data/api-state && chmod 750 /run/controller-auth && chown -R 1000:1000 /data /run/controller-auth
+RUN mkdir -p /data/exports /data/outputs /data/inputs/.staging /data/inputs/uploads /data/inputs/datasets /data/inputs/snapshots /data/api-state /run/controller-auth /run/guard-auth && chmod 700 /data/api-state && chmod 750 /run/controller-auth /run/guard-auth && chown -R 1000:1000 /data /run/controller-auth /run/guard-auth
 USER 1000:1000
 CMD ["python", "scripts/check_python.py"]

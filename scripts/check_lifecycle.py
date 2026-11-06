@@ -22,6 +22,7 @@ from mslb_persistence.docker_records import ControlLease
 from mslb_persistence.docker_resources import DockerResources
 
 from scripts.check_docker_outputs import check_outputs
+from scripts.check_resource_probe import check_resource_probe
 from tests.integration.helpers import scratch
 from tests.integration.test_docker_control import expire
 from tests.integration.test_persistence import prepare
@@ -138,6 +139,7 @@ async def crash_create() -> None:
 
 
 async def main() -> None:
+    await check_resource_probe()
     # The actual installed service accepts only its own scoped credential; no raw API route.
     scoped = ControlClient()
     try:

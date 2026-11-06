@@ -34,7 +34,7 @@ x-backend: &backend
 services:
   control-init:
     image: mslb-python-tools:local
-    command: [python, -m, mslb_controller.credentials]
+    command: [python, -m, mslb_controller.credentials, --all]
     user: "1000:1000"
     read_only: true
     cap_drop: [ALL]
@@ -44,7 +44,7 @@ services:
     cpus: 0.25
     pids_limit: 16
     network_mode: none
-    volumes: [controller-auth:/run/controller-auth]
+    volumes: [controller-auth:/run/controller-auth, guard-auth:/run/guard-auth]
   docker-proxy:
     image: mslb-python-tools:local
     command: [python, -m, mslb_controller.proxy_main]
@@ -61,7 +61,7 @@ services:
     environment:
       DATABASE_URL: postgresql://mslb:local-demo-only@postgres/mslb
       PROXY_BIND_HOST: 0.0.0.0
-    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro", "controller-auth:/run/controller-auth:ro"]
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro", "controller-auth:/run/controller-auth:ro", "guard-auth:/run/guard-auth:ro"]
     networks: [docker-control, control-data, docker-traffic]
     depends_on:
       control-init: {condition: service_completed_successfully}
@@ -96,7 +96,7 @@ services:
     pids_limit: 48
     environment:
       TEST_DATABASE_URL: postgresql://mslb:local-demo-only@postgres/mslb
-    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro", "controller-auth:/run/controller-auth:ro"]
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro", "controller-auth:/run/controller-auth:ro", "guard-auth:/run/guard-auth:ro"]
     networks: [docker-control, control-data, docker-traffic]
     depends_on:
       docker-proxy: {condition: service_healthy}
@@ -125,3 +125,4 @@ networks:
 
 volumes:
   controller-auth:
+  guard-auth:

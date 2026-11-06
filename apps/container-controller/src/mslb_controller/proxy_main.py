@@ -12,8 +12,12 @@ from mslb_controller.proxy import create_app
 
 def build() -> FastAPI:
     return create_app(
-        Database(os.environ["DATABASE_URL"], os.environ.get("CONTROL_DATABASE_SCHEMA", "public")),
-        read_token(),
+        database=Database(
+            url=os.environ["DATABASE_URL"],
+            schema=os.environ.get("CONTROL_DATABASE_SCHEMA", "public"),
+        ),
+        token=read_token(role="controller"),
+        guard_token=read_token(role="guard"),
     )
 
 

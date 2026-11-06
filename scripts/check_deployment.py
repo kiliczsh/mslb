@@ -52,6 +52,12 @@ def check(payload: bytes) -> None:
                 and not mount.read_only
             ):
                 raise ValueError("Controller credential mounts are private and read-only")
+            if "guard-auth" in mount.source and (
+                name not in {"control-init", "resource-guard", "docker-proxy", "docker-proxy-check"}
+                or name != "control-init"
+                and not mount.read_only
+            ):
+                raise ValueError("Guard credential mounts are isolated and read-only")
         for port in service.ports:
             if name in {
                 "postgres",

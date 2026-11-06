@@ -1,19 +1,26 @@
-"""Runtime-only controller credential shared through a private project volume."""
+"""Runtime-only isolated controller/guard credentials in private project volumes."""
 
+import argparse
 import os
 import re
 import secrets
 import stat
 from pathlib import Path
+from typing import Literal
 
-ROOT = Path("/run/controller-auth")
-TOKEN = ROOT / "token"
+type Role = Literal["controller", "guard"]
 
 
-def read_token() -> str:
-    descriptor = os.open(TOKEN, os.O_RDONLY | os.O_NOFOLLOW)
-    with os.fdopen(descriptor, "r", encoding="ascii") as stream:
-        info = os.fstat(stream.fileno())
+def root(*, role: Role) -> Path:
+    if role not in {"controller", "guard"}:
+        raise ValueError("Unknown private credential role")
+    return Path("/run/controller-auth" if role == "controller" else "/run/guard-auth")
+
+
+def read_token(*, role: Role = "controller") -> str:
+    descriptor = os.open(path=root(role=role) / "token", flags=os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(fd=descriptor, mode="r", encoding="ascii") as stream:
+        info = os.fstat(fd=stream.fileno())
         if (
             not stat.S_ISREG(info.st_mode)
             or info.st_uid != 1000
@@ -23,24 +30,38 @@ def read_token() -> str:
         ):
             raise ValueError("Controller credential permissions are invalid")
         token = stream.read(65)
-    if not re.fullmatch(r"[0-9a-f]{64}", token):
+    if not re.fullmatch(pattern=r"[0-9a-f]{64}", string=token):
         raise ValueError("Controller credential is invalid")
     return token
 
 
-def initialize() -> None:
-    ROOT.chmod(0o750)
+def initialize(*, role: Role = "controller") -> None:
+    directory = root(role=role)
+    directory.chmod(mode=0o750)
     try:
-        descriptor = os.open(TOKEN, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o440)
+        descriptor = os.open(
+            path=directory / "token",
+            flags=os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+            mode=0o440,
+        )
     except FileExistsError:
-        read_token()
+        read_token(role=role)
         return
-    with os.fdopen(descriptor, "w", encoding="ascii") as stream:
-        stream.write(secrets.token_hex(32))
+    with os.fdopen(fd=descriptor, mode="w", encoding="ascii") as stream:
+        stream.write(secrets.token_hex(nbytes=32))
         stream.flush()
-        os.fsync(stream.fileno())
-    read_token()
+        os.fsync(fd=stream.fileno())
+    read_token(role=role)
 
 
 if __name__ == "__main__":
-    initialize()
+    parser = argparse.ArgumentParser(description="Initialize isolated private credentials")
+    parser.add_argument("--all", action="store_true")
+    parser.add_argument("role", choices=("controller", "guard"), nargs="?", default="controller")
+    arguments = parser.parse_args()
+    selected: Role = "guard" if arguments.role == "guard" else "controller"
+    if arguments.all:
+        initialize(role="controller")
+        initialize(role="guard")
+    else:
+        initialize(role=selected)

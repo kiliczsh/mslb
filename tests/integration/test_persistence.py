@@ -113,7 +113,7 @@ def test_migrations_are_repeatable_match_models_and_downgrade_cleanly() -> None:
                 assert consistent
                 assert (
                     await connection.scalar(text("SELECT version_num FROM alembic_version"))
-                    == "docker_control"
+                    == "resource_evidence"
                 )
 
                 def downgrade(sync: Connection) -> None:
