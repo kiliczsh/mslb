@@ -3,7 +3,7 @@ import { createReadStream } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import { z } from "zod";
-import { acceptedSchema, detailSchema, serverSchema } from "../src/lib/contracts.js";
+import { acceptedSchema, detailSchema, serverSchema } from "../src/shared/api/contracts.js";
 
 const fixtureHeaders = {
   Authorization: `Bearer ${process.env.AUTH_TOKEN ?? ""}`,

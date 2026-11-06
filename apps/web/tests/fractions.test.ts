@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseFraction, serializeFraction } from "../src/lib/fractions.js";
+import { parseFraction, serializeFraction } from "../src/shared/fractions.js";
 
 test("120-bit simulation metric survives JSON and BigInt round trips", () => {
   const wire = {
