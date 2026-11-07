@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from mslb_contracts.catalog import ServerView
-from mslb_contracts.docker_artifacts import HttpRecord
+from mslb_contracts.docker_artifacts import HttpRecord, RuntimeRecord
 from mslb_contracts.docker_views import (
     DockerEventArguments,
     DockerRunCommand,
@@ -44,7 +44,7 @@ from mslb_contracts.run_views import RunView, WaitResult
 from pydantic import BaseModel
 
 DIALECT = "https://json-schema.org/draft/2020-12/schema"
-CONTRACT_VERSION = "2.2.0"
+CONTRACT_VERSION = "2.3.0"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -221,6 +221,7 @@ COMMON = {
     "fraction": FractionValue,
     "event": PersistedEvent,
     "docker-run": DockerRunDetail,
+    "docker-runtime": RuntimeRecord,
     "docker-create": DockerSimulationCreate,
     "docker-event": HttpRecord,
 }

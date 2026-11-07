@@ -71,7 +71,7 @@ def test_desktop_requires_distinct_host_samples_and_independent_host_headroom() 
     for second in (3, 4):
         value = desktop_probe(second=second)
         decision = policy.evaluate(probe=value, now=value.measured_at)
-    assert decision.admit and decision.cap_sum_bytes == 3712 * MIB
+    assert decision.admit and decision.cap_sum_bytes == 3744 * MIB
     assert safe_to_admit(probe=value)
     assert value.host_memory is not None
     required = host_memory_headroom(probe=value)
@@ -127,7 +127,7 @@ def test_admission_needs_three_distinct_cool_samples_and_counts_future_growth() 
     first = policy.evaluate(probe=initial, now=EPOCH)
     for _ in range(10):
         assert not policy.evaluate(probe=initial, now=EPOCH).admit
-    assert first.reason == "WARMING_UP" and first.cap_sum_bytes == 3648 * MIB
+    assert first.reason == "WARMING_UP" and first.cap_sum_bytes == 3680 * MIB
     warm(policy=ResourcePolicy())
     for second in (1, 2):
         value = probe(second=second)

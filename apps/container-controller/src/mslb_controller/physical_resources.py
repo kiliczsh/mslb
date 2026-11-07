@@ -107,6 +107,8 @@ class PhysicalResources:
                 await self.observe(resource=record)
                 spec = BackendSpec(
                     id=record.name,
+                    resource_id=record.id,
+                    container_id=record.container_id,
                     logical_admission_mem_mb=self.settings.logical_admission_mem_mb
                     if record.kind == "dynamic"
                     else 1024,

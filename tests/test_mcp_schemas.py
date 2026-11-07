@@ -13,7 +13,7 @@ def test_generated_inventory_is_stable_valid_complete_and_detects_missing_files(
     files = artifacts()
     assert files == artifacts()
     manifest = json.loads(s=files["manifest.json"])
-    assert manifest["contract_version"] == "2.2.0"
+    assert manifest["contract_version"] == "2.3.0"
     assert {item["uri"] for item in manifest["resources"]} == {
         "mslb://servers",
         "mslb://strategies",

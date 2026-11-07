@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { statusSchema } from "./contracts.js";
+import { backendMeasurementsSchema, dockerProgressSchema } from "./dockerObservationContracts.js";
 import { resourceDecisionSchema } from "./resourceContracts.js";
 
 const integer = (max: number, min = 0) => z.number().int().min(min).max(max);
@@ -150,6 +151,8 @@ export const dockerDetailSchema = z.strictObject({
     )
     .max(64),
   summary: dockerSummarySchema.nullable(),
+  progress: dockerProgressSchema.nullable().default(null),
+  observations: z.array(backendMeasurementsSchema).max(64).default([]),
   artifacts: z
     .array(
       z.strictObject({

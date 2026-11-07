@@ -38,7 +38,7 @@ SERVICE_LIMITS_MB: dict[ServiceName, int] = {
     "worker": 1024,
     "postgres": 768,
     "redis": 192,
-    "docker-proxy": 128,
+    "docker-proxy": 160,
     "backend-a": 128,
     "backend-b": 128,
     "container-controller": 192,

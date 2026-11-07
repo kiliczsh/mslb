@@ -13,6 +13,7 @@ from mslb_controller.routing_models import (
     STRATEGIES,
     BackendSpec,
     BackendState,
+    HealthObserver,
     Reservation,
     Strategy,
 )
@@ -34,6 +35,7 @@ class Router:
     backend_inflight: int = 4
     admission_mem_mb: int = 1_000_000_000
     clock: Callable[[], float] = time.monotonic
+    health_observer: HealthObserver | None = field(default=None, kw_only=True)
     states: dict[str, BackendState] = field(init=False)
     anchor: str | None = field(default=None, init=False)
     started: float = field(init=False)
@@ -65,6 +67,8 @@ class Router:
             except TrafficError:
                 state.observed = None
                 state.healthy = False
+            if self.health_observer is not None:
+                self.health_observer(spec=state.spec, health=state.observed)
 
     def add(self, *, spec: BackendSpec, observed: BackendHealth) -> None:
         """Add inspected healthy membership while preserving existing reservation objects."""
@@ -78,6 +82,8 @@ class Router:
         ):
             raise ValueError("New backend membership is inconsistent")
         self.states[spec.id] = BackendState(spec=spec, healthy=True, observed=observed)
+        if self.health_observer is not None:
+            self.health_observer(spec=spec, health=observed)
         self.states = dict(sorted(self.states.items()))
         self.specs = tuple(state.spec for state in self.states.values())
 

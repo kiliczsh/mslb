@@ -23,6 +23,7 @@ from mslb_contracts.docker_runtime import HttpEvent
 from mslb_contracts.durability import StoredFile
 from mslb_contracts.inputs import RequestInput, input_digest
 from mslb_controller.routing import BackendSpec
+from mslb_controller.runtime_observations import RuntimeObservations
 from mslb_controller.traffic import TrafficDriver
 from mslb_persistence.docker_records import ResourceRecord
 
@@ -44,6 +45,7 @@ async def candidate(
     configuration: DockerSettings | None = None,
     count: int = 2,
     delay_kind: str | None = None,
+    measured: bool = False,
 ) -> Candidate:
     requests = rows(count=count)
     snapshot = DockerSnapshot(
@@ -75,6 +77,7 @@ async def candidate(
     )
     files = ManagedFiles(root=root, limits=StorageLimits(min_free_bytes=0))
     http = Transport()
+    recorder = RuntimeObservations()
     try:
         async with DockerOutputs(
             files=files, run_id=run_id, fence=3, snapshot=snapshot, requests=requests
@@ -90,15 +93,24 @@ async def candidate(
 
             driver = TrafficDriver(
                 configuration=snapshot.configuration,
-                specs=(BackendSpec(id="backend-a"),),
+                specs=(
+                    BackendSpec(
+                        id="backend-a",
+                        resource_id=resource_id if measured else None,
+                        container_id="b" * 64 if measured else None,
+                    ),
+                ),
+                health_observer=recorder.sample if measured else None,
                 http=http,
                 sink=DelayedSink(),
                 clock=clock,
             )
             summary = await driver.execute(requests=requests)
+            if measured:
+                await driver.router.refresh()
             if release:
                 await output.observe(resource=replace(resource, state="released"))
-            manifest = await output.finalize(summary=summary)
+            manifest = await output.finalize(summary=summary, observations=recorder.measurements())
             return Candidate(files=files, manifest=manifest, snapshot=snapshot, requests=requests)
     finally:
         await http.close()
@@ -286,3 +298,30 @@ def test_peak_replay_accounts_for_overflow_and_reserved_but_unsent_work(
         assert runtime.traffic.completed == 2 and runtime.traffic.dropped == 2
     else:
         assert runtime.traffic.unexecuted == 2 and runtime.traffic.completed == 0
+
+
+def test_versioned_measurements_bind_to_actual_owned_lifecycle(tmp_path: Path) -> None:
+    saved = asyncio.run(main=candidate(root=tmp_path, measured=True))
+    runtime = verify_docker_outputs(
+        files=saved.files, manifest=saved.manifest, snapshot=saved.snapshot, requests=saved.requests
+    )
+    assert runtime.schema_version == 2 and len(runtime.observations) == 1
+    assert runtime.observations[0].samples == 2 and runtime.observations[0].cpu_delta_usec is None
+    original = saved.manifest.artifacts["runtime_summary.json"]
+    path = saved.files.path(key=original.key)
+    value = json.loads(s=path.read_bytes())
+    wrong = str(object=uuid4())
+    value["observations"][0]["first"]["resource_id"] = wrong
+    value["observations"][0]["latest"]["resource_id"] = wrong
+    raw = canonical_bytes(value=value)
+    path.write_bytes(data=raw)
+    changed = StoredFile(
+        key=original.key, sha256=hashlib.sha256(string=raw).hexdigest(), size_bytes=len(raw)
+    )
+    manifest = saved.manifest.model_copy(
+        update={"artifacts": {**saved.manifest.artifacts, "runtime_summary.json": changed}}
+    )
+    with pytest.raises(expected_exception=OperationError, match="owned lifecycle"):
+        verify_docker_outputs(
+            files=saved.files, manifest=manifest, snapshot=saved.snapshot, requests=saved.requests
+        )

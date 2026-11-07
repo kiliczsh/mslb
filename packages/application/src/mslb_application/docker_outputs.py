@@ -8,6 +8,7 @@ from uuid import UUID
 
 from mslb_contracts.canonical import canonical_bytes
 from mslb_contracts.docker_artifacts import HttpRecord, LifecycleRecord, RuntimeRecord
+from mslb_contracts.docker_observations import BackendMeasurements
 from mslb_contracts.docker_runs import DockerManifest, DockerSnapshot
 from mslb_contracts.docker_runtime import HttpEvent, TrafficSummary
 from mslb_contracts.durability import StoredFile
@@ -121,16 +122,24 @@ class DockerOutputs:
         self.lifecycle.write(data=canonical_bytes(value=event.model_dump(mode="json")))
         self.lifecycle_count += 1
 
-    async def finalize(self, *, summary: TrafficSummary) -> DockerManifest:
-        return await self.run(operation=lambda: self.publish(summary=summary))
+    async def finalize(
+        self, *, summary: TrafficSummary, observations: tuple[BackendMeasurements, ...] = ()
+    ) -> DockerManifest:
+        return await self.run(
+            operation=lambda: self.publish(summary=summary, observations=observations)
+        )
 
-    def publish(self, *, summary: TrafficSummary) -> DockerManifest:
+    def publish(
+        self, *, summary: TrafficSummary, observations: tuple[BackendMeasurements, ...] = ()
+    ) -> DockerManifest:
         """Verify terminal accounting and return candidates for fenced database publication."""
         if self.http is None or self.lifecycle is None:
             raise OperationError(code="INVALID_STATE", message="Docker output spool is not open")
         self.http.sync()
         self.lifecycle.sync()
         runtime = RuntimeRecord(
+            schema_version=2 if observations else 1,
+            observations=observations,
             run_id=self.run_id,
             fence=self.fence,
             snapshot_digest=self.snapshot.digest(),
@@ -138,11 +147,17 @@ class DockerOutputs:
             traffic=summary,
             lifecycle_events=self.lifecycle_count,
         )
+        runtime_bytes = canonical_bytes(value=runtime.model_dump(mode="json"))
+        if len(runtime_bytes) > (128 * 1024 if observations else 16 * 1024):
+            raise OperationError(
+                code="RESOURCE_LIMIT_EXCEEDED",
+                message="Runtime observations exceed their byte bound",
+            )
         artifacts: dict[str, StoredFile] = {}
         for name, blocks in (
             ("http_events.jsonl", chunks(stream=self.http.stream)),
             ("container_lifecycle.jsonl", chunks(stream=self.lifecycle.stream)),
-            ("runtime_summary.json", (canonical_bytes(value=runtime.model_dump(mode="json")),)),
+            ("runtime_summary.json", (runtime_bytes,)),
         ):
             saved = self.files.publish(key=self.prefix + name, chunks=blocks, maximum=256 * 1024**2)
             artifacts[name] = StoredFile(

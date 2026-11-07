@@ -6,6 +6,7 @@ from uuid import UUID
 
 from mslb_contracts.canonical import canonical_bytes
 from mslb_contracts.docker_artifacts import HttpRecord, LifecycleRecord, RuntimeRecord, ScopeRecord
+from mslb_contracts.docker_observations import BackendMeasurements
 from mslb_contracts.docker_runs import CreationIntent, DockerManifest, DockerSnapshot
 from mslb_contracts.inputs import RequestInput, input_digest
 from pydantic import ValidationError
@@ -37,7 +38,12 @@ def scoped(*, record: ScopeRecord, run_id: UUID, fence: int, snapshot: DockerSna
 
 
 def lifecycle_inventory(
-    *, stream: BinaryIO, run_id: UUID, fence: int, snapshot: DockerSnapshot
+    *,
+    stream: BinaryIO,
+    run_id: UUID,
+    fence: int,
+    snapshot: DockerSnapshot,
+    observations: tuple[BackendMeasurements, ...] = (),
 ) -> tuple[int, dict[str, tuple[int, int]]]:
     """Verify resource history and derive approved capacities from scoped lifecycle records."""
     records: dict[UUID, LifecycleRecord] = {}
@@ -100,6 +106,14 @@ def lifecycle_inventory(
         condition=bool(records) and all(value.state in RESOLVED for value in records.values()),
         message="Docker lifecycle has unresolved resources",
     )
+    for item in observations:
+        resource = records.get(item.first.resource_id)
+        require(
+            condition=resource is not None
+            and resource.container_id == item.first.container_id
+            and resource.name == item.first.health.backend_id,
+            message="Measured backend was not present in the owned lifecycle",
+        )
     return count, capacities
 
 
@@ -121,9 +135,13 @@ def verify_docker_outputs(
         with files.verified_stream(
             reference=FileReference(**manifest.artifacts["runtime_summary.json"].model_dump())
         ) as stream:
-            raw = stream.read(16 * 1024 + 1)
-        require(condition=len(raw) <= 16 * 1024, message="Docker summary exceeds its envelope")
+            raw = stream.read(128 * 1024 + 1)
+        require(condition=len(raw) <= 128 * 1024, message="Docker summary exceeds its envelope")
         runtime = RuntimeRecord.model_validate_json(json_data=raw)
+        require(
+            condition=runtime.schema_version == 2 or len(raw) <= 16 * 1024,
+            message="Legacy Docker summary exceeds its envelope",
+        )
         require(
             condition=canonical_bytes(value=runtime.model_dump(mode="json")) == raw,
             message="Docker summary bytes are noncanonical",
@@ -150,6 +168,7 @@ def verify_docker_outputs(
                 run_id=manifest.run_id,
                 fence=manifest.publication_fence,
                 snapshot=snapshot,
+                observations=runtime.observations,
             )
         require(
             condition=lifecycle_count == runtime.lifecycle_events,

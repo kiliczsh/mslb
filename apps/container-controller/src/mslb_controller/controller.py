@@ -14,6 +14,7 @@ from mslb_persistence.catalog import Catalog
 from mslb_persistence.database import Database, StoreError
 from mslb_persistence.docker_catalog import DockerCatalog
 from mslb_persistence.docker_control import RESOLVED, DockerControl
+from mslb_persistence.docker_progress import DockerProgressStore
 from mslb_persistence.docker_records import ControlLease
 from mslb_persistence.docker_resources import DockerResources
 from mslb_persistence.jobs import Jobs
@@ -25,6 +26,8 @@ from mslb_controller.control_client import ControlClient
 from mslb_controller.errors import EngineError, TrafficError
 from mslb_controller.physical_resources import PhysicalResources, ResourceObserver, initial_backends
 from mslb_controller.physical_scaling import PhysicalScaling
+from mslb_controller.router import Router
+from mslb_controller.runtime_observations import RuntimeObservations
 from mslb_controller.traffic import TrafficDriver
 
 FAILURES = (
@@ -190,14 +193,37 @@ class Controller:
                     retire=physical.retire,
                     clock=time.monotonic,
                 )
-                summary = await TrafficDriver(
+                observations = RuntimeObservations()
+                progress = DockerProgressStore(database=self.database)
+
+                async def update(*, router: Router, pending: int) -> None:
+                    await scaling.evaluate(router=router, pending=pending)
+                    if state.owns and state.stopped() is None:
+                        await progress.write(
+                            lease=state.lease,
+                            frame=observations.progress(
+                                router=router,
+                                pending=pending,
+                                elapsed=driver.elapsed(),
+                                run_id=run.id,
+                                fence=state.lease.fence,
+                                snapshot_digest=snapshot.digest(),
+                            ),
+                        )
+
+                driver = TrafficDriver(
                     configuration=settings,
                     specs=tuple(ready.spec for ready in initial),
                     http=http,
                     sink=outputs,
                     stop=state.stopped,
-                    membership=scaling.evaluate,
-                ).execute(requests=requests)
+                    membership=update,
+                    health_observer=observations.sample,
+                )
+                summary = await driver.execute(requests=requests)
+                if summary.status == "completed" and state.owns:
+                    await driver.router.refresh()
+                    await update(router=driver.router, pending=0)
                 if not state.owns:
                     return
                 await self._begin(
@@ -207,7 +233,9 @@ class Controller:
                 )
                 await self._cleanup(state=state, observe=outputs.observe)
                 manifest = (
-                    await outputs.finalize(summary=summary)
+                    await outputs.finalize(
+                        summary=summary, observations=observations.measurements()
+                    )
                     if summary.status == "completed"
                     else None
                 )

@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import AwareDatetime, Field, field_validator, model_validator
 
 from mslb_contracts.docker_base import DockerModel
+from mslb_contracts.docker_observations import BackendMeasurements, BackendSample
 from mslb_contracts.docker_ownership import CreationIntent, StaticReservation
 from mslb_contracts.docker_runtime import HttpEvent, TrafficSummary
 from mslb_contracts.durability import StoredFile
@@ -92,13 +93,59 @@ class LifecycleRecord(ScopeRecord):
         return self
 
 
-class RuntimeRecord(ScopeRecord):
-    """Bind bounded terminal HTTP accounting to its operational run scope."""
+class DockerProgress(ScopeRecord):
+    """One bounded actual controller frame, usable only with current SQL ownership/freshness."""
 
-    schema_version: Annotated[int, Field(ge=1, le=1)] = 1
+    schema_version: Literal[1] = 1
+    mode: Literal["docker"] = "docker"
+    elapsed_seconds: Annotated[float, Field(ge=0, allow_inf_nan=False)]
+    pending: Annotated[int, Field(ge=0, le=256)]
+    inflight: Annotated[int, Field(ge=0, le=16)]
+    backends: Annotated[tuple[BackendSample, ...], Field(max_length=4)]
+    unavailable_backends: Annotated[tuple[str, ...], Field(max_length=4)]
+
+    @model_validator(mode="after")
+    def samples(self) -> Self:
+        names = [sample.health.backend_id for sample in self.backends]
+        if (
+            len(names) + len(self.unavailable_backends) > 4
+            or len(set(names)) != len(names)
+            or len({sample.resource_id for sample in self.backends}) != len(self.backends)
+            or len(set(self.unavailable_backends)) != len(self.unavailable_backends)
+            or set(names).intersection(self.unavailable_backends)
+            or any(not 1 <= len(name) <= 128 for name in self.unavailable_backends)
+            or any(
+                not 0 <= (self.observed_at - sample.observed_at).total_seconds() <= 3
+                for sample in self.backends
+            )
+        ):
+            raise ValueError("Live backend observations exceed identity/freshness bounds")
+        return self
+
+
+class RuntimeRecord(ScopeRecord):
+    """Bind terminal accounting and optional measured windows to the operational scope."""
+
+    schema_version: Literal[1, 2] = 1
     mode: Literal["docker"] = "docker"
     traffic: TrafficSummary
     lifecycle_events: Annotated[int, Field(ge=1, le=1024)]
+    observations: Annotated[tuple[BackendMeasurements, ...], Field(max_length=64)] = Field(
+        default=(), exclude_if=lambda value: not value
+    )
+
+    @model_validator(mode="after")
+    def measurements(self) -> Self:
+        if (
+            (self.schema_version == 1 and self.observations)
+            or (
+                len({item.first.resource_id for item in self.observations})
+                != len(self.observations)
+            )
+            or any(item.latest.observed_at > self.observed_at for item in self.observations)
+        ):
+            raise ValueError("Runtime observation version, scope or clock differs")
+        return self
 
 
 class DockerManifest(DockerModel):

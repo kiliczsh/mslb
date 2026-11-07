@@ -5,17 +5,23 @@ from datetime import datetime
 from uuid import UUID
 
 from mslb_contracts.canonical import canonical_bytes
-from mslb_contracts.docker_artifacts import DockerManifest
+from mslb_contracts.docker_artifacts import DockerManifest, DockerProgress
 from mslb_contracts.docker_views import DockerResourceView, DockerRunView
 from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mslb_persistence.database import Database
 from mslb_persistence.docker_control import RESOLVED
-from mslb_persistence.docker_models import DockerControlSlot, DockerPublication, DockerResource
+from mslb_persistence.docker_models import (
+    DockerControlSlot,
+    DockerPublication,
+    DockerResource,
+    DockerRunState,
+)
 from mslb_persistence.errors import StoreError
 from mslb_persistence.job_models import Job, Run
 from mslb_persistence.reads import check_limit
+from mslb_persistence.transaction_clock import database_now
 
 
 def view(*, run: Run, job: Job) -> DockerRunView:
@@ -46,6 +52,7 @@ class DockerRead:
     resources: tuple[DockerResourceView, ...]
     cleanup_pending: bool
     manifest: DockerManifest | None
+    progress: DockerProgress | None = None
 
 
 class DockerReads:
@@ -137,11 +144,56 @@ class DockerReads:
                 raise StoreError(
                     code="VALIDATION_FAILED", message="Completed Docker publication is missing"
                 )
+            progress = None
+            state = await session.get(entity=DockerRunState, ident=run_id)
+            now = await database_now(session=session)
+            if (
+                state is not None
+                and state.latest_progress is not None
+                and job.status == "running"
+                and slot is not None
+                and slot.run_id == run_id
+                and slot.phase == "running"
+                and slot.fence == job.fence
+                and slot.lease_expires_at is not None
+                and slot.lease_expires_at > now
+            ):
+                candidate = DockerProgress.model_validate_json(
+                    json_data=canonical_bytes(value=state.latest_progress)
+                )
+                if (
+                    candidate.run_id != run_id
+                    or candidate.fence != job.fence
+                    or candidate.snapshot_digest != run.snapshot_digest
+                ):
+                    raise StoreError(
+                        code="VALIDATION_FAILED", message="Stored live frame scope differs"
+                    )
+                if 0 <= (now - candidate.observed_at).total_seconds() <= 3 and all(
+                    0 <= (now - sample.observed_at).total_seconds() <= 3
+                    for sample in candidate.backends
+                ):
+                    identities = {item.id: item for item in resources if item.state not in RESOLVED}
+                    if any(
+                        name not in {item.name for item in identities.values()}
+                        for name in candidate.unavailable_backends
+                    ) or any(
+                        sample.resource_id not in identities
+                        or sample.container_id != identities[sample.resource_id].container_id
+                        or sample.health.backend_id != identities[sample.resource_id].name
+                        for sample in candidate.backends
+                    ):
+                        raise StoreError(
+                            code="VALIDATION_FAILED",
+                            message="Stored live backend is no longer owned",
+                        )
+                    progress = candidate
             return DockerRead(
                 run=view(run=run, job=job),
                 resources=public,
                 cleanup_pending=pending,
                 manifest=manifest,
+                progress=progress,
             )
 
         return await self.database.transaction(operation=operation)

@@ -15,7 +15,7 @@ from mslb_controller.backend_http import BackendHttp
 from mslb_controller.errors import DispatchRefused as DispatchRefused
 from mslb_controller.errors import TrafficError
 from mslb_controller.router import Router
-from mslb_controller.routing_models import BackendSpec, Reservation
+from mslb_controller.routing_models import BackendSpec, HealthObserver, Reservation
 from mslb_controller.traffic_clock import MonotonicClock as MonotonicClock
 from mslb_controller.traffic_protocols import Clock as Clock
 from mslb_controller.traffic_protocols import EventSink as EventSink
@@ -33,6 +33,7 @@ class TrafficDriver:
     clock: Clock = field(default_factory=MonotonicClock)
     stop: Callable[[], StopReason | None] = lambda: None
     membership: Membership | None = None
+    health_observer: HealthObserver | None = None
     router: Router = field(init=False)
     used: bool = field(default=False, init=False)
     started: float = field(default=0, init=False)
@@ -71,6 +72,7 @@ class TrafficDriver:
             backend_inflight=settings.backend_inflight,
             admission_mem_mb=settings.logical_admission_mem_mb,
             clock=self.clock.now,
+            health_observer=self.health_observer,
         )
 
     def elapsed(self) -> float:

@@ -126,7 +126,7 @@ def test_migrations_are_repeatable_match_models_and_downgrade_cleanly() -> None:
                     await connection.scalar(
                         statement=text(text="SELECT version_num FROM alembic_version")
                     )
-                    == "bounded_stress_profile"
+                    == "docker_progress"
                 )
 
                 def downgrade(sync: Connection) -> None:

@@ -1,40 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useRef, useState } from "react";
+import { useState } from "react";
 import type { Api } from "../../shared/api/api.js";
 import { terminal } from "../../shared/api/contracts.js";
 import type { DockerDetail as Detail } from "../../shared/api/dockerContracts.js";
 import { Feedback } from "../../shared/ui/Feedback.js";
 import { RunDownloads } from "../results/RunDownloads.js";
-
-function ScrollTable({ label, children }: { label: string; children: ReactNode }) {
-  const viewport = useRef<HTMLDivElement>(null);
-  return (
-    <section aria-label={label}>
-      <div className="table-scroll" ref={viewport}>
-        {children}
-      </div>
-      <div className="actions">
-        {(
-          [
-            ["left", -250, 0],
-            ["right", 250, 0],
-            ["up", 0, -250],
-            ["down", 0, 250],
-          ] as const
-        ).map(([direction, left, top]) => (
-          <button
-            key={direction}
-            type="button"
-            aria-label={`Scroll ${label} ${direction}`}
-            onClick={() => viewport.current?.scrollBy({ left, top, behavior: "instant" })}
-          >
-            Scroll {direction}
-          </button>
-        ))}
-      </div>
-    </section>
-  );
-}
+import { DockerMeasurements } from "./DockerMeasurements.js";
+import { ScrollTable } from "./ScrollableTable.js";
 
 function Events({ api, id }: { api: Api; id: string }) {
   const [cursor, setCursor] = useState<string | null>(null);
@@ -121,6 +93,7 @@ function Result({ api, value }: { api: Api; value: Detail }) {
             requests/second. These operational outcomes are independently checked against the
             matching HTTP and lifecycle files.
           </p>
+          <DockerMeasurements value={value} active={false} />
           <RunDownloads api={api} runId={value.run.id} mode="docker" />
           <Events api={api} id={value.run.id} />
         </section>
@@ -204,6 +177,7 @@ export function DockerDetail({ api, id }: { api: Api; id: string }) {
                 : ""}
             </p>
           )}
+          {!terminal(value.run.status) && <DockerMeasurements value={value} active />}
           {!value.summary && (
             <p>
               Verified result files become available after successful completion and owned cleanup.

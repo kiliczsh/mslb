@@ -40,6 +40,7 @@ async function prepare({ page, work, count }: { page: Page; work: number; count:
   await page.getByLabel("Per-backend HTTP inflight limit").fill("1");
   await page.getByLabel("Global HTTP inflight limit").fill("2");
   await page.getByLabel("Pending timeout (seconds)").fill("120");
+  if (work >= 1000) await page.getByLabel("Starts per backend per second").fill("1");
   await page.getByLabel("Docker scheduling strategy").selectOption("round_robin");
   await page.getByRole("button", { name: "Review Docker snapshot", exact: true }).click();
   const response = page.waitForResponse(
@@ -69,6 +70,16 @@ test("operational Docker browser completes actual HTTP, matching downloads and n
   expect(response.status()).toBe(200);
   const saved = dockerDetailSchema.parse(await response.json());
   expect(saved.summary?.completed).toBe(9);
+  expect(saved.observations).toHaveLength(3);
+  for (const window of saved.observations) {
+    expect(window.samples).toBeGreaterThanOrEqual(2);
+    expect(window.sampled_peak_rss_bytes).toBeGreaterThan(0);
+    expect(window.sampled_peak_cgroup_memory_bytes).toBeGreaterThan(0);
+    expect(window.cpu_delta_usec).not.toBeNull();
+  }
+  await expect(
+    page.getByRole("region", { name: "Measured Docker runtime", exact: true }),
+  ).toContainText("CPU/throttling");
   expect(saved.cleanup_pending).toBe(false);
   expect(saved.resources.some((r) => r.kind === "dynamic" && r.state === "removed")).toBe(true);
   await expect(page.getByRole("region", { name: "Real HTTP results" })).toContainText("9");
@@ -156,10 +167,14 @@ test("operational Docker browser cancels running owned work and retains selectio
       const value = dockerDetailSchema.parse(await r.json());
       return (
         value.run.status === "running" &&
-        value.resources.some((x) => x.kind === "dynamic" && x.state === "started")
+        value.resources.some((x) => x.kind === "dynamic" && x.state === "started") &&
+        value.progress?.backends.some((sample) => sample.health.rss_bytes !== null) === true
       );
     })
     .toBe(true);
+  await expect(
+    page.getByRole("region", { name: "Measured Docker runtime", exact: true }),
+  ).toContainText("controller HTTP reservations");
   await page.getByRole("button", { name: "Cancel Docker run", exact: true }).click();
   await page.getByRole("button", { name: "Home", exact: true }).click();
   await page.getByRole("button", { name: "Docker traffic", exact: true }).click();

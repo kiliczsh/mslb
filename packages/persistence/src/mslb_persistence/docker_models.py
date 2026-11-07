@@ -44,6 +44,11 @@ class DockerRunState(Base):
             ),
             name="desired_status",
         ),
+        CheckConstraint(
+            sqltext="latest_progress IS NULL OR (jsonb_typeof(latest_progress) = 'object' "
+            "AND octet_length(latest_progress::text) <= 16384)",
+            name="latest_progress",
+        ),
     )
     run_id: Mapped[UUID] = MappedColumn[UUID](
         ForeignKey(column="runs.id", ondelete="RESTRICT"), primary_key=True
@@ -54,6 +59,9 @@ class DockerRunState(Base):
     snapshot: Mapped[dict[str, object]] = MappedColumn[dict[str, object]](JSONB)
     desired_status: Mapped[str | None] = MappedColumn[str | None](String(length=16))
     desired_error: Mapped[str | None] = MappedColumn[str | None](String(length=64))
+    latest_progress: Mapped[dict[str, object] | None] = MappedColumn[dict[str, object] | None](
+        JSONB(none_as_null=True), nullable=True
+    )
 
 
 class DockerControlSlot(Base):

@@ -156,10 +156,17 @@ class DockerServices:
             cleanup_pending=saved.cleanup_pending,
             resources=saved.resources,
             admission=report.decision,
+            progress=saved.progress,
         )
         if saved.manifest is not None:
             runtime, artifacts = await self._completed(saved=saved)
-            detail = detail.model_copy(update={"summary": runtime.traffic, "artifacts": artifacts})
+            detail = detail.model_copy(
+                update={
+                    "summary": runtime.traffic,
+                    "artifacts": artifacts,
+                    "observations": runtime.observations,
+                }
+            )
         return self.queries._bounded(value=detail)
 
     async def cancel(self, *, run_id: UUID) -> DockerRunDetail:

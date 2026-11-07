@@ -19,6 +19,7 @@ from mslb_contracts.docker_artifacts import HttpRecord
 from mslb_contracts.docker_views import DockerRunDetail, DockerRunView
 from mslb_contracts.http import SimulationAccepted
 from mslb_contracts.pagination import Page
+from mslb_contracts.resources import ResourceDecision
 from pydantic import BaseModel
 
 
@@ -57,6 +58,19 @@ async def main() -> None:
         csv = b"t,request_id,work_units,mem_mb\n" + b"".join(
             f"0,public-{index:02},1,1\n".encode() for index in range(9)
         )
+        for _ in range(60):
+            readiness = await client.get(url="/api/v1/health/ready")
+            if readiness.status_code not in {
+                HTTPStatus.OK.value,
+                HTTPStatus.SERVICE_UNAVAILABLE.value,
+            }:
+                readiness.raise_for_status()
+            raw_decision = readiness.json().get("resource_admission")
+            if raw_decision is not None and ResourceDecision.model_validate(obj=raw_decision).admit:
+                break
+            await asyncio.sleep(delay=0.2)
+        else:
+            raise RuntimeError("Actual resource readiness did not allow guarded public acceptance")
         upload = await client.post(
             url="/api/v1/datasets", files={"file": ("docker-public.csv", csv, "text/csv")}
         )
@@ -95,6 +109,16 @@ async def main() -> None:
             for resource in saved.resources
         ):
             raise RuntimeError("Public run did not clean its actual dynamic backend")
+        if len(saved.observations) != 3 or any(
+            item.samples < 2
+            or item.cpu_delta_usec is None
+            or item.sampled_peak_rss_bytes is None
+            or item.sampled_peak_rss_bytes <= 0
+            or item.sampled_peak_cgroup_memory_bytes is None
+            or item.sampled_peak_cgroup_memory_bytes <= 0
+            for item in saved.observations
+        ):
+            raise RuntimeError("Actual owned runtime measurements are unavailable")
         events: list[HttpRecord] = []
         cursor = None
         for _ in range(8):
@@ -240,6 +264,7 @@ async def main() -> None:
                     "dynamic_removed": 1,
                     "verified_downloads": 5,
                     "events": len(events),
+                    "measured_backends": len(saved.observations),
                     "mcp_tools": 5,
                     "mcp_resources": 1,
                     "running_cancellation_cleanup": "passed",

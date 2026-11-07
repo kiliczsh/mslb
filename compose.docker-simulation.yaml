@@ -140,8 +140,8 @@ services:
     tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=16m"]
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    mem_limit: 128m
-    memswap_limit: 128m
+    mem_limit: 160m
+    memswap_limit: 160m
     cpus: 0.5
     pids_limit: 32
     environment:

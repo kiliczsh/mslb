@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import Field
 
+from mslb_contracts.docker_artifacts import DockerProgress
+from mslb_contracts.docker_observations import BackendMeasurements
 from mslb_contracts.docker_runtime import TrafficSummary
 from mslb_contracts.docker_settings import DockerSettings
 from mslb_contracts.http import SimulationCreate
@@ -99,5 +101,7 @@ class DockerRunDetail(ReadModel):
     cleanup_pending: bool
     resources: Annotated[tuple[DockerResourceView, ...], Field(max_length=64)]
     summary: TrafficSummary | None = None
+    progress: DockerProgress | None = None
+    observations: Annotated[tuple[BackendMeasurements, ...], Field(max_length=64)] = ()
     artifacts: Annotated[tuple[DockerArtifactView, ...], Field(max_length=5)] = ()
     admission: ResourceDecision | None = None
