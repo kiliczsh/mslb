@@ -5,6 +5,12 @@ import { type Api, ApiError, idempotencyKey } from "../../shared/api/api.js";
 import type { Dataset } from "../../shared/api/contracts.js";
 import { dockerCreateSchema } from "../../shared/api/dockerContracts.js";
 import { Feedback } from "../../shared/ui/Feedback.js";
+import {
+  ClockCounterClockwiseIcon,
+  EyeIcon,
+  SlidersHorizontalIcon,
+} from "../../shared/ui/Icons.js";
+import { StatusIcon } from "../../shared/ui/StatusIcon.js";
 import { DockerControls } from "./DockerControls.js";
 import { DockerDetail } from "./DockerDetail.js";
 
@@ -20,10 +26,12 @@ export function DockerWorkspace({
   const storage = useDraftStorage(),
     client = useQueryClient();
   const [draft, setDraft] = useDraftState({ storage, name: "docker" });
+  const [showResults, setShowResults] = useState(false);
   const [error, setError] = useState("");
   const [review, setReview] = useState<string | null>(null);
   const busy = useIsMutating({ mutationKey: ["docker-launch"] }) > 0;
   const history = useQuery({
+    enabled: !showResults,
     queryKey: ["docker-runs", draft.cursor],
     queryFn: ({ signal }) => api.dockerRuns({ cursor: draft.cursor, signal }),
     refetchInterval: 3000,
@@ -59,6 +67,7 @@ export function DockerWorkspace({
             },
       );
       setReview(null);
+      setShowResults(true);
       await client.invalidateQueries({ queryKey: ["docker-runs"] });
     },
   });
@@ -112,119 +121,146 @@ export function DockerWorkspace({
           </p>
         </div>
       </header>
-      <div className="setup-layout">
-        <form
-          className="run-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            start();
-          }}
+      <nav className="view-tabs" aria-label="Docker views">
+        <button type="button" aria-pressed={!showResults} onClick={() => setShowResults(false)}>
+          <SlidersHorizontalIcon size={16} aria-hidden="true" /> Settings & history
+        </button>
+        <button
+          type="button"
+          disabled={!draft.selected}
+          aria-pressed={showResults}
+          onClick={() => setShowResults(true)}
         >
-          <h3>Input dataset</h3>
-          <p>
-            {dataset
-              ? `${dataset.source_filename} · ${dataset.request_count} requests`
-              : "Select a dataset before launching Docker traffic."}
-          </p>
-          <button type="button" onClick={onChooseDataset}>
-            Choose Docker dataset
-          </button>
-          <DockerControls
-            settings={draft.settings}
-            disabled={busy || draft.retry !== null}
-            change={(settings) => {
-              setDraft((current) => ({ ...current, settings }));
-              setReview(null);
-              setError("");
-              launch.reset();
+          <EyeIcon size={16} aria-hidden="true" /> Selected results
+        </button>
+      </nav>
+      {!showResults && (
+        <div className="setup-layout">
+          <form
+            className="run-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              start();
             }}
-          />
-          {reviewed && !draft.retry && (
-            <section aria-label="Reviewed Docker snapshot">
-              <h3>Review Docker snapshot</h3>
-              <p>
-                Dataset: <span className="digest">{dataset?.digest}</span>
-              </p>
-              <p>
-                {draft.settings.strategy.replaceAll("_", " ")} · {draft.settings.initial_replicas}{" "}
-                initial backends ·{draft.settings.global_inflight} maximum HTTP reservations ·{" "}
-                {draft.settings.duration_seconds} seconds maximum.
-              </p>
-            </section>
-          )}
-          {draft.retry && (
-            <p role="status">
-              A frozen registration ticket is retained. Retry safely to recover its receipt;
-              settings stay frozen until the response is known.
+          >
+            <h3>Input dataset</h3>
+            <p>
+              {dataset
+                ? `${dataset.source_filename} · ${dataset.request_count} requests`
+                : "Select a dataset before launching Docker traffic."}
             </p>
-          )}
-          {error && <p role="alert">{error}</p>}
-          <Feedback error={launch.error} />
-          <div className="actions">
-            <button type="submit" className="primary" disabled={busy || (!dataset && !draft.retry)}>
-              {busy
-                ? "Registering Docker run…"
-                : draft.retry
-                  ? "Retry Docker registration"
-                  : reviewed
-                    ? "Queue Docker run"
-                    : "Review Docker snapshot"}
+            <button type="button" onClick={onChooseDataset}>
+              Choose Docker dataset
             </button>
+            <DockerControls
+              settings={draft.settings}
+              disabled={busy || draft.retry !== null}
+              change={(settings) => {
+                setDraft((current) => ({ ...current, settings }));
+                setReview(null);
+                setError("");
+                launch.reset();
+              }}
+            />
             {reviewed && !draft.retry && (
-              <button type="button" onClick={() => setReview(null)}>
-                Back to Docker settings
-              </button>
+              <section aria-label="Reviewed Docker snapshot">
+                <h3>Review Docker snapshot</h3>
+                <p>
+                  Dataset: <span className="digest">{dataset?.digest}</span>
+                </p>
+                <p>
+                  {draft.settings.strategy.replaceAll("_", " ")} · {draft.settings.initial_replicas}{" "}
+                  initial backends ·{draft.settings.global_inflight} maximum HTTP reservations ·{" "}
+                  {draft.settings.duration_seconds} seconds maximum.
+                </p>
+              </section>
             )}
-          </div>
-        </form>
-        <section className="run-preview" aria-label="Docker run history">
-          <h3>Docker history</h3>
-          <Feedback error={history.error} />
-          {history.data?.items.length === 0 && <p>No Docker runs on this page.</p>}
-          <ul className="docker-history">
-            {history.data?.items.map((run) => (
-              <li key={run.id}>
-                <button
-                  type="button"
-                  className="docker-history-button"
-                  aria-pressed={draft.selected === run.id}
-                  onClick={() =>
-                    setDraft((current) => ({
-                      ...current,
-                      selected: run.id,
-                      generation: current.generation + 1,
-                    }))
-                  }
-                >
-                  <span className="digest">{run.id}</span>
-                  <span>
-                    {run.status} · {run.configuration.strategy.replaceAll("_", " ")}
-                  </span>
+            {draft.retry && (
+              <p role="status">
+                A frozen registration ticket is retained. Retry safely to recover its receipt;
+                settings stay frozen until the response is known.
+              </p>
+            )}
+            {error && <p role="alert">{error}</p>}
+            <Feedback error={launch.error} />
+            <div className="actions">
+              <button
+                type="submit"
+                className="primary"
+                disabled={busy || (!dataset && !draft.retry)}
+              >
+                {busy
+                  ? "Registering Docker run…"
+                  : draft.retry
+                    ? "Retry Docker registration"
+                    : reviewed
+                      ? "Queue Docker run"
+                      : "Review Docker snapshot"}
+              </button>
+              {reviewed && !draft.retry && (
+                <button type="button" onClick={() => setReview(null)}>
+                  Back to Docker settings
                 </button>
-              </li>
-            ))}
-          </ul>
-          <div className="actions">
-            <button
-              type="button"
-              disabled={!draft.cursor}
-              onClick={() => setDraft((current) => ({ ...current, cursor: null }))}
-            >
-              First Docker page
-            </button>
-            <button
-              type="button"
-              disabled={!history.data?.next_cursor}
-              onClick={() =>
-                setDraft((current) => ({ ...current, cursor: history.data?.next_cursor ?? null }))
-              }
-            >
-              Next Docker page
-            </button>
-          </div>
-        </section>
-      </div>
-      {draft.selected && <DockerDetail key={draft.selected} api={api} id={draft.selected} />}
+              )}
+            </div>
+          </form>
+          <section className="run-preview" aria-label="Docker run history">
+            <h3 className="icon-label">
+              <ClockCounterClockwiseIcon size={20} aria-hidden="true" /> Docker history
+            </h3>
+            <Feedback error={history.error} />
+            {history.data?.items.length === 0 && <p>No Docker runs on this page.</p>}
+            <ul className="docker-history">
+              {history.data?.items.map((run) => (
+                <li key={run.id}>
+                  <button
+                    type="button"
+                    className="docker-history-button"
+                    aria-pressed={draft.selected === run.id}
+                    onClick={() => {
+                      setShowResults(true);
+                      setDraft((current) => ({
+                        ...current,
+                        selected: run.id,
+                        generation: current.generation + 1,
+                      }));
+                    }}
+                  >
+                    <span className="digest" title={run.id}>
+                      {run.id.slice(0, 8)}
+                    </span>
+                    <span className="icon-label">
+                      <StatusIcon status={run.status} />
+                      {run.status} · {run.configuration.strategy.replaceAll("_", " ")}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="actions">
+              <button
+                type="button"
+                disabled={!draft.cursor}
+                onClick={() => setDraft((current) => ({ ...current, cursor: null }))}
+              >
+                First Docker page
+              </button>
+              <button
+                type="button"
+                disabled={!history.data?.next_cursor}
+                onClick={() =>
+                  setDraft((current) => ({ ...current, cursor: history.data?.next_cursor ?? null }))
+                }
+              >
+                Next Docker page
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {showResults && draft.selected && (
+        <DockerDetail key={draft.selected} api={api} id={draft.selected} />
+      )}
     </div>
   );
 }

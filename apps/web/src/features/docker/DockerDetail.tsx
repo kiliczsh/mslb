@@ -4,6 +4,7 @@ import type { Api } from "../../shared/api/api.js";
 import { terminal } from "../../shared/api/contracts.js";
 import type { DockerDetail as Detail } from "../../shared/api/dockerContracts.js";
 import { Feedback } from "../../shared/ui/Feedback.js";
+import { StatusIcon } from "../../shared/ui/StatusIcon.js";
 import { RunDownloads } from "../results/RunDownloads.js";
 import { DockerMeasurements } from "./DockerMeasurements.js";
 import { ScrollTable } from "./ScrollableTable.js";
@@ -152,7 +153,7 @@ export function DockerDetail({ api, id }: { api: Api; id: string }) {
       {value && (
         <>
           <p role="status">
-            Docker status: {value.run.status}
+            <StatusIcon status={value.run.status} /> Docker status: {value.run.status}
             {value.cleanup_pending ? " · cleanup pending" : ""}
           </p>
           {value.run.error_code && <p role="alert">Run diagnostic: {value.run.error_code}</p>}

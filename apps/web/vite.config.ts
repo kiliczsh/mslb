@@ -50,6 +50,9 @@ export default defineConfig({
         "download-worker": resolve("worker/downloadWorker.ts"),
       },
       output: {
+        codeSplitting: {
+          groups: [{ name: "icons", test: /node_modules[\\/].*@phosphor-icons/ }],
+        },
         entryFileNames: (chunk) =>
           chunk.name === "download-worker" ? "download-worker.js" : "assets/[name]-[hash].js",
       },

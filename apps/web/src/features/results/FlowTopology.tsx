@@ -1,5 +1,5 @@
 import type { MetricValue, Playback } from "../../shared/api/resultContracts.js";
-import { GraphIcon, HardDrivesIcon } from "../../shared/ui/Icons.js";
+import { CpuIcon, FlowArrowIcon, HardDrivesIcon, MemoryIcon } from "../../shared/ui/Icons.js";
 import { Ribbon } from "../../shared/ui/Ribbon.js";
 import { MetricNumber } from "./MetricNumber.js";
 import { chartNumber } from "./metricValues.js";
@@ -17,7 +17,14 @@ function ResourceBar({
   const percent = amount === null ? 0 : Math.max(0, Math.min(100, (amount / capacity) * 100));
   return (
     <div className="resource-value">
-      <span>{label}</span>
+      <span className="icon-label">
+        {label.includes("CPU") ? (
+          <CpuIcon size={14} aria-hidden="true" />
+        ) : (
+          <MemoryIcon size={14} aria-hidden="true" />
+        )}
+        {label}
+      </span>
       <span>
         <MetricNumber value={value} /> / {capacity.toLocaleString()}
       </span>
@@ -55,7 +62,7 @@ export function FlowTopology({
       <div className="flow-layout">
         <div className="topology-map" data-playing={playing && !frame.terminal}>
           <div className="flow-origin">
-            <GraphIcon size={24} aria-hidden="true" />
+            <FlowArrowIcon size={24} aria-hidden="true" />
             <span>
               Incoming
               <br />

@@ -2,6 +2,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import type { Api } from "../../shared/api/api.js";
 import { Feedback } from "../../shared/ui/Feedback.js";
+import { CaretRightIcon, SkipBackIcon } from "../../shared/ui/Icons.js";
 import { FlowTopology } from "../results/FlowTopology.js";
 import { MetricNumber } from "../results/MetricNumber.js";
 import { DemoLoading } from "./DemoLoading.js";
@@ -77,14 +78,14 @@ export function DemoResults({
           />
         </label>
         <button type="button" onClick={() => setTick(0)} disabled={tick === 0}>
-          First tick
+          <SkipBackIcon size={16} aria-hidden="true" /> First tick
         </button>
         <button
           type="button"
           onClick={() => setTick((value) => Math.min(terminalTick, value + 1))}
           disabled={tick >= terminalTick}
         >
-          Next tick
+          Next tick <CaretRightIcon size={16} aria-hidden="true" />
         </button>
       </div>
       <p className="muted" role="status">
@@ -128,10 +129,7 @@ export function DemoResults({
           </button>
         </div>
       )}
-      <p className="muted">
-        Whole-run metrics above; the scene shows one saved tick. Playback never changes the
-        simulation.
-      </p>
+      <p className="muted">Metrics cover the whole run. The scene shows the selected tick.</p>
     </section>
   );
 }

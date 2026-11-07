@@ -4,7 +4,7 @@ import { useStore } from "zustand";
 import type { Api } from "../../shared/api/api.js";
 import type { Playback } from "../../shared/api/resultContracts.js";
 import { Feedback } from "../../shared/ui/Feedback.js";
-import { PauseIcon, PlayIcon } from "../../shared/ui/Icons.js";
+import { CaretRightIcon, PauseIcon, PlayIcon, SkipBackIcon } from "../../shared/ui/Icons.js";
 import { VirtualList } from "../../shared/ui/VirtualList.js";
 import { usePageVisible } from "../../shared/usePageVisible.js";
 import { FlowTopology } from "./FlowTopology.js";
@@ -86,7 +86,7 @@ export function RunPlayback({
       </label>
       <div className="actions">
         <button type="button" onClick={() => state.seek(0)}>
-          First tick
+          <SkipBackIcon size={16} aria-hidden="true" /> First tick
         </button>
         <button type="button" disabled={state.tick >= terminalTick} onClick={state.toggle}>
           {state.playing ? (
@@ -101,7 +101,7 @@ export function RunPlayback({
           disabled={state.tick >= terminalTick}
           onClick={() => state.seek(state.tick + 1)}
         >
-          Next tick
+          Next tick <CaretRightIcon size={16} aria-hidden="true" />
         </button>
         <label>
           Playback speed
@@ -274,7 +274,7 @@ export function RunPlayback({
           disabled={cursor === null}
           onClick={() => setEventPage({ tick: state.tick, cursor: null })}
         >
-          First tick events
+          <SkipBackIcon size={16} aria-hidden="true" /> First tick events
         </button>
         <button
           type="button"
@@ -283,7 +283,7 @@ export function RunPlayback({
             setEventPage({ tick: state.tick, cursor: events.data?.next_cursor ?? null })
           }
         >
-          Next tick events
+          Next tick <CaretRightIcon size={16} aria-hidden="true" /> events
         </button>
       </div>
       <p>

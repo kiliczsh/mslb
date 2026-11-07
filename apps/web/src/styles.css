@@ -1057,7 +1057,7 @@ main:has(.guided-demo) {
   padding-block: 14px 24px;
 }
 .guided-demo > .section-heading {
-  margin-bottom: 18px;
+  margin-bottom: 10px;
 }
 .guided-demo > .section-heading h2 {
   font-size: clamp(1.9rem, 3vw, 2.7rem);
@@ -1066,7 +1066,7 @@ main:has(.guided-demo) {
 .demo-layout {
   display: grid;
   grid-template-columns: 270px minmax(0, 1fr);
-  gap: 32px;
+  gap: 20px;
 }
 .demo-setup {
   border-right: 1px solid var(--line);
@@ -1084,7 +1084,7 @@ main:has(.guided-demo) {
 .demo-recipe {
   display: flex;
   gap: 10px;
-  padding: 12px 10px;
+  padding: 8px 10px;
   border: 1px solid #7b8390;
   margin-bottom: 10px;
   cursor: pointer;
@@ -1135,7 +1135,8 @@ main:has(.guided-demo) {
   background: #f8faff;
 }
 .demo-empty p {
-  max-width: 450px;
+  margin-block: 8px;
+  max-width: 650px;
 }
 .demo-skeleton {
   display: grid;
@@ -1313,8 +1314,8 @@ main:has(.guided-demo) {
   font-size: 0.8rem;
 }
 .guided-demo .topology-map {
-  min-height: 240px;
-  max-height: 300px;
+  min-height: 150px;
+  max-height: none;
 }
 .guided-demo .flow-inspector:has(.ribbon) {
   display: none;
@@ -1352,8 +1353,8 @@ main:has(.guided-demo) {
   padding-block: 8px;
 }
 .guided-demo .topology-map {
-  min-height: 200px;
-  max-height: 240px;
+  min-height: 150px;
+  max-height: none;
 }
 .guided-demo .flow-server-name {
   margin-bottom: 4px;
@@ -1407,5 +1408,386 @@ main:has(.guided-demo) {
 @media (max-width: 900px) {
   .docker-workspace .run-preview {
     order: 0;
+  }
+}
+
+/* Compact workspaces keep primary actions close to the content they affect. */
+.view-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.selection-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  margin-block: 12px;
+  background: var(--wash);
+}
+.dataset-list {
+  display: grid;
+  gap: 0;
+  margin-top: 12px;
+}
+.datasets-workspace .panel {
+  padding-block: 12px;
+  margin-block: 0;
+}
+.dataset-row-heading {
+  margin-bottom: 4px;
+  align-items: center;
+}
+.dataset-title {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 1rem;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.dataset-meta {
+  margin-block: 6px;
+}
+.compact-history {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 8px;
+}
+.history .compact-history-button {
+  margin: 0;
+  padding: 10px;
+  gap: 2px;
+}
+.docker-history {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+.control-field {
+  min-width: 0;
+  display: grid;
+  align-content: end;
+  gap: 6px;
+}
+.field-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.field-label label {
+  margin: 0;
+}
+.help {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.help-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  min-height: 28px;
+  width: 28px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+.help-tip {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: 100%;
+  width: min(230px, 70vw);
+  padding: 10px;
+  background: var(--ink);
+  color: white;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  z-index: 10;
+  box-shadow: 0 3px 12px #0002;
+}
+.help:hover .help-tip,
+.help:focus-within .help-tip,
+.help-tip.is-open {
+  display: block;
+}
+.strategy-toolbar {
+  align-items: end;
+  margin-block: 6px;
+}
+.strategy-help {
+  font-size: 0.83rem;
+  margin-block: 4px;
+}
+.guided-demo .demo-metrics {
+  padding-block: 6px;
+  gap: 24px;
+}
+.guided-demo .demo-playback-control {
+  margin-block: 6px;
+}
+.guided-demo .topology-map {
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  overflow: visible;
+}
+.guided-demo .flow-origin,
+.guided-demo .flow-balancer {
+  flex-direction: row;
+  justify-content: center;
+  padding: 4px;
+  gap: 8px;
+  min-height: 32px;
+}
+.guided-demo .flow-origin::after,
+.guided-demo .flow-balancer::after,
+.guided-demo .flow-lane::before {
+  display: none;
+}
+.guided-demo .flow-balancer .ribbon {
+  width: 48px;
+  height: 24px;
+}
+.guided-demo .flow-lanes {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px;
+  border: 0;
+  padding: 0;
+}
+.guided-demo .flow-lane {
+  margin: 0;
+}
+.guided-demo .flow-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+.guided-demo .flow-inspector {
+  border: 0;
+  padding: 8px 0;
+}
+.guided-demo .demo-empty {
+  min-height: 220px;
+  padding: 20px;
+}
+@media (max-width: 760px) {
+  .demo-layout {
+    gap: 10px;
+  }
+  .demo-setup {
+    padding-bottom: 8px;
+  }
+  .demo-setup fieldset {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+  .demo-recipe {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    padding: 8px 4px;
+    gap: 4px;
+    font-size: 0.8rem;
+  }
+  .demo-recipe small {
+    display: none;
+  }
+  .demo-recipe-copy {
+    align-content: center;
+  }
+  .demo-action {
+    width: auto;
+    margin-right: 6px;
+  }
+  .demo-setup > p {
+    margin-block: 6px;
+  }
+  .compact-history {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .guided-demo .flow-lanes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .dataset-list .section-heading {
+    display: grid;
+    gap: 8px;
+  }
+}
+
+.result-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  padding-block: 12px;
+}
+.result-summary > :where(p) {
+  margin: 0;
+}
+.result-summary > :where(details) {
+  flex-basis: 100%;
+}
+
+.icon-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.icon-spin {
+  animation: icon-rotate 1s linear infinite;
+}
+.summary-icon {
+  vertical-align: middle;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+@keyframes icon-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .icon-spin {
+    animation: none;
+  }
+}
+nav[aria-label="Result views"] {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* One compact header row; narrow workspaces use a disclosure menu. */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "brand nav session";
+  align-items: center;
+  min-height: 64px;
+  gap: 12px;
+  padding-block: 0;
+  background: white;
+}
+.header-brand {
+  justify-self: start;
+  justify-content: flex-start;
+  grid-area: brand;
+  font-size: 1.65rem;
+  gap: 10px;
+  min-height: 52px;
+}
+.header-menu-toggle {
+  display: none;
+  grid-area: toggle;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+}
+.header-caret {
+  transform: rotate(90deg);
+}
+.header-caret.is-open {
+  transform: rotate(-90deg);
+}
+.app-header .workspace-nav {
+  grid-area: nav;
+  width: auto;
+  margin: 0;
+  gap: 2px;
+  flex-wrap: nowrap;
+  justify-self: center;
+  align-self: stretch;
+}
+.app-header .workspace-nav button {
+  min-height: 64px;
+  padding: 8px 10px;
+  gap: 8px;
+  white-space: nowrap;
+  font-size: 0.83rem;
+}
+.app-header .workspace-nav button[aria-current="page"] {
+  color: var(--blue);
+  background: var(--wash);
+}
+.app-header .workspace-nav button[aria-current="page"]::after {
+  background: var(--blue);
+  left: 10px;
+  right: 10px;
+}
+.app-header .session-menu {
+  grid-area: session;
+  margin: 0;
+}
+.app-header .session-menu summary {
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+}
+.app-header .session-menu summary:hover {
+  background: var(--wash);
+}
+.app-header .connection {
+  top: calc(100% + 8px);
+  padding: 18px;
+  z-index: 31;
+}
+main {
+  scroll-margin-top: 76px;
+}
+@media (max-width: 1180px) {
+  .app-header .brand-description {
+    display: none;
+  }
+}
+@media (max-width: 1100px) {
+  .app-header {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas: "brand toggle session" "nav nav nav";
+    gap: 0 8px;
+  }
+  .header-menu-toggle {
+    display: inline-flex;
+  }
+  .app-header .workspace-nav {
+    display: none;
+    justify-self: stretch;
+    padding-block: 8px;
+    border-top: 1px solid var(--line);
+  }
+  .app-header .workspace-nav[data-open="true"] {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .app-header .workspace-nav button {
+    min-height: 42px;
+    justify-content: flex-start;
+    white-space: normal;
+  }
+  .app-header .workspace-nav button[aria-current="page"]::after {
+    display: none;
+  }
+}
+@media (max-width: 480px) {
+  .app-header .workspace-nav[data-open="true"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .connection-label {
+    display: none;
+  }
+  .app-header .session-menu summary {
+    width: 42px;
+    justify-content: center;
+    padding: 8px;
+  }
+  .header-brand {
+    justify-self: start;
+    justify-content: flex-start;
+    gap: 6px;
   }
 }

@@ -1,4 +1,6 @@
 import { type DockerSettings, dockerSettingsSchema } from "../../shared/api/dockerContracts.js";
+import { Help } from "../../shared/ui/Help.js";
+import { SlidersHorizontalIcon } from "../../shared/ui/Icons.js";
 
 const fields = [
   ["initial_replicas", "Initial routing backends", 1, 4],
@@ -45,21 +47,60 @@ export function DockerControls({
           <option value="most_available_memory">Most Available Memory</option>
         </select>
       </label>
-      <div className="form-grid">
-        {fields.map(([field, label, min, max]) => (
-          <label key={field}>
-            {label}
-            <input
-              type="number"
-              min={min}
-              max={max}
-              step={1}
-              value={Number.isFinite(settings[field]) ? settings[field] : ""}
-              onChange={(e) => change({ ...settings, [field]: e.target.valueAsNumber })}
-            />
-          </label>
-        ))}
-      </div>
+      {[false, true].map((advanced) => {
+        const controls = (
+          <div className="form-grid" key={advanced ? "advanced-fields" : "basic-fields"}>
+            {fields
+              .filter(
+                ([field]) =>
+                  advanced !==
+                  ["initial_replicas", "global_inflight", "duration_seconds"].includes(field),
+              )
+              .map(([field, label, min, max]) => (
+                <div className="control-field" key={field}>
+                  <div className="field-label">
+                    <label htmlFor={`docker-${field}`}>{label}</label>
+                    <Help
+                      text={
+                        field === "logical_admission_mem_mb"
+                          ? "Memory reserved for request admission; not process RAM."
+                          : field === "backend_inflight"
+                            ? "Maximum active HTTP requests on each backend."
+                            : field === "global_inflight"
+                              ? "Maximum active HTTP requests across all backends."
+                              : field === "initial_replicas"
+                                ? "Backends used when the run starts."
+                                : field === "duration_seconds"
+                                  ? "Stop accepting work after this many seconds."
+                                  : `Allowed range: ${min.toLocaleString()}–${max.toLocaleString()}.`
+                      }
+                    />
+                  </div>
+                  <input
+                    id={`docker-${field}`}
+                    type="number"
+                    min={min}
+                    max={max}
+                    step={1}
+                    value={Number.isFinite(settings[field]) ? settings[field] : ""}
+                    onChange={(e) => change({ ...settings, [field]: e.target.valueAsNumber })}
+                  />
+                </div>
+              ))}
+          </div>
+        );
+        return advanced ? (
+          <details key="advanced">
+            <summary>
+              <SlidersHorizontalIcon className="summary-icon" size={16} aria-hidden="true" />{" "}
+              Advanced traffic limits
+            </summary>
+            {controls}
+          </details>
+        ) : (
+          <div key="basic">{controls}</div>
+        );
+      })}
       <label>
         Dynamic container CPU cap
         <select

@@ -1,4 +1,9 @@
-import { ArrowRightIcon, GraphIcon, HardDrivesIcon } from "../../shared/ui/Icons.js";
+import {
+  ArrowRightIcon,
+  FlowArrowIcon,
+  HardDrivesIcon,
+  ScalesIcon,
+} from "../../shared/ui/Icons.js";
 import { Ribbon } from "../../shared/ui/Ribbon.js";
 
 export function Home({ onDemo, onServers }: { onDemo: () => void; onServers: () => void }) {
@@ -21,7 +26,7 @@ export function Home({ onDemo, onServers }: { onDemo: () => void; onServers: () 
               Start guided demo <ArrowRightIcon size={18} aria-hidden="true" />
             </button>
             <button type="button" onClick={onServers}>
-              Open server workspace
+              <HardDrivesIcon size={18} aria-hidden="true" /> Open server workspace
             </button>
           </div>
           <p className="muted">
@@ -43,7 +48,7 @@ export function Home({ onDemo, onServers }: { onDemo: () => void; onServers: () 
           </p>
         </article>
         <article>
-          <GraphIcon size={26} aria-hidden="true" />
+          <FlowArrowIcon size={26} aria-hidden="true" />
           <h3>Follow saved decisions.</h3>
           <p>
             Inspect playback, queueing, resource use and exact metrics. Download matching inputs and
@@ -51,7 +56,7 @@ export function Home({ onDemo, onServers }: { onDemo: () => void; onServers: () 
           </p>
         </article>
         <article>
-          <GraphIcon size={26} aria-hidden="true" />
+          <ScalesIcon size={26} aria-hidden="true" />
           <h3>Compare four strategies.</h3>
           <p>
             Run First Fit, Round Robin, Least Connections and Most Available Memory against the same

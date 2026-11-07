@@ -163,7 +163,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  '@phosphor-icons/react@2.1.10': 3e54680d593c4a40d10de5499bad36e5c59669bb8995d306185ea036ff891bec
+  '@phosphor-icons/react@2.1.10': ca8b019ed72481818d2c1c144a1a147e35e299dccc4a15840f8dedb30d0fb8e8
   '@reduxjs/toolkit@2.14.0': f416b76e303aecf2c870c81d03b5141699e836507191f6df64745e1050c926a4
 
 importers:
@@ -172,7 +172,7 @@ importers:
     dependencies:
       '@phosphor-icons/react':
         specifier: 2.1.10
-        version: 2.1.10(patch_hash=3e54680d593c4a40d10de5499bad36e5c59669bb8995d306185ea036ff891bec)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        version: 2.1.10(patch_hash=ca8b019ed72481818d2c1c144a1a147e35e299dccc4a15840f8dedb30d0fb8e8)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@tanstack/react-query':
         specifier: 5.106.1
         version: 5.106.1(@types/react@19.3.0)(react@19.3.1)
@@ -1313,7 +1313,7 @@ snapshots:
 
   '@oxc-project/types@0.156.0': {}
 
-  '@phosphor-icons/react@2.1.10(patch_hash=3e54680d593c4a40d10de5499bad36e5c59669bb8995d306185ea036ff891bec)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@phosphor-icons/react@2.1.10(patch_hash=ca8b019ed72481818d2c1c144a1a147e35e299dccc4a15840f8dedb30d0fb8e8)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)

@@ -10,6 +10,14 @@ import { useDraftState, useDraftStorage } from "../../app/workspaceDrafts.js";
 import { type Api, idempotencyKey } from "../../shared/api/api.js";
 import { type Settings, terminal } from "../../shared/api/contracts.js";
 import { Feedback } from "../../shared/ui/Feedback.js";
+import {
+  EyeIcon,
+  FileCsvIcon,
+  HardDrivesIcon,
+  InfoIcon,
+  PlayIcon,
+  ScalesIcon,
+} from "../../shared/ui/Icons.js";
 import { DemoComparison } from "./DemoComparison.js";
 import { DemoLoading } from "./DemoLoading.js";
 import { DemoResults } from "./DemoResults.js";
@@ -65,6 +73,7 @@ export function LiveDemo({
   const allCompleted = runs.length === 4 && runs.every((run) => run.data?.status === "completed");
   const waitingForRun =
     ids.length > 0 && !first?.error_code && !runs[0]?.error && (!first || !terminal(first.status));
+  const readingRun = ids.length > 0 && !first;
   const demoBusy = registering || waitingForRun;
   const comparison = useQuery({
     queryKey: ["comparison", ids],
@@ -183,7 +192,9 @@ export function LiveDemo({
               sharing. Capacities determine the outcome.
             </p>
           ) : (
-            <p>Configure at least one server to begin.</p>
+            <p role="status">
+              {servers.isPending ? "Loading servers…" : "Configure at least one server to begin."}
+            </p>
           )}
           <button
             type="button"
@@ -202,6 +213,7 @@ export function LiveDemo({
               }
             }}
           >
+            <PlayIcon size={16} aria-hidden="true" />
             {registering
               ? "Registering demo…"
               : unresolved
@@ -217,19 +229,27 @@ export function LiveDemo({
             </p>
           )}
           <button className="demo-action" type="button" onClick={onServers}>
-            Manage current servers
+            <HardDrivesIcon size={16} aria-hidden="true" /> Manage servers
           </button>
         </aside>
         <div className="demo-output">
           {demoBusy && first?.status !== "completed" && (
             <DemoLoading
-              title={registering ? "Preparing your demo…" : "Running your workload…"}
+              title={
+                registering
+                  ? "Preparing your demo…"
+                  : readingRun
+                    ? "Loading saved demo…"
+                    : "Running your workload…"
+              }
               detail={
                 registering
                   ? "Saving the workload and registering the run."
-                  : first?.status === "queued"
-                    ? "Your run is queued. Results will appear here when it completes."
-                    : "Processing requests and saving results. This view updates automatically."
+                  : readingRun
+                    ? "Reading the status of your saved run."
+                    : first?.status === "queued"
+                      ? "Your run is queued. Results will appear here when it completes."
+                      : "Processing requests and saving results. This view updates automatically."
               }
             />
           )}
@@ -245,9 +265,15 @@ export function LiveDemo({
                   configuration is unchanged.
                 </p>
               )}
-              <pre className="demo-csv">
-                {draft.session?.csv ?? plan?.csv ?? "No workload yet."}
-              </pre>
+              <details>
+                <summary>
+                  <FileCsvIcon className="summary-icon" size={16} aria-hidden="true" /> View
+                  workload CSV
+                </summary>
+                <pre className="demo-csv">
+                  {draft.session?.csv ?? plan?.csv ?? "No workload yet."}
+                </pre>
+              </details>
               <p className="muted">Your saved results appear here when the run completes.</p>
             </section>
           )}
@@ -256,6 +282,19 @@ export function LiveDemo({
               Saved runs: {runs.filter((run) => run.data?.status === "completed").length} /{" "}
               {runs.length} completed.
             </p>
+          )}
+          {runs.some((run) => run.error) && (
+            <div className="actions">
+              <p role="status">Some results could not be loaded.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  for (const run of runs) if (run.error) void run.refetch();
+                }}
+              >
+                Retry loading results
+              </button>
+            </div>
           )}
           {runs.map((run, index) => (
             <div key={ids[index]}>
@@ -290,7 +329,7 @@ export function LiveDemo({
               )}
               {view === "playback" && (
                 <>
-                  <div className="actions">
+                  <div className="actions strategy-toolbar">
                     <label>
                       Playback strategy
                       <select
@@ -323,7 +362,13 @@ export function LiveDemo({
                       </button>
                     )}
                   </div>
-                  <p className="muted">{strategyDescriptions[selectedStrategy]}</p>
+                  <details className="strategy-help">
+                    <summary>
+                      <InfoIcon className="summary-icon" size={16} aria-hidden="true" /> How{" "}
+                      {strategyLabels[selectedStrategy]} works
+                    </summary>
+                    <p className="muted">{strategyDescriptions[selectedStrategy]}</p>
+                  </details>
                   {!selectedAttempt && (
                     <p>Run this strategy on the same saved workload to see its request flow.</p>
                   )}
@@ -332,7 +377,11 @@ export function LiveDemo({
                       !selectedQuery?.error &&
                       (!selectedRun || !terminal(selectedRun.status)))) && (
                     <DemoLoading
-                      title={`Running ${strategyLabels[selectedStrategy]}…`}
+                      title={
+                        selectedAttempt?.runId && !selectedRun
+                          ? "Loading saved run…"
+                          : `Running ${strategyLabels[selectedStrategy]}…`
+                      }
                       detail="Using the same saved workload and settings. Results appear here automatically."
                     />
                   )}
@@ -350,20 +399,20 @@ export function LiveDemo({
                 <button
                   type="button"
                   className="primary"
-                  disabled={locked || attempts.length === 4}
+                  disabled={locked}
                   onClick={() => {
                     setView("comparison");
-                    launch.mutate({ compare: true });
+                    if (attempts.length < 4) launch.mutate({ compare: true });
                   }}
                 >
-                  4 · Compare all four strategies
+                  <ScalesIcon size={16} aria-hidden="true" /> Compare all strategies
                 </button>
                 <button
                   type="button"
                   disabled={!selectedRun}
                   onClick={() => selectedRun && onOpenRun(selectedRun.id)}
                 >
-                  Open full results and downloads
+                  <EyeIcon size={16} aria-hidden="true" /> Full results
                 </button>
               </div>
             </>

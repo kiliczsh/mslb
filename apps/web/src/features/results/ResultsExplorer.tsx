@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Api } from "../../shared/api/api.js";
 import type { Run } from "../../shared/api/contracts.js";
+import { ChartLineIcon, DownloadSimpleIcon, PlayIcon, ScalesIcon } from "../../shared/ui/Icons.js";
 import { RunComparison } from "./RunComparison.js";
 import { RunDownloads } from "./RunDownloads.js";
 import { RunMetrics } from "./RunMetrics.js";
@@ -18,16 +19,20 @@ export function ResultsExplorer({
   const [tab, setTab] = useState("metrics");
   return (
     <section className="panel" aria-label="Persisted results explorer">
-      <h2>Explore persisted results</h2>
-      <p className="mono">Run {run.id}</p>
       <nav aria-label="Result views">
-        {["metrics", "playback", "comparison"].map((name) => (
+        {[
+          { name: "metrics", Icon: ChartLineIcon },
+          { name: "playback", Icon: PlayIcon },
+          { name: "comparison", Icon: ScalesIcon },
+          { name: "downloads", Icon: DownloadSimpleIcon },
+        ].map(({ name, Icon }) => (
           <button
             type="button"
             key={name}
             aria-current={tab === name ? "page" : undefined}
             onClick={() => setTab(name)}
           >
+            <Icon size={16} aria-hidden="true" />
             {name[0]?.toUpperCase()}
             {name.slice(1)}
           </button>
@@ -36,7 +41,7 @@ export function ResultsExplorer({
       {tab === "metrics" && <RunMetrics api={api} runId={run.id} terminalTick={terminalTick} />}
       {tab === "playback" && <RunPlayback api={api} runId={run.id} terminalTick={terminalTick} />}
       {tab === "comparison" && <RunComparison api={api} run={run} />}
-      <RunDownloads key={run.id} api={api} runId={run.id} />
+      {tab === "downloads" && <RunDownloads key={run.id} api={api} runId={run.id} />}
     </section>
   );
 }

@@ -82,3 +82,159 @@ diff --git a/dist/csr/X.d.ts b/dist/csr/X.d.ts
 @@ -1 +1 @@
 -import { Icon } from '../lib/types';
 +import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/House.d.ts b/dist/csr/House.d.ts
+--- a/dist/csr/House.d.ts
++++ b/dist/csr/House.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/Compass.d.ts b/dist/csr/Compass.d.ts
+--- a/dist/csr/Compass.d.ts
++++ b/dist/csr/Compass.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/Flask.d.ts b/dist/csr/Flask.d.ts
+--- a/dist/csr/Flask.d.ts
++++ b/dist/csr/Flask.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/Cube.d.ts b/dist/csr/Cube.d.ts
+--- a/dist/csr/Cube.d.ts
++++ b/dist/csr/Cube.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/PlugsConnected.d.ts b/dist/csr/PlugsConnected.d.ts
+--- a/dist/csr/PlugsConnected.d.ts
++++ b/dist/csr/PlugsConnected.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/ChartLine.d.ts b/dist/csr/ChartLine.d.ts
+--- a/dist/csr/ChartLine.d.ts
++++ b/dist/csr/ChartLine.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/Scales.d.ts b/dist/csr/Scales.d.ts
+--- a/dist/csr/Scales.d.ts
++++ b/dist/csr/Scales.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/ClockCounterClockwise.d.ts b/dist/csr/ClockCounterClockwise.d.ts
+--- a/dist/csr/ClockCounterClockwise.d.ts
++++ b/dist/csr/ClockCounterClockwise.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/UploadSimple.d.ts b/dist/csr/UploadSimple.d.ts
+--- a/dist/csr/UploadSimple.d.ts
++++ b/dist/csr/UploadSimple.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/Info.d.ts b/dist/csr/Info.d.ts
+--- a/dist/csr/Info.d.ts
++++ b/dist/csr/Info.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/Cpu.d.ts b/dist/csr/Cpu.d.ts
+--- a/dist/csr/Cpu.d.ts
++++ b/dist/csr/Cpu.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/Memory.d.ts b/dist/csr/Memory.d.ts
+--- a/dist/csr/Memory.d.ts
++++ b/dist/csr/Memory.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/Queue.d.ts b/dist/csr/Queue.d.ts
+--- a/dist/csr/Queue.d.ts
++++ b/dist/csr/Queue.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/FlowArrow.d.ts b/dist/csr/FlowArrow.d.ts
+--- a/dist/csr/FlowArrow.d.ts
++++ b/dist/csr/FlowArrow.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/SkipBack.d.ts b/dist/csr/SkipBack.d.ts
+--- a/dist/csr/SkipBack.d.ts
++++ b/dist/csr/SkipBack.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/CaretRight.d.ts b/dist/csr/CaretRight.d.ts
+--- a/dist/csr/CaretRight.d.ts
++++ b/dist/csr/CaretRight.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/FileCsv.d.ts b/dist/csr/FileCsv.d.ts
+--- a/dist/csr/FileCsv.d.ts
++++ b/dist/csr/FileCsv.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/Eye.d.ts b/dist/csr/Eye.d.ts
+--- a/dist/csr/Eye.d.ts
++++ b/dist/csr/Eye.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/CircleNotch.d.ts b/dist/csr/CircleNotch.d.ts
+--- a/dist/csr/CircleNotch.d.ts
++++ b/dist/csr/CircleNotch.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/WarningCircle.d.ts b/dist/csr/WarningCircle.d.ts
+--- a/dist/csr/WarningCircle.d.ts
++++ b/dist/csr/WarningCircle.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/CheckCircle.d.ts b/dist/csr/CheckCircle.d.ts
+--- a/dist/csr/CheckCircle.d.ts
++++ b/dist/csr/CheckCircle.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/XCircle.d.ts b/dist/csr/XCircle.d.ts
+--- a/dist/csr/XCircle.d.ts
++++ b/dist/csr/XCircle.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/SlidersHorizontal.d.ts b/dist/csr/SlidersHorizontal.d.ts
+--- a/dist/csr/SlidersHorizontal.d.ts
++++ b/dist/csr/SlidersHorizontal.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/Copy.d.ts b/dist/csr/Copy.d.ts
+--- a/dist/csr/Copy.d.ts
++++ b/dist/csr/Copy.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/MagnifyingGlass.d.ts b/dist/csr/MagnifyingGlass.d.ts
+--- a/dist/csr/MagnifyingGlass.d.ts
++++ b/dist/csr/MagnifyingGlass.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';
+diff --git a/dist/csr/StopCircle.d.ts b/dist/csr/StopCircle.d.ts
+--- a/dist/csr/StopCircle.d.ts
++++ b/dist/csr/StopCircle.d.ts
+@@ -1 +1 @@
+-import { Icon } from '../lib/types';
++import { Icon } from '../lib/types.js';

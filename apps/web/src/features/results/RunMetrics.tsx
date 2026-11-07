@@ -130,10 +130,7 @@ export function RunMetrics({
                 ["Finished", report.data.summary.finished],
                 ["Dropped", report.data.summary.dropped],
                 ["Makespan (ticks from earliest arrival)", report.data.summary.makespan],
-                [
-                  "Completed throughput (requests/second)",
-                  report.data.summary.completed_throughput,
-                ],
+                ["Completed throughput (requests/tick)", report.data.summary.completed_throughput],
                 ["Whole-run drop fraction", report.data.summary.drop_fraction],
                 ["Queue peak", report.data.summary.queue_depth_peak],
                 ["Queue integral (requests × ticks)", report.data.summary.queue_depth_integral],
