@@ -1,6 +1,7 @@
 import type { z } from "zod";
 import {
   acceptedSchema,
+  datasetPreviewSchema,
   datasetSchema,
   detailSchema,
   errorSchema,
@@ -161,6 +162,8 @@ export class Api {
       pageSchema(datasetSchema),
       { signal },
     );
+  datasetPreview = ({ id, signal }: { id: string; signal: AbortSignal }) =>
+    this.request(`datasets/${encodeURIComponent(id)}/preview`, datasetPreviewSchema, { signal });
   runs = (cursor: string | null, signal: AbortSignal) =>
     this.request(
       `simulations?limit=20${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,

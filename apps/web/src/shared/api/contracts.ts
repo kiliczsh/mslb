@@ -54,6 +54,21 @@ export const datasetSchema = z.strictObject({
   source_size_bytes: integer(10 * 1024 ** 2, 1).nullable(),
 });
 export type Dataset = z.infer<typeof datasetSchema>;
+export const datasetPreviewSchema = z.strictObject({
+  dataset_id: id,
+  total_rows: integer(50_000, 1),
+  rows: z
+    .array(
+      z.strictObject({
+        t: integer(999_999),
+        request_id: z.string().min(1).max(256),
+        work_units: capacity,
+        mem_mb: capacity,
+      }),
+    )
+    .min(1)
+    .max(20),
+});
 export const strategySchema = z.enum([
   "first_fit",
   "round_robin",

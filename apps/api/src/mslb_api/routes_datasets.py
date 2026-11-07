@@ -7,7 +7,7 @@ from fastapi import APIRouter, Request
 from mslb_application.errors import OperationError
 from mslb_application.queries import Queries
 from mslb_application.submissions import Submissions
-from mslb_contracts.dataset_views import DatasetView
+from mslb_contracts.dataset_views import DatasetPreview, DatasetView
 from mslb_contracts.pagination import Page
 from starlette.datastructures import UploadFile
 from starlette.responses import Response
@@ -84,3 +84,8 @@ def register_datasets(*, router: APIRouter, submissions: Submissions, queries: Q
     async def dataset(dataset_id: UUID) -> Response:
         """Read immutable dataset identity, counts and upload provenance."""
         return json_response(model=await queries.dataset(dataset_id=dataset_id))
+
+    @router.get(path="/datasets/{dataset_id}/preview", response_model=DatasetPreview)
+    async def preview(*, dataset_id: UUID) -> Response:
+        """Read the first twenty verified normalized CSV rows without exposing storage paths."""
+        return json_response(model=await submissions.preview_dataset(dataset_id=dataset_id))

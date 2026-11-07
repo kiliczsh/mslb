@@ -6,6 +6,7 @@ from typing import BinaryIO
 from uuid import UUID
 
 from mslb_contracts.canonical import canonical_bytes
+from mslb_contracts.dataset_views import DatasetPreview
 from mslb_contracts.inputs import ServerInput
 from mslb_contracts.runs import RunSettings, settings_for_profile
 from mslb_persistence.catalog import Catalog
@@ -51,6 +52,21 @@ class Submissions:
                 raise OperationError(
                     code="RESOURCE_PRESSURE", message="Fresh safe resource evidence is required"
                 )
+
+    async def preview_dataset(self, *, dataset_id: UUID) -> DatasetPreview:
+        """Verify stored input under existing materialization admission and return twenty rows."""
+
+        async def operation() -> DatasetPreview:
+            await self._admit()
+            dataset = await self.catalog.get_dataset(dataset_id=dataset_id)
+            requests = await asyncio.to_thread(
+                self.files.load_requests, digest=dataset.digest, size_bytes=dataset.size_bytes
+            )
+            return DatasetPreview(
+                dataset_id=dataset.id, total_rows=len(requests), rows=requests[:20]
+            )
+
+        return await self.admission.run(operation=operation)
 
     async def submit(
         self, dataset_id: UUID, settings: RunSettings, key: str | None = None, scope: str = "local"
