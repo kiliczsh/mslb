@@ -50,7 +50,7 @@ async def main() -> None:
             except TimeoutError:
                 continue
 
-    previous: str | None = None
+    previous: tuple[str | None, str | None] | None = None
     try:
         await client.enroll()
         health = asyncio.create_task(coro=heartbeat())
@@ -58,12 +58,14 @@ async def main() -> None:
             while not shutdown.is_set():
                 try:
                     claimed = await controller.run_once(shutdown=shutdown)
-                    category = controller.last_error_code
+                    category, detail = controller.last_error_code, controller.last_failure
                 except FAILURES as error:
-                    claimed, category = False, type(error).__name__
-                if category is not None and category != previous:
-                    logger.warning("Controller ownership/cleanup unavailable (%s)", category)
-                previous = category
+                    claimed, category, detail = False, type(error).__name__, None
+                if category is not None and (category, detail) != previous:
+                    logger.warning(
+                        "Controller ownership/cleanup unavailable (%s; %s)", category, detail
+                    )
+                previous = (category, detail)
                 if not claimed:
                     try:
                         await asyncio.wait_for(fut=shutdown.wait(), timeout=0.5)

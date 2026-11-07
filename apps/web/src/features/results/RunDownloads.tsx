@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Api } from "../../shared/api/api.js";
+import { dockerArtifacts } from "../../shared/api/dockerContracts.js";
 import {
   type Artifact,
   artifactTypes,
@@ -9,8 +10,27 @@ import {
 import { Feedback } from "../../shared/ui/Feedback.js";
 import { DownloadSimpleIcon } from "../../shared/ui/Icons.js";
 
-export function RunDownloads({ api, runId }: { api: Api; runId: string }) {
-  const [selected, setSelected] = useState<Artifact>("run.jsonl");
+export function RunDownloads({
+  api,
+  runId,
+  mode = "logical",
+}: {
+  api: Api;
+  runId: string;
+  mode?: "logical" | "docker";
+}) {
+  const choices =
+    mode === "docker"
+      ? [...dockerArtifacts]
+      : Object.keys(artifactTypes).filter(
+          (name) =>
+            !["http_events.jsonl", "container_lifecycle.jsonl", "runtime_summary.json"].includes(
+              name,
+            ),
+        );
+  const [selected, setSelected] = useState<Artifact>(
+    mode === "docker" ? "http_events.jsonl" : "run.jsonl",
+  );
   const [busy, setBusy] = useState(false),
     [bytes, setBytes] = useState(0),
     [error, setError] = useState<unknown>(null),
@@ -30,7 +50,7 @@ export function RunDownloads({ api, runId }: { api: Api; runId: string }) {
       const path =
         selected === "inputs.zip" ? "inputs" : `artifact?name=${encodeURIComponent(selected)}`;
       await api.response(
-        `simulations/${encodeURIComponent(runId)}/${path}`,
+        `${mode === "docker" ? "docker/simulations" : "simulations"}/${encodeURIComponent(runId)}/${path}`,
         (response, signal) =>
           browserDownload(response, signal, selected, (count) => {
             if (Date.now() - lastUpdate > 100) {
@@ -62,7 +82,7 @@ export function RunDownloads({ api, runId }: { api: Api; runId: string }) {
             if (isArtifact(choice)) setSelected(choice);
           }}
         >
-          {Object.keys(artifactTypes).map((name) => (
+          {choices.map((name) => (
             <option key={name} value={name}>
               {name}
             </option>

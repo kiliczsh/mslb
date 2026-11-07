@@ -1,7 +1,7 @@
 """Provision and retire trusted backend membership through the restricted control client."""
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -17,6 +17,25 @@ from mslb_controller.control_client import ControlClient
 from mslb_controller.errors import EngineError, GrowthHeld, TrafficError
 from mslb_controller.physical_scaling import ReadyBackend
 from mslb_controller.routing_models import BackendSpec
+
+
+async def initial_backends(
+    *, count: int, provision: Callable[[], Awaitable[ReadyBackend]], check: Callable[[], None]
+) -> tuple[ReadyBackend, ...]:
+    """Wait through soft growth holds within each initial backend's fifteen-second bound."""
+    if type(count) is not int or not 1 <= count <= 4:
+        raise ValueError("Invalid initial backend count")
+    ready: list[ReadyBackend] = []
+    for _ in range(count):
+        async with asyncio.timeout(delay=15):
+            while True:
+                check()
+                try:
+                    ready.append(await provision())
+                    break
+                except GrowthHeld:
+                    await asyncio.sleep(delay=0.1)
+    return tuple(ready)
 
 
 class ResourceObserver(Protocol):

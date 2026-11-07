@@ -8,7 +8,13 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function mockWorkspace({ pending = false }: { pending?: boolean } = {}) {
+function mockWorkspace({
+  pending = false,
+  refusal = false,
+}: {
+  pending?: boolean;
+  refusal?: boolean;
+} = {}) {
   const keys: (string | null)[] = [];
   const uploads: string[] = [];
   let interrupt: (() => void) | undefined;
@@ -33,6 +39,18 @@ function mockWorkspace({ pending = false }: { pending?: boolean } = {}) {
       }
       if (init?.method === "POST") {
         keys.push(new Headers(init.headers).get("Idempotency-Key"));
+        if (refusal)
+          return Response.json(
+            {
+              error: {
+                code: "VALIDATION_ERROR",
+                message: "Input does not fit Docker bounds",
+                details: [],
+              },
+              request_id: "test",
+            },
+            { status: 422 },
+          );
         if (pending)
           await new Promise<void>((_resolve, reject) => {
             interrupt = () => reject(new TypeError("Interrupted"));
@@ -149,4 +167,50 @@ it("keeps registration disabled after navigating away from a pending submission"
       false,
     ),
   );
+});
+
+it("retains a frozen Docker registration across navigation and clears it with the session", async () => {
+  const { keys } = mockWorkspace();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Datasets" }));
+  await user.click(await screen.findByRole("button", { name: "Select requests.csv" }));
+  await user.click(screen.getByRole("button", { name: "Docker traffic" }));
+  fireEvent.change(screen.getByLabelText("Initial routing backends"), { target: { value: "3" } });
+  await user.click(screen.getByRole("button", { name: "Review Docker snapshot" }));
+  await user.click(screen.getByRole("button", { name: "Queue Docker run" }));
+  await screen.findByRole("alert");
+  await vi.waitFor(() => expect(keys).toHaveLength(1));
+  await user.click(screen.getByRole("button", { name: "Home" }));
+  await user.click(screen.getByRole("button", { name: "Docker traffic" }));
+  expect(screen.getByLabelText("Initial routing backends")).toHaveProperty("value", "3");
+  expect(screen.getByLabelText("Initial routing backends").closest("fieldset")).toHaveProperty(
+    "disabled",
+    true,
+  );
+  await user.click(screen.getByRole("button", { name: "Retry Docker registration" }));
+  await vi.waitFor(() => expect(keys).toHaveLength(2));
+  expect(keys[0]).toBe(keys[1]);
+  await user.click(screen.getByText("Connection", { exact: true }));
+  await user.click(screen.getByRole("button", { name: "Clear session" }));
+  await user.click(screen.getByRole("button", { name: "Docker traffic" }));
+  expect(screen.getByLabelText("Initial routing backends")).toHaveProperty("value", "2");
+  expect(screen.queryByRole("button", { name: "Retry Docker registration" })).toBeNull();
+});
+
+it("allows correction after a definitive Docker validation refusal", async () => {
+  mockWorkspace({ refusal: true });
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Datasets" }));
+  await user.click(await screen.findByRole("button", { name: "Select requests.csv" }));
+  await user.click(screen.getByRole("button", { name: "Docker traffic" }));
+  await user.click(screen.getByRole("button", { name: "Review Docker snapshot" }));
+  await user.click(screen.getByRole("button", { name: "Queue Docker run" }));
+  await screen.findByRole("alert");
+  await vi.waitFor(() =>
+    expect(screen.getByLabelText("Initial routing backends").closest("fieldset")).toHaveProperty(
+      "disabled",
+      false,
+    ),
+  );
+  expect(screen.queryByRole("button", { name: "Retry Docker registration" })).toBeNull();
 });

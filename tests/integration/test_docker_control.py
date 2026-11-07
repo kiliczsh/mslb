@@ -639,3 +639,46 @@ def test_unassigned_static_backends_still_consume_physical_capacity() -> None:
             assert len(await data.resources.list(lease=lease)) == 4
 
     asyncio.run(main=scenario())
+
+
+def test_operator_retry_requires_expired_exhausted_cleanup_and_preserves_fencing() -> None:
+    async def scenario() -> None:
+        async with scratch() as database:
+            data = await prepared(database=database)
+            run = await data.enqueue()
+            lease = await claim(data=data)
+            intent = await data.resources.prepare_dynamic(lease=lease)
+            with pytest.raises(expected_exception=StoreError):
+                await data.control.retry_cleanup(run_id=run.id)
+            lease = await data.control.begin_cleanup(
+                lease=lease, outcome="failed", error_code="CONTROLLER_FAILURE"
+            )
+            for index in range(2):
+                await expire(database=database)
+                recovered = await data.control.claim(owner=f"recover-{index}")
+                assert recovered is not None
+                lease = recovered
+            await expire(database=database)
+            assert await data.control.claim(owner="automatic-budget-exhausted") is None
+            with pytest.raises(expected_exception=StoreError):
+                await data.control.retry_cleanup(run_id=uuid4())
+            await data.control.retry_cleanup(run_id=run.id)
+            with pytest.raises(expected_exception=StoreError) as stale:
+                await data.resources.get(lease=lease, resource_id=intent.id)
+            assert stale.value.code == "FENCE_LOST"
+            recovered = await data.control.claim(owner="operator-retry")
+            assert (
+                recovered is not None
+                and recovered.phase == "cleanup"
+                and recovered.fence > lease.fence
+            )
+            assert (
+                await data.resources.get(lease=recovered, resource_id=intent.id)
+            ).state == "prepared"
+            await data.resources.transition(
+                lease=recovered, resource_id=intent.id, action="abandon"
+            )
+            finished = await data.control.finish_cleanup(lease=recovered)
+            assert finished.status == "failed" and finished.error_code == "INTERRUPTED"
+
+    asyncio.run(main=scenario())

@@ -1,8 +1,8 @@
 import { defineConfig } from "@playwright/test";
 
-if (process.env.BROWSER_TEST_INSTALLATION !== "isolated") {
+if (!["isolated", "guarded"].includes(process.env.BROWSER_TEST_INSTALLATION ?? "")) {
   throw new Error(
-    "Browser tests require the disposable installation in scripts/check-browser.ps1.",
+    "Browser tests require an explicit isolated logical or guarded operational installation.",
   );
 }
 

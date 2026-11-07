@@ -23,7 +23,7 @@ from sqlalchemy.exc import DBAPIError
 from mslb_controller.backend_http import BackendHttp
 from mslb_controller.control_client import ControlClient
 from mslb_controller.errors import EngineError, TrafficError
-from mslb_controller.physical_resources import PhysicalResources, ResourceObserver
+from mslb_controller.physical_resources import PhysicalResources, ResourceObserver, initial_backends
 from mslb_controller.physical_scaling import PhysicalScaling
 from mslb_controller.traffic import TrafficDriver
 
@@ -81,6 +81,7 @@ class Controller:
         self.jobs = Jobs(database=database)
         self.evidence = ResourceEvidenceStore(database=database)
         self.last_error_code: str | None = None
+        self.last_failure: str | None = None
 
     async def _watch(self, *, state: Attempt, done: asyncio.Event, shutdown: asyncio.Event) -> None:
         next_renewal = time.monotonic() + 5
@@ -178,8 +179,10 @@ class Controller:
                     stop=state.stopped,
                     observe=outputs.observe,
                 )
-                initial = tuple(
-                    [await physical.provision() for _ in range(settings.initial_replicas)]
+                initial = await initial_backends(
+                    count=settings.initial_replicas,
+                    provision=physical.provision,
+                    check=physical.check,
                 )
                 scaling = PhysicalScaling(
                     settings=settings,
@@ -224,7 +227,7 @@ class Controller:
         state = Attempt(lease=lease, deadline=started + 25)
         done = asyncio.Event()
         watcher = asyncio.create_task(coro=self._watch(state=state, done=done, shutdown=shutdown))
-        self.last_error_code = None
+        self.last_error_code, self.last_failure = None, None
         try:
             if lease.phase == "cleanup":
                 await self._cleanup(state=state)
@@ -232,9 +235,15 @@ class Controller:
             else:
                 await self._execute(state=state)
         except FAILURES as error:
+            self.last_failure = (
+                f"{type(error).__name__}:{error.code}"
+                if isinstance(error, (StoreError, OperationError, EngineError, TrafficError))
+                else type(error).__name__
+            )
             self.last_error_code = (
                 "RESOURCE_PRESSURE"
-                if isinstance(error, StoreError) and error.code == "RESOURCE_PRESSURE"
+                if isinstance(error, (StoreError, TrafficError))
+                and error.code == "RESOURCE_PRESSURE"
                 else state.failure
             )
             if state.owns and state.lease.phase == "running":
@@ -245,7 +254,7 @@ class Controller:
                     await self._cleanup(state=state)
                     finished = await self.control.finish_cleanup(lease=state.lease)
                     if finished.status == "cancelled":
-                        self.last_error_code = None
+                        self.last_error_code, self.last_failure = None, None
                 except FAILURES:
                     # Keep the reservation and expired-cleanup retry budget as the authority.
                     self.last_error_code = "INFRASTRUCTURE_FAILURE"

@@ -9,6 +9,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { createDemoDraft } from "../features/demo/demoState.js";
+import { createDockerDraft } from "../features/docker/dockerDraft.js";
 import { defaultSettings, type Server, type ServerInput } from "../shared/api/contracts.js";
 
 export const emptyServer: ServerInput = {
@@ -28,6 +29,7 @@ function createDrafts() {
     runCursor: null as string | null,
     retry: null as { body: string; key: string } | null,
     demo: createDemoDraft(),
+    docker: createDockerDraft(),
   };
 }
 type Drafts = ReturnType<typeof createDrafts>;

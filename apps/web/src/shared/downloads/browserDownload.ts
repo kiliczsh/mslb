@@ -2,6 +2,9 @@ import { ApiError } from "../api/api.js";
 
 let nextId = 0;
 export const artifactTypes = {
+  "http_events.jsonl": "application/x-ndjson",
+  "container_lifecycle.jsonl": "application/x-ndjson",
+  "runtime_summary.json": "application/json",
   "run.jsonl": "application/x-ndjson",
   "timeline.jsonl": "application/x-ndjson",
   "autoscaling_decisions.jsonl": "application/x-ndjson",

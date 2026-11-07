@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { fractionSchema } from "../fractions.js";
+import { resourceDecisionSchema } from "./resourceContracts.js";
 
 const integer = (max: number, min = 0) => z.number().int().min(min).max(max);
 const capacity = integer(1_000_000_000, 1);
@@ -186,6 +187,7 @@ export const readinessSchema = z.strictObject({
   ready: z.boolean(),
   api_ready: z.boolean(),
   complete_product: z.boolean(),
+  resource_admission: resourceDecisionSchema.nullable().optional(),
   capabilities: z.record(z.string().max(64), z.string().max(64)),
 });
 export function terminal(status: Run["status"]) {

@@ -1360,3 +1360,39 @@ main:has(.guided-demo) .readiness summary {
 .workspace-nav {
   flex-wrap: wrap;
 }
+
+.docker-workspace {
+  min-width: 0;
+}
+.docker-workspace .setup-layout {
+  align-items: start;
+}
+.docker-workspace .configuration-fields {
+  margin-top: 24px;
+}
+.docker-history {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.docker-workspace .docker-history .docker-history-button {
+  width: 100%;
+  display: grid;
+  text-align: left;
+  gap: 6px;
+  white-space: normal;
+}
+.docker-workspace .digest {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.docker-workspace .table-scroll {
+  max-height: 420px;
+}
+
+@media (max-width: 900px) {
+  .docker-workspace .run-preview {
+    order: 0;
+  }
+}

@@ -6,6 +6,7 @@ import pytest
 from mslb_contracts.docker_settings import DockerSettings
 from mslb_contracts.traffic import WorkRequest
 from mslb_controller.errors import GrowthHeld, TrafficError
+from mslb_controller.physical_resources import initial_backends
 from mslb_controller.physical_scaling import PhysicalScaling, ReadyBackend
 from mslb_controller.router import Router
 from mslb_controller.routing_models import BackendSpec
@@ -153,6 +154,36 @@ def test_growth_hold_preserves_existing_traffic_and_hard_stop_still_propagates()
             hard = True
             with pytest.raises(expected_exception=TrafficError):
                 await policy.evaluate(router=router, pending=2)
+        finally:
+            await http.close()
+
+    asyncio.run(main=scenario())
+
+
+def test_initial_membership_waits_for_soft_holds_and_never_swallows_hard_stop() -> None:
+    async def scenario() -> None:
+        http = Transport()
+        calls = 0
+        spec = BackendSpec(id="backend-a")
+
+        async def provision() -> ReadyBackend:
+            nonlocal calls
+            calls += 1
+            if calls < 3:
+                raise GrowthHeld
+            return ReadyBackend(spec=spec, observed=await http.health(spec=spec))
+
+        def check() -> None:
+            if calls > 3:
+                raise TrafficError(code="RESOURCE_PRESSURE")
+
+        try:
+            result = await initial_backends(count=1, provision=provision, check=check)
+            assert len(result) == 1 and calls == 3 and result[0].spec == spec
+            calls = 4
+            with pytest.raises(expected_exception=TrafficError):
+                await initial_backends(count=1, provision=provision, check=check)
+            assert calls == 4
         finally:
             await http.close()
 

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { DatasetManager } from "../features/datasets/DatasetManager.js";
 import { Home } from "../features/demo/Home.js";
 import { LiveDemo } from "../features/demo/LiveDemo.js";
+import { DockerWorkspace } from "../features/docker/DockerWorkspace.js";
 import { ServerManager } from "../features/servers/ServerManager.js";
 import { RunWorkspace } from "../features/simulations/RunWorkspace.js";
 import { Api } from "../shared/api/api.js";
@@ -46,7 +47,7 @@ function Workspace({ api, connect }: { api: Api; connect: (token: string) => voi
   const ready = useQuery({
     queryKey: ["readiness"],
     queryFn: ({ signal }) => api.ready(signal),
-    refetchInterval: 10_000,
+    refetchInterval: 2000,
   });
   return (
     <WorkspaceDraftProvider>
@@ -71,6 +72,7 @@ function Workspace({ api, connect }: { api: Api; connect: (token: string) => voi
             { id: "servers", label: "Servers", Icon: HardDrivesIcon },
             { id: "datasets", label: "Datasets", Icon: DatabaseIcon },
             { id: "runs", label: "Simulations", Icon: GraphIcon },
+            { id: "docker", label: "Docker traffic", Icon: HardDrivesIcon },
           ].map(({ id, label, Icon }) => (
             <button
               key={id}
@@ -125,6 +127,13 @@ function Workspace({ api, connect }: { api: Api; connect: (token: string) => voi
       <main id="workspace" tabIndex={-1}>
         <h1 className="sr-only">Simulation workspace</h1>
         <Feedback error={ready.error} />
+        {ready.data?.resource_admission && !ready.data.resource_admission.admit && (
+          <p role="status">
+            Workload admission at the last check is held:{" "}
+            {ready.data.resource_admission.reason?.replaceAll("_", " ").toLowerCase()}. Existing
+            results remain readable.
+          </p>
+        )}
         {ready.data && !ready.data.complete_product && (
           <details className="readiness">
             <summary>Product readiness: incomplete</summary>
@@ -155,13 +164,24 @@ function Workspace({ api, connect }: { api: Api; connect: (token: string) => voi
         {tab === "datasets" && (
           <DatasetManager api={api} selected={dataset} onSelect={setDataset} />
         )}
+        {tab === "docker" && (
+          <DockerWorkspace
+            api={api}
+            dataset={dataset}
+            onChooseDataset={() => navigate("datasets")}
+          />
+        )}
         {tab === "runs" && (
           <RunWorkspace api={api} dataset={dataset} onChooseDataset={() => navigate("datasets")} />
         )}
       </main>
       <footer>
         <span>mslb / Simulation workspace</span>
-        <span>Logical time. Exact saved results.</span>
+        <span>
+          {tab === "docker"
+            ? "Real HTTP. Owned backend lifecycle."
+            : "Logical time. Exact saved results."}
+        </span>
       </footer>
     </WorkspaceDraftProvider>
   );

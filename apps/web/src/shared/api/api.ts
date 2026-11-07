@@ -12,6 +12,12 @@ import {
   serverSchema,
 } from "./contracts.js";
 import {
+  type DockerCreate,
+  dockerDetailSchema,
+  dockerEventSchema,
+  dockerRunSchema,
+} from "./dockerContracts.js";
+import {
   type Chart,
   chartSchema,
   comparisonSchema,
@@ -174,6 +180,39 @@ export class Api {
     );
   run = (id: string, signal: AbortSignal) =>
     this.request(`simulations/${encodeURIComponent(id)}`, detailSchema, { signal });
+  dockerRuns = ({ cursor, signal }: { cursor: string | null; signal: AbortSignal }) =>
+    this.request(
+      `docker/simulations?limit=20${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+      pageSchema(dockerRunSchema),
+      { signal },
+    );
+  dockerRun = ({ id, signal }: { id: string; signal: AbortSignal }) =>
+    this.request(`docker/simulations/${encodeURIComponent(id)}`, dockerDetailSchema, { signal });
+  dockerSubmit = ({ body, key }: { body: DockerCreate; key: string }) =>
+    this.request("docker/simulations", acceptedSchema, {
+      ...json(body),
+      headers: { "Content-Type": "application/json", "Idempotency-Key": key },
+    });
+  dockerCancel = ({ id }: { id: string }) =>
+    this.request(
+      `docker/simulations/${encodeURIComponent(id)}/cancel`,
+      dockerDetailSchema,
+      json({}),
+    );
+  dockerEvents = ({
+    id,
+    cursor,
+    signal,
+  }: {
+    id: string;
+    cursor: string | null;
+    signal: AbortSignal;
+  }) =>
+    this.request(
+      `docker/simulations/${encodeURIComponent(id)}/events?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+      pageSchema(dockerEventSchema),
+      { signal },
+    );
   ready = (signal: AbortSignal) => this.request("health/ready", readinessSchema, { signal });
   createServer = (body: ServerInput) => this.request("servers", serverSchema, json(body));
   updateServer = ({ id, ...body }: ServerInput, version: number) =>

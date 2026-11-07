@@ -121,6 +121,11 @@ try {
             'compose', '--profile', 'tools', 'run', '--rm', '--no-deps', $service
         )
     }
+    Invoke-CheckedDocker -DockerArguments @(
+        'compose', '--profile', 'tools', 'run', '--rm', '--no-deps',
+        '-e', 'BROWSER_TEST_INSTALLATION=guarded', 'browser-checks',
+        'pnpm', 'test:browser', 'browser/docker.spec.ts'
+    )
     # Redis is only a wake-up/cache hint. Exercise actual guarded durable work during
     # its outage, and always restore this project's service before leaving the gate.
     try {
