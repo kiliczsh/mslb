@@ -67,6 +67,23 @@ async def main() -> None:
                 readiness.raise_for_status()
             raw_decision = readiness.json().get("resource_admission")
             if raw_decision is not None and ResourceDecision.model_validate(obj=raw_decision).admit:
+                state = readiness.json()
+                if (
+                    readiness.status_code != HTTPStatus.OK.value
+                    or state["ready"] is not True
+                    or state["complete_product"] is not True
+                    or any(
+                        state["capabilities"][name] != "ready"
+                        for name in (
+                            "logical_rest",
+                            "mcp",
+                            "dashboard",
+                            "docker_traffic",
+                            "resource_guard",
+                        )
+                    )
+                ):
+                    raise RuntimeError("Fresh guarded installation readiness is inconsistent")
                 break
             await asyncio.sleep(delay=0.2)
         else:

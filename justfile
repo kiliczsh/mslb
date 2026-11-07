@@ -101,3 +101,10 @@ check-browser:
 
 check-scenarios:
     pwsh -NoProfile -File scripts/check-scenarios.ps1
+
+# Project interruptions and read-only maintenance planning; explicit apply stays an operator command.
+check-controller-faults:
+    pwsh -NoProfile -File scripts/check-controller-faults.ps1
+
+plan-output-maintenance:
+    docker compose --profile tools run --rm --no-deps output-maintenance

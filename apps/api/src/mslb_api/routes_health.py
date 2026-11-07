@@ -38,27 +38,40 @@ def register_health(
 
     @app.get(path="/api/v1/health/ready", include_in_schema=False)
     async def ready() -> Response:
-        """Report logical dependency health and honest incomplete-product readiness."""
+        """Report current guarded installation readiness, separately from delivery acceptance."""
         api_ready = await database.ready()
         report = (
             await ResourceEvidenceStore(database=database).read()
             if api_ready and database.enforce_resource_guard
             else None
         )
+        installation_ready = bool(api_ready and report and report.decision.admit)
+        healthy = (
+            {
+                item.service
+                for item in report.probe.services
+                if item.healthy and item.container_id is not None
+            }
+            if report and report.probe
+            else set()
+        )
         return Response(
             content=canonical_bytes(
                 value={
-                    "ready": False,
+                    "ready": installation_ready,
                     "api_ready": api_ready,
-                    "complete_product": False,
+                    "complete_product": installation_ready,
                     "resource_admission": report.decision.model_dump(mode="json")
                     if report
                     else None,
                     "capabilities": {
                         "logical_rest": "ready" if api_ready else "unavailable",
                         "mcp": "ready" if api_ready else "unavailable",
-                        "dashboard": "incomplete",
-                        "docker_traffic": "incomplete",
+                        "dashboard": "ready" if "web" in healthy else "unavailable",
+                        "docker_traffic": "ready"
+                        if {"container-controller", "docker-proxy", "backend-a", "backend-b"}
+                        <= healthy
+                        else "unavailable",
                         "telemetry": "deferred",
                         "resource_guard": "ready"
                         if report and report.decision.admit
@@ -68,6 +81,8 @@ def register_health(
                     },
                 }
             ),
-            status_code=HTTPStatus.SERVICE_UNAVAILABLE.value,
+            status_code=HTTPStatus.OK.value
+            if installation_ready
+            else HTTPStatus.SERVICE_UNAVAILABLE.value,
             media_type="application/json",
         )

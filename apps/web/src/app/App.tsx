@@ -134,12 +134,12 @@ function Workspace({ api, connect }: { api: Api; connect: (token: string) => voi
             results remain readable.
           </p>
         )}
-        {ready.data && !ready.data.complete_product && (
+        {ready.data && (
           <details className="readiness">
-            <summary>Product readiness: incomplete</summary>
+            <summary>Installation readiness: {ready.data.ready ? "ready" : "waiting"}</summary>
             <p>
-              Logical API: {ready.data.api_ready ? "available" : "unavailable"}. Additional
-              capabilities are being integrated.
+              Logical API: {ready.data.api_ready ? "available" : "unavailable"}. Availability
+              reflects the last check and can change while the workspace is open.
             </p>
             <ul>
               {Object.entries(ready.data.capabilities).map(([name, status]) => (
