@@ -80,3 +80,43 @@ def test_live_frames_require_current_scope_ownership_and_independent_freshness()
             assert (await reads.run(run_id=run.id)).progress is None
 
     asyncio.run(main=scenario())
+
+
+def test_cancellation_skips_progress_without_losing_fencing() -> None:
+    async def scenario() -> None:
+        async with scratch() as database:
+            data = await prepared(database=database)
+            run = await data.enqueue()
+            lease = await claim(data=data)
+            store = DockerProgressStore(database=database)
+            frame = DockerProgress(
+                run_id=run.id,
+                fence=lease.fence,
+                snapshot_digest=data.snapshot.digest(),
+                observed_at=datetime.now(tz=UTC),
+                elapsed_seconds=0.0,
+                pending=0,
+                inflight=0,
+                backends=(),
+                unavailable_backends=(),
+            )
+            await store.write(lease=lease, frame=frame)
+            await data.control.cancel(run_id=run.id)
+
+            later = frame.model_copy(update={"elapsed_seconds": 1.0})
+            assert await store.write(lease=lease, frame=later) is False
+            async with database.sessions() as session:
+                state = await session.get(entity=DockerRunState, ident=run.id)
+                assert state is not None
+                assert state.latest_progress == frame.model_dump(mode="json")
+
+            cleanup = await data.control.begin_cleanup(lease=lease, outcome="cancelled")
+            with pytest.raises(expected_exception=StoreError) as rejected_phase:
+                await store.write(lease=cleanup, frame=later)
+            assert rejected_phase.value.code == "INVALID_STATE"
+            await data.control.finish_cleanup(lease=cleanup)
+            with pytest.raises(expected_exception=StoreError) as rejected_owner:
+                await store.write(lease=lease, frame=later)
+            assert rejected_owner.value.code == "FENCE_LOST"
+
+    asyncio.run(main=scenario())

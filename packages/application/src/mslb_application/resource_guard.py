@@ -7,7 +7,12 @@ from datetime import UTC, datetime
 
 from mslb_contracts.resources import ResourceProbe
 from mslb_persistence.database import StoreError
-from mslb_persistence.resource_evidence import EvidenceLease, EvidenceRecord, ResourceEvidenceStore
+from mslb_persistence.resource_evidence import (
+    EvidenceLease,
+    EvidenceRecord,
+    EvidenceRejected,
+    ResourceEvidenceStore,
+)
 from sqlalchemy.exc import DBAPIError
 
 from mslb_application.resource_policy import ResourcePolicy
@@ -61,6 +66,11 @@ class ResourcePublisher:
             )
             self.revision = result.revision
             return result
+        except EvidenceRejected:
+            # The input was rejected before UPDATE and the transaction rolled back.
+            # Keep acknowledged ownership, but rebuild warmup from fresh measurements.
+            self.policy = ResourcePolicy()
+            raise
         except BaseException:
             # A commit receipt may have been lost. Reclaim with a new fence after expiry,
             # rather than guessing a revision or retaining pre-failure recovery samples.
@@ -99,8 +109,9 @@ class ResourcePublisher:
                     if report is not None and published is not None:
                         await published(report)
                 except (StoreError, DBAPIError, OSError, TimeoutError):
-                    # Old evidence expires independently in PostgreSQL readers.
-                    self.reset()
+                    # publish_once owns lease recovery. A heartbeat error after an
+                    # acknowledged publication must not discard that ownership.
+                    pass
                 try:
                     await asyncio.wait_for(
                         fut=stopped.wait(),

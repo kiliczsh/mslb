@@ -187,8 +187,9 @@ test("operational Docker browser cancels running owned work and retains selectio
   await page.getByRole("button", { name: "Stop traffic", exact: true }).click();
   await page.getByRole("button", { name: "Home", exact: true }).click();
   await page.getByRole("button", { name: "Live Traffic", exact: true }).click();
+  // Normal cancellation must drain before the 30-second ownership lease expires.
   await expect(page.getByRole("status").filter({ hasText: /^cancelled$/ })).toBeVisible({
-    timeout: 30_000,
+    timeout: 15_000,
   });
   await expect
     .poll(async () => {

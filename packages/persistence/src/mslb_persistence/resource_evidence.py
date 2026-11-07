@@ -117,6 +117,13 @@ def decode(*, row: ResourceEvidence, now: datetime) -> EvidenceRecord:
     )
 
 
+class EvidenceRejected(StoreError):
+    """Reject evidence before its write while preserving known publisher ownership."""
+
+    def __init__(self, *, message: str) -> None:
+        super().__init__(code="VALIDATION_ERROR", message=message)
+
+
 class ResourceEvidenceStore:
     """Fence resource publishers and expose only current, verified admission evidence."""
 
@@ -176,13 +183,9 @@ class ResourceEvidenceStore:
         async def operation(session: AsyncSession) -> EvidenceRecord:
             now = await _clock(session=session)
             if probe is not None and not 0 <= (now - probe.measured_at).total_seconds() <= 3:
-                raise StoreError(
-                    code="VALIDATION_ERROR", message="Evidence timestamp is not current server time"
-                )
+                raise EvidenceRejected(message="Evidence timestamp is not current server time")
             if probe is not None and decision.admit and not host_memory_fresh(probe=probe, now=now):
-                raise StoreError(
-                    code="VALIDATION_ERROR", message="Admission requires current host evidence"
-                )
+                raise EvidenceRejected(message="Admission requires current host evidence")
             statement = (
                 update(table=ResourceEvidence)
                 .where(

@@ -202,7 +202,7 @@ class Controller:
                 async def update(*, router: Router, pending: int) -> None:
                     await scaling.evaluate(router=router, pending=pending)
                     if state.owns and state.stopped() is None:
-                        await progress.write(
+                        written = await progress.write(
                             lease=state.lease,
                             frame=observations.progress(
                                 router=router,
@@ -213,6 +213,8 @@ class Controller:
                                 snapshot_digest=snapshot.digest(),
                             ),
                         )
+                        if not written:
+                            state.stop(reason="CANCELLED", failure="INTERRUPTED")
 
                 driver = TrafficDriver(
                     configuration=settings,

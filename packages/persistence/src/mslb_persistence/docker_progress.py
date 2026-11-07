@@ -20,15 +20,17 @@ class DockerProgressStore:
     def __init__(self, *, database: Database) -> None:
         self.database = database
 
-    async def write(self, *, lease: ControlLease, frame: DockerProgress) -> None:
-        """Check immutable scope, actual owned identities and authoritative freshness."""
+    async def write(self, *, lease: ControlLease, frame: DockerProgress) -> bool:
+        """Write a current frame, or return False for a current cancellation request."""
         raw = canonical_bytes(value=frame.model_dump(mode="json"))
         if len(raw) > 16 * 1024:
             raise StoreError(code="RESOURCE_LIMIT_EXCEEDED", message="Live frame exceeds bounds")
         frame = DockerProgress.model_validate_json(json_data=raw)
 
-        async def operation(session: AsyncSession) -> None:
+        async def operation(session: AsyncSession) -> bool:
             _slot, job, state = await current(session=session, lease=lease)
+            if lease.phase == "running" and job.status == "cancel_requested":
+                return False
             execution(lease=lease, job=job)
             snapshot = DockerSnapshot.model_validate_json(
                 json_data=canonical_bytes(value=state.snapshot)
@@ -76,5 +78,6 @@ class DockerProgressStore:
                 raise StoreError(
                     code="VALIDATION_FAILED", message="Live frame expired before commit"
                 )
+            return True
 
-        await self.database.transaction(operation=operation)
+        return await self.database.transaction(operation=operation)

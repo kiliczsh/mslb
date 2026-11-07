@@ -244,6 +244,8 @@ scope, identities, hashes, HTTP accounting, reservation peaks and resolved lifec
 Measured RSS/cgroup peaks and CPU/throttling differences describe sampled windows, not
 unsampled maxima. A bounded latest live frame is fence/lease/snapshot bound and expires
 after three seconds; stale or terminal frames return unavailable instead of guessed zeros.
+Progress writes under a current running lease report a pending cancellation without
+mutating the frame, allowing the controller to enter normal cancellation and drain.
 
 ## Resource and access boundaries
 
@@ -252,6 +254,9 @@ headroom, publishing fenced latest evidence to PostgreSQL. Consumers recheck it 
 submission, claim, physical growth and publication; running workers also monitor pressure
 independently. At 70% of a service limit new increasing work is held; at 85% or observed
 OOM, controlled stopping is requested. Recovery needs three distinct samples below 60%.
+Timestamp rejections before the evidence write preserve the publisher's acknowledged
+lease/revision and reset warmup; uncertain commit receipts still discard local ownership.
+Heartbeat failures after acknowledged publication do not discard the publisher lease.
 Missing, future-dated or over-three-second evidence fails closed. Redis unavailability
 alone does not stop database-backed execution.
 
