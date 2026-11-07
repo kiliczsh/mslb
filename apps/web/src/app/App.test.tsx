@@ -57,13 +57,6 @@ function mockWorkspace({
           });
         throw new TypeError("Interrupted");
       }
-      if (path.includes("health/ready"))
-        return Response.json({
-          ready: false,
-          api_ready: true,
-          complete_product: false,
-          capabilities: { dashboard: "incomplete" },
-        });
       if (path.includes("servers?"))
         return Response.json({
           items: [

@@ -108,3 +108,10 @@ check-controller-faults:
 
 plan-output-maintenance:
     docker compose --profile tools run --rm --no-deps output-maintenance
+
+# Start/stop the source-mounted Vite service against the existing backend.
+dev:
+    docker compose --profile dev up --no-build --no-deps -d --wait web-dev
+
+dev-stop:
+    docker compose --profile dev rm --stop --force web-dev

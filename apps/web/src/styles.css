@@ -280,16 +280,6 @@ main {
   padding-block: 26px 64px;
   min-height: 75vh;
 }
-.readiness {
-  margin: 0 0 30px;
-  border-bottom: 1px solid var(--line);
-  padding: 0 0 12px;
-  color: var(--muted);
-  font-size: 0.8rem;
-}
-.readiness summary {
-  font-weight: 400;
-}
 .eyebrow {
   color: var(--muted);
   text-transform: uppercase;
@@ -1066,9 +1056,6 @@ footer {
 main:has(.guided-demo) {
   padding-block: 14px 24px;
 }
-main:has(.guided-demo) .readiness {
-  margin-bottom: 14px;
-}
 .guided-demo > .section-heading {
   margin-bottom: 18px;
 }
@@ -1327,12 +1314,6 @@ main:has(.guided-demo) .readiness {
 }
 .guided-demo > .section-heading h2 {
   font-size: clamp(1.9rem, 3vw, 2.4rem);
-}
-main:has(.guided-demo) .readiness {
-  margin-bottom: 8px;
-}
-main:has(.guided-demo) .readiness summary {
-  padding-block: 4px;
 }
 .guided-demo .flow-section {
   margin-block: 8px;

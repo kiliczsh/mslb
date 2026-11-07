@@ -1,0 +1,30 @@
+# Optional Docker-only Vite development service. Reuses the locked frontend image.
+services:
+  web-dev:
+    profiles: [dev]
+    image: mslb-frontend-tools:local
+    pull_policy: never
+    command: [pnpm, exec, vite, --configLoader, native]
+    user: "1000:1000"
+    read_only: true
+    tmpfs: ["/tmp:size=256m,uid=1000,gid=1000"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 768m
+    memswap_limit: 768m
+    cpus: 1
+    pids_limit: 128
+    ports: ["127.0.0.1:5173:5173"]
+    volumes:
+      - ./apps/web/src:/app/src:ro
+      - ./apps/web/worker:/app/worker:ro
+      - ./apps/web/index.html:/app/index.html:ro
+      - ./apps/web/vite.config.ts:/app/vite.config.ts:ro
+    networks: [internal, ingress]
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:5173/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 10

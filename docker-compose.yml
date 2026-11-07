@@ -2,6 +2,7 @@ name: mslb
 
 include:
   - path: compose.docker-simulation.yaml
+  - path: compose.dev.yaml
 
 x-tool: &tool
   profiles: [tools]

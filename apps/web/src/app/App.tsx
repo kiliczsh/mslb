@@ -1,4 +1,4 @@
-import { QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import { DatasetManager } from "../features/datasets/DatasetManager.js";
 import { Home } from "../features/demo/Home.js";
@@ -9,7 +9,6 @@ import { RunWorkspace } from "../features/simulations/RunWorkspace.js";
 import { Api } from "../shared/api/api.js";
 import type { Dataset } from "../shared/api/contracts.js";
 import { createQueryClient } from "../shared/queryClient.js";
-import { Feedback } from "../shared/ui/Feedback.js";
 import { DatabaseIcon, GraphIcon, HardDrivesIcon, UserCircleIcon } from "../shared/ui/Icons.js";
 import { Ribbon } from "../shared/ui/Ribbon.js";
 import { useDraftState, useDraftStorage, WorkspaceDraftProvider } from "./workspaceDrafts.js";
@@ -44,11 +43,6 @@ function Workspace({ api, connect }: { api: Api; connect: (token: string) => voi
     queueMicrotask(() => document.getElementById("workspace")?.focus());
   }
   const [dataset, setDataset] = useState<Dataset | null>(null);
-  const ready = useQuery({
-    queryKey: ["readiness"],
-    queryFn: ({ signal }) => api.ready(signal),
-    refetchInterval: 2000,
-  });
   return (
     <WorkspaceDraftProvider>
       <a className="skip-link" href="#workspace">
@@ -126,30 +120,6 @@ function Workspace({ api, connect }: { api: Api; connect: (token: string) => voi
       </header>
       <main id="workspace" tabIndex={-1}>
         <h1 className="sr-only">Simulation workspace</h1>
-        <Feedback error={ready.error} />
-        {ready.data?.resource_admission && !ready.data.resource_admission.admit && (
-          <p role="status">
-            Workload admission at the last check is held:{" "}
-            {ready.data.resource_admission.reason?.replaceAll("_", " ").toLowerCase()}. Existing
-            results remain readable.
-          </p>
-        )}
-        {ready.data && (
-          <details className="readiness">
-            <summary>Installation readiness: {ready.data.ready ? "ready" : "waiting"}</summary>
-            <p>
-              Logical API: {ready.data.api_ready ? "available" : "unavailable"}. Availability
-              reflects the last check and can change while the workspace is open.
-            </p>
-            <ul>
-              {Object.entries(ready.data.capabilities).map(([name, status]) => (
-                <li key={name}>
-                  {name.replaceAll("_", " ")}: {status.replaceAll("_", " ")}
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
         {tab === "home" && (
           <Home onDemo={() => navigate("demo")} onServers={() => navigate("servers")} />
         )}

@@ -60,9 +60,8 @@ export function Home({ onDemo, onServers }: { onDemo: () => void; onServers: () 
         </article>
       </div>
       <p className="home-scope">
-        Logical simulation and simulated autoscaling are available. Additional Docker traffic and
-        resource-safety integration remain in progress; product readiness above records the current
-        state.
+        Explore deterministic logical simulations and simulated autoscaling, or run real HTTP
+        traffic in the Docker workspace.
       </p>
     </section>
   );

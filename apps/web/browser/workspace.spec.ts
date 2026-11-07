@@ -97,17 +97,6 @@ test("authentication headers, visible denial and session reset without persisten
           request_id: "browser-auth-test",
         }),
       });
-    } else if (route.request().url().includes("health/ready")) {
-      await route.fulfill({
-        status: 503,
-        contentType: "application/json",
-        body: JSON.stringify({
-          ready: false,
-          api_ready: true,
-          complete_product: false,
-          capabilities: { dashboard: "incomplete" },
-        }),
-      });
     } else {
       await route.fulfill({
         contentType: "application/json",
@@ -221,17 +210,13 @@ test("real gateway CRUD, CSV, queued worker completion and narrow-screen session
   const denials: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   page.on("console", (message) => {
-    const readinessDiagnostic =
-      message.type() === "error" &&
-      message.location().url.endsWith("/api/v1/health/ready") &&
-      message.text().includes("503");
     const expectedDenial =
       checkingDenial &&
       message.type() === "error" &&
       message.location().url.endsWith("/api/v1/servers?limit=64") &&
       message.text().includes("401");
     if (expectedDenial) denials.push(message.text());
-    else if ((message.type() === "warning" || message.type() === "error") && !readinessDiagnostic)
+    else if (message.type() === "warning" || message.type() === "error")
       diagnostics.push(message.text());
   });
   await page.goto("/");

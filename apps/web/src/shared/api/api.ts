@@ -5,7 +5,6 @@ import {
   detailSchema,
   errorSchema,
   pageSchema,
-  readinessSchema,
   runSchema,
   type ServerInput,
   type Settings,
@@ -113,18 +112,8 @@ export class Api {
         redirect: "error",
         signal,
       });
-      // Product readiness uses a 503 success-shaped diagnostic while the product is incomplete.
       if (!response.ok) {
         const value = await boundedJson(response);
-        if (
-          path === "health/ready" &&
-          response.status === 503 &&
-          readinessSchema.safeParse(value).success
-        )
-          return await consume(
-            Response.json(value, { status: response.status, headers: response.headers }),
-            signal,
-          );
         const parsed = errorSchema.safeParse(value);
         if (parsed.success)
           throw new ApiError(
@@ -213,7 +202,6 @@ export class Api {
       pageSchema(dockerEventSchema),
       { signal },
     );
-  ready = (signal: AbortSignal) => this.request("health/ready", readinessSchema, { signal });
   createServer = (body: ServerInput) => this.request("servers", serverSchema, json(body));
   updateServer = ({ id, ...body }: ServerInput, version: number) =>
     this.request(`servers/${encodeURIComponent(id)}`, serverSchema, {
