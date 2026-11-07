@@ -10,11 +10,27 @@ afterEach(() => {
 
 function mockWorkspace({ pending = false }: { pending?: boolean } = {}) {
   const keys: (string | null)[] = [];
+  const uploads: string[] = [];
   let interrupt: (() => void) | undefined;
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
+      if (init?.method === "POST" && path.endsWith("/datasets")) {
+        uploads.push(path);
+        return Response.json({
+          id: "00000000-0000-4000-8000-000000000001",
+          digest: "a".repeat(64),
+          source_filename: "demo.csv",
+          request_count: 6,
+          earliest_arrival: 0,
+          latest_arrival: 1,
+          size_bytes: 100,
+          created_at: "2026-11-06T00:00:00Z",
+          original_digest: null,
+          source_size_bytes: null,
+        });
+      }
       if (init?.method === "POST") {
         keys.push(new Headers(init.headers).get("Idempotency-Key"));
         if (pending)
@@ -59,12 +75,35 @@ function mockWorkspace({ pending = false }: { pending?: boolean } = {}) {
     }),
   );
   render(<App />);
-  return { keys, interrupt: () => interrupt?.() };
+  return { keys, uploads, interrupt: () => interrupt?.() };
 }
+
+it("retains the guided workload, registered dataset and uncertain run key across navigation", async () => {
+  const { keys, uploads } = mockWorkspace();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Start guided demo" }));
+  const run = await screen.findByRole("button", { name: "2 · Run demo" });
+  await user.click(run);
+  await screen.findByRole("alert");
+  expect(keys).toHaveLength(1);
+  expect(keys[0]).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Servers" }));
+  await user.click(screen.getByRole("button", { name: "Guided demo" }));
+  expect(screen.getByRole("radio", { name: /Balanced arrivals/ })).toHaveProperty("checked", true);
+  expect(screen.getByRole("radio", { name: /Memory squeeze/ }).closest("fieldset")).toHaveProperty(
+    "disabled",
+    true,
+  );
+  await user.click(screen.getByRole("button", { name: "Retry same submission" }));
+  await screen.findByRole("alert");
+  expect(keys).toEqual([keys[0], keys[0]]);
+  expect(uploads).toHaveLength(1);
+});
 
 it("retains server and run drafts and the uncertain submission key across navigation", async () => {
   const { keys } = mockWorkspace();
   const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Servers" }));
   await user.click(await screen.findByRole("button", { name: "Edit s1" }));
   fireEvent.change(screen.getByLabelText("Memory capacity (MB)"), { target: { value: "777" } });
   await user.click(screen.getByRole("button", { name: "Datasets" }));

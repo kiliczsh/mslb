@@ -1,6 +1,6 @@
 # Run browser acceptance only against uniquely owned disposable Docker resources.
 [CmdletBinding()]
-param([string]$Grep = '')
+param([string]$Grep = '', [switch]$KeepEvidence)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -25,6 +25,15 @@ function Invoke-BrowserDocker {
 $browserProject = 'mslb-browser-' + [Guid]::NewGuid().ToString('N').Substring(0, 12)
 $configuration = (Resolve-Path (Join-Path $PSScriptRoot '../compose.browser-tests.yaml')).Path
 $composeArguments = @('compose', '-f', $configuration, '-p', $browserProject)
+$browserArtifacts = $null
+if ($KeepEvidence) {
+    $applicationRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+    $browserArtifacts = [System.IO.Path]::GetFullPath((Join-Path $applicationRoot ('.cache/browser/' + $browserProject)))
+    if (-not $browserArtifacts.StartsWith($applicationRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Browser evidence must remain inside the application workspace'
+    }
+    [System.IO.Directory]::CreateDirectory($browserArtifacts) | Out-Null
+}
 Invoke-BrowserDocker -DockerArguments ($composeArguments + @('config', '--quiet'))
 $resolved = & docker @composeArguments config --format json
 if ($LASTEXITCODE -ne 0) { throw 'Browser Compose resolution failed' }
@@ -51,7 +60,11 @@ foreach ($network in $config.networks.PSObject.Properties.Value) {
 }
 try {
     Invoke-BrowserDocker -DockerArguments ($composeArguments + @('up', '-d', '--wait', '--no-build', 'web', 'worker'))
-    $testArguments = @('run', '--rm', '--no-deps', 'browser-checks')
+    $testArguments = @('run', '--rm', '--no-deps')
+    if ($browserArtifacts) {
+        $testArguments += @('--volume', ($browserArtifacts + ':/evidence'), '-e', 'UI_SCREENSHOT_DIRECTORY=/evidence')
+    }
+    $testArguments += @('browser-checks')
     if ($Grep) { $testArguments += @('pnpm', 'test:browser', '--grep', $Grep) }
     Invoke-BrowserDocker -DockerArguments ($composeArguments + $testArguments)
 }
@@ -59,3 +72,4 @@ finally {
     Invoke-BrowserDocker -DockerArguments ($composeArguments + @('down', '--volumes', '--remove-orphans', '--timeout', '10'))
 }
 Write-Host 'Isolated browser installation verified and removed.'
+if ($browserArtifacts) { Write-Host ('Browser screenshots: ' + $browserArtifacts) }

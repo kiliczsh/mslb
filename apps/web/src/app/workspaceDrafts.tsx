@@ -8,6 +8,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { createDemoDraft } from "../features/demo/demoState.js";
 import { defaultSettings, type Server, type ServerInput } from "../shared/api/contracts.js";
 
 export const emptyServer: ServerInput = {
@@ -26,6 +27,7 @@ function createDrafts() {
     selectedRun: null as string | null,
     runCursor: null as string | null,
     retry: null as { body: string; key: string } | null,
+    demo: createDemoDraft(),
   };
 }
 type Drafts = ReturnType<typeof createDrafts>;

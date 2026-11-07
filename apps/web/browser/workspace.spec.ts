@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import { z } from "zod";
 import { acceptedSchema, detailSchema, serverSchema } from "../src/shared/api/contracts.js";
+import { comparisonSchema } from "../src/shared/api/resultContracts.js";
 
 const fixtureHeaders = {
   Authorization: `Bearer ${process.env.AUTH_TOKEN ?? ""}`,
@@ -119,6 +120,7 @@ test("authentication headers, visible denial and session reset without persisten
   await page.getByText("Connection", { exact: true }).click();
   await page.getByLabel("Bearer token (authenticated mode)").fill(token);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await page.getByRole("button", { name: "Servers", exact: true }).click();
   await expect(page.getByText("No servers configured.", { exact: false })).toBeVisible();
   await expect(page.getByLabel("Bearer token (authenticated mode)")).toHaveValue("");
   expect(
@@ -234,6 +236,7 @@ test("real gateway CRUD, CSV, queued worker completion and narrow-screen session
   });
   await page.goto("/");
   if (authenticated) {
+    await page.getByRole("button", { name: "Servers", exact: true }).click();
     await expect(page.getByRole("alert").first()).toContainText("UNAUTHORIZED");
     await expect.poll(() => denials.length).toBe(1);
     checkingDenial = false;
@@ -241,6 +244,7 @@ test("real gateway CRUD, CSV, queued worker completion and narrow-screen session
     await page.getByLabel("Bearer token (authenticated mode)").fill(process.env.AUTH_TOKEN ?? "");
     await page.getByRole("button", { name: "Connect", exact: true }).click();
   }
+  await page.getByRole("button", { name: "Servers", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Server configuration" })).toBeVisible();
   const workspaceBounds = await page.getByRole("main").boundingBox();
   expect(workspaceBounds?.x).toBeGreaterThan(0);
@@ -393,6 +397,7 @@ test("real gateway CRUD, CSV, queued worker completion and narrow-screen session
   checkingDenial = authenticated;
   await page.getByText("Connection", { exact: true }).click();
   await page.getByRole("button", { name: "Clear session", exact: true }).click();
+  await page.getByRole("button", { name: "Servers", exact: true }).click();
   if (authenticated) {
     await expect(page.getByRole("alert").first()).toContainText("UNAUTHORIZED");
     await expect.poll(() => denials.length).toBe(2);
@@ -400,4 +405,105 @@ test("real gateway CRUD, CSV, queued worker completion and narrow-screen session
   await expect(page.getByLabel("Bearer token (authenticated mode)")).toHaveValue("");
   expect(pageErrors).toEqual([]);
   expect(diagnostics).toEqual([]);
+});
+
+test("guided demo queues real work, reads saved playback and compares four strategies accessibly", async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(90_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const directory = process.env.UI_SCREENSHOT_DIRECTORY ?? "/app/test-results";
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "What happens when requests compete?" }),
+  ).toBeVisible();
+  await page.screenshot({ path: `${directory}/home-desktop.png`, fullPage: true });
+  if (process.env.AUTH_ENABLED === "true") {
+    await page.getByText("Connection", { exact: true }).click();
+    await page.getByLabel("Bearer token (authenticated mode)").fill(process.env.AUTH_TOKEN ?? "");
+    await page.getByRole("button", { name: "Connect", exact: true }).click();
+  }
+  const before = await request.get("/api/v1/servers", { headers: fixtureHeaders });
+  const originalServers = await before.json();
+  await page.getByRole("button", { name: "Start guided demo" }).focus();
+  await page.keyboard.press("Enter");
+  const recipe = page.getByRole("radio", { name: /CPU sharing/ });
+  await expect(recipe).toBeEnabled();
+  await recipe.focus();
+  await page.keyboard.press("Space");
+  await expect(recipe).toBeChecked();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "2 · Run demo" })).toBeFocused();
+  const accepted = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/simulations") && response.request().method() === "POST",
+  );
+  await page.keyboard.press("Enter");
+  const first = acceptedSchema.parse(await (await accepted).json());
+  await expect(page.getByText("Saved runs: 1 / 1 completed.")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("region", { name: "Saved request flow" })).toBeVisible();
+  await expect(page.locator(".topology-map")).toHaveAttribute("data-playing", "false");
+  const compareButton = page.getByRole("button", { name: "4 · Compare all four strategies" });
+  await page.screenshot({ path: `${directory}/demo-desktop.png`, fullPage: true });
+  const bounds = await compareButton.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect((bounds?.y ?? 900) + (bounds?.height ?? 1)).toBeLessThanOrEqual(900);
+  const comparisonResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/simulations/compare") &&
+      response.request().method() === "POST",
+  );
+  await compareButton.click();
+  const comparison = comparisonSchema.parse(await (await comparisonResponse).json());
+  expect(new Set(comparison.runs.map((run) => run.configuration.strategy)).size).toBe(4);
+  for (const run of comparison.runs) {
+    const saved = await request.get(`/api/v1/simulations/${run.run_id}`, {
+      headers: fixtureHeaders,
+    });
+    expect(detailSchema.parse(await saved.json()).status).toBe("completed");
+  }
+  await expect(page.getByRole("table")).toBeVisible();
+  await page.screenshot({ path: `${directory}/demo-comparison.png`, fullPage: true });
+  await page.setViewportSize({ width: 320, height: 900 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: `${directory}/demo-320.png`, fullPage: true });
+  const scrollRegion = page.getByRole("region", { name: "Guided strategy comparison" });
+  await page.getByRole("button", { name: "Scroll comparison right" }).focus();
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(() => scrollRegion.locator(".table-scroll").evaluate((element) => element.scrollLeft))
+    .toBeGreaterThan(0);
+  // 720 CSS pixels exercise the reflow width of a 1440-pixel display at 200% zoom.
+  await page.setViewportSize({ width: 720, height: 450 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: `${directory}/demo-reflow.png`, fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  for (const scale of [1.25, 1.5, 1.75, 2]) {
+    await page.evaluate((factor) => {
+      document.documentElement.style.fontSize = `${15 * factor}px`;
+    }, scale);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await expect(
+      page.getByRole("button", { name: "Open full results and downloads" }),
+    ).toBeVisible();
+  }
+  await page.screenshot({ path: `${directory}/demo-text-200.png`, fullPage: true });
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "";
+  });
+  const after = await request.get("/api/v1/servers", { headers: fixtureHeaders });
+  expect(await after.json()).toEqual(originalServers);
+  await page.getByRole("button", { name: "Open full results and downloads" }).click();
+  await expect(page.getByRole("heading", { name: "Explore persisted results" })).toBeVisible();
+  await expect(page.getByText(first.run_id, { exact: false }).first()).toBeVisible();
+  expect(errors).toEqual([]);
+  expect(
+    await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length })),
+  ).toEqual({ local: 0, session: 0 });
 });

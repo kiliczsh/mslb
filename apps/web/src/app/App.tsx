@@ -1,6 +1,8 @@
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { DatasetManager } from "../features/datasets/DatasetManager.js";
+import { Home } from "../features/demo/Home.js";
+import { LiveDemo } from "../features/demo/LiveDemo.js";
 import { ServerManager } from "../features/servers/ServerManager.js";
 import { RunWorkspace } from "../features/simulations/RunWorkspace.js";
 import { Api } from "../shared/api/api.js";
@@ -9,10 +11,37 @@ import { createQueryClient } from "../shared/queryClient.js";
 import { Feedback } from "../shared/ui/Feedback.js";
 import { DatabaseIcon, GraphIcon, HardDrivesIcon, UserCircleIcon } from "../shared/ui/Icons.js";
 import { Ribbon } from "../shared/ui/Ribbon.js";
-import { WorkspaceDraftProvider } from "./workspaceDrafts.js";
+import { useDraftState, useDraftStorage, WorkspaceDraftProvider } from "./workspaceDrafts.js";
+
+function OpenDemo({
+  api,
+  onServers,
+  onRuns,
+}: {
+  api: Api;
+  onServers: () => void;
+  onRuns: () => void;
+}) {
+  const storage = useDraftStorage();
+  const [, setSelected] = useDraftState({ storage, name: "selectedRun" });
+  return (
+    <LiveDemo
+      api={api}
+      onServers={onServers}
+      onOpenRun={(id) => {
+        setSelected(id);
+        onRuns();
+      }}
+    />
+  );
+}
 
 function Workspace({ api, connect }: { api: Api; connect: (token: string) => void }) {
-  const [tab, setTab] = useState("servers");
+  const [tab, setTab] = useState("home");
+  function navigate(next: string) {
+    setTab(next);
+    queueMicrotask(() => document.getElementById("workspace")?.focus());
+  }
   const [dataset, setDataset] = useState<Dataset | null>(null);
   const ready = useQuery({
     queryKey: ["readiness"],
@@ -25,13 +54,20 @@ function Workspace({ api, connect }: { api: Api; connect: (token: string) => voi
         Skip to workspace
       </a>
       <header className="app-header">
-        <a className="brand" href="#workspace" aria-label="mslb workspace">
+        <button
+          type="button"
+          className="brand"
+          aria-label="mslb home"
+          onClick={() => navigate("home")}
+        >
           <Ribbon compact />
           <span>mslb</span>
           <span className="brand-description">Load Balancer</span>
-        </a>
+        </button>
         <nav aria-label="Workspace" className="workspace-nav">
           {[
+            { id: "home", label: "Home", Icon: GraphIcon },
+            { id: "demo", label: "Guided demo", Icon: GraphIcon },
             { id: "servers", label: "Servers", Icon: HardDrivesIcon },
             { id: "datasets", label: "Datasets", Icon: DatabaseIcon },
             { id: "runs", label: "Simulations", Icon: GraphIcon },
@@ -40,7 +76,7 @@ function Workspace({ api, connect }: { api: Api; connect: (token: string) => voi
               key={id}
               type="button"
               aria-current={tab === id ? "page" : undefined}
-              onClick={() => setTab(id)}
+              onClick={() => navigate(id)}
             >
               <Icon size={18} aria-hidden="true" />
               {label}
@@ -105,12 +141,22 @@ function Workspace({ api, connect }: { api: Api; connect: (token: string) => voi
             </ul>
           </details>
         )}
+        {tab === "home" && (
+          <Home onDemo={() => navigate("demo")} onServers={() => navigate("servers")} />
+        )}
+        {tab === "demo" && (
+          <OpenDemo
+            api={api}
+            onServers={() => navigate("servers")}
+            onRuns={() => navigate("runs")}
+          />
+        )}
         {tab === "servers" && <ServerManager api={api} />}
         {tab === "datasets" && (
           <DatasetManager api={api} selected={dataset} onSelect={setDataset} />
         )}
         {tab === "runs" && (
-          <RunWorkspace api={api} dataset={dataset} onChooseDataset={() => setTab("datasets")} />
+          <RunWorkspace api={api} dataset={dataset} onChooseDataset={() => navigate("datasets")} />
         )}
       </main>
       <footer>
