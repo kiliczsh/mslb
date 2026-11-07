@@ -36,7 +36,10 @@ class ResourcePolicy:
             reason, stop_running = "MEASUREMENTS_STALE", True
         elif probe.engine_memory_bytes < 8 * 1024**3 or caps + reserve > probe.engine_memory_bytes:
             reason, stop_running = "ENGINE_CAPACITY", True
-        elif any(not item.healthy or item.container_id is None for item in probe.services):
+        elif any(
+            item.service != "redis" and (not item.healthy or item.container_id is None)
+            for item in probe.services
+        ):
             reason, stop_running = "MISSING_SERVICE", True
         elif any(
             item.oom_killed or item.working_set_bytes * 100 >= item.limit_bytes * 85

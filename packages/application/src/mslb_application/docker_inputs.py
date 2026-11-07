@@ -22,16 +22,23 @@ from mslb_application.managed_files import ManagedFiles
 class DockerSubmissions:
     """Freeze trusted operational inputs and enqueue durable Docker work."""
 
-    def __init__(self, *, catalog: Catalog, docker: DockerCatalog, files: ManagedFiles) -> None:
+    def __init__(
+        self,
+        *,
+        catalog: Catalog,
+        docker: DockerCatalog,
+        files: ManagedFiles,
+        admission: MaterializationAdmission | None = None,
+    ) -> None:
         self.catalog, self.docker, self.files = catalog, docker, files
-        self.admission = MaterializationAdmission()
+        self.admission = admission or MaterializationAdmission()
 
     async def submit(
         self,
         *,
         dataset_id: UUID,
         settings: DockerSettings,
-        deployment_id: UUID,
+        deployment_id: UUID | None = None,
         key: str | None = None,
         scope: str = "local",
     ) -> RunRecord:
@@ -65,7 +72,7 @@ class DockerSubmissions:
         *,
         dataset_id: UUID,
         settings: DockerSettings,
-        deployment_id: UUID,
+        deployment_id: UUID | None,
         key: str | None,
         scope: str,
     ) -> RunRecord:
@@ -78,7 +85,23 @@ class DockerSubmissions:
                 )
         dataset = await self.catalog.get_dataset(dataset_id=dataset_id)
         # The adapter supplies a server-enrolled deployment, never caller daemon definitions.
-        deployment = await self.docker.deployment(deployment_id=deployment_id)
+        if deployment_id is None:
+            evidence = await ResourceEvidenceStore(database=self.catalog.database).read()
+            if evidence.probe is None or not evidence.decision.admit:
+                raise OperationError(
+                    code="RESOURCE_PRESSURE", message="Fresh safe resource evidence is required"
+                )
+            backends = {
+                sample.service: sample.container_id
+                for sample in evidence.probe.services
+                if sample.service in {"backend-a", "backend-b"}
+            }
+            first, second = backends.get("backend-a"), backends.get("backend-b")
+            if first is None or second is None:
+                raise OperationError(code="NOT_READY", message="Trusted backends are unavailable")
+            deployment = await self.docker.current_deployment(static_ids=(first, second))
+        else:
+            deployment = await self.docker.deployment(deployment_id=deployment_id)
         requests = await asyncio.to_thread(
             self.files.load_requests, digest=dataset.digest, size_bytes=dataset.size_bytes
         )

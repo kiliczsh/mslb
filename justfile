@@ -93,6 +93,9 @@ check-traffic:
 check-docker-proxy:
     docker compose --profile tools run --rm --no-deps docker-proxy-check
 
+check-docker-public:
+    docker compose --profile tools run --rm --no-deps docker-public-check
+
 check-browser:
     pwsh -NoProfile -File scripts/check-browser.ps1
 

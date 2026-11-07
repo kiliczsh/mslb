@@ -24,7 +24,7 @@ def configure_routes(*, router: APIRouter, auth_enabled: bool) -> None:
                     "example": '"1"',
                 }
             ]
-        elif route.name == "submit":
+        elif route.name in {"submit", "submit_docker"}:
             extra["parameters"] = [
                 {
                     "name": "Idempotency-Key",
@@ -35,6 +35,26 @@ def configure_routes(*, router: APIRouter, auth_enabled: bool) -> None:
                     "example": "example-repeatable-submission",
                 }
             ]
+            if route.name == "submit":
+                # Runtime literals/extra-field rejection select one variant while preserving
+                # omitted logical mode. FastAPI's eager tagged-union selection bypasses an
+                # outer defaulting validator, so the discriminator is documentation metadata.
+                extra["requestBody"] = {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "discriminator": {
+                                    "propertyName": "mode",
+                                    "mapping": {
+                                        "sequential": "#/components/schemas/SimulationCreate",
+                                        "concurrent": "#/components/schemas/SimulationCreate",
+                                        "docker": "#/components/schemas/DockerSimulationCreate",
+                                    },
+                                }
+                            }
+                        }
+                    }
+                }
         elif route.name == "stream":
             extra["parameters"] = [
                 {

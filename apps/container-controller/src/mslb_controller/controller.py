@@ -243,7 +243,9 @@ class Controller:
                         state=state, outcome="failed", error_code=self.last_error_code
                     )
                     await self._cleanup(state=state)
-                    await self.control.finish_cleanup(lease=state.lease)
+                    finished = await self.control.finish_cleanup(lease=state.lease)
+                    if finished.status == "cancelled":
+                        self.last_error_code = None
                 except FAILURES:
                     # Keep the reservation and expired-cleanup retry budget as the authority.
                     self.last_error_code = "INFRASTRUCTURE_FAILURE"

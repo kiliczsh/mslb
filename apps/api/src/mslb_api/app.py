@@ -43,6 +43,7 @@ from mslb_api.route_values import Cursor as Cursor
 from mslb_api.route_values import Limit as Limit
 from mslb_api.route_values import Tick as Tick
 from mslb_api.routes_datasets import register_datasets
+from mslb_api.routes_docker import register_docker
 from mslb_api.routes_health import register_health
 from mslb_api.routes_results import register_results
 from mslb_api.routes_servers import register_servers
@@ -202,6 +203,7 @@ def create_app(
     register_servers(router=router, services=services)
     register_datasets(router=router, submissions=submissions, queries=queries)
     register_simulations(router=router, services=services, queries=queries)
+    register_docker(router=router, services=services.docker)
     register_results(router=router, queries=queries, database=database)
     configure_routes(router=router, auth_enabled=settings.auth_enabled)
     app.include_router(router=router)

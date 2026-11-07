@@ -16,6 +16,8 @@ services:
   worker:
     extends: {file: docker-compose.yml, service: worker}
     profiles: !reset []
+    environment:
+      RESOURCE_GUARD_ENABLED: "false"
     depends_on:
       redis: {condition: service_healthy}
   api:
@@ -23,6 +25,7 @@ services:
     profiles: !reset []
     ports: !reset []
     environment:
+      RESOURCE_GUARD_ENABLED: "false"
       AUTH_ENABLED: "true"
       AUTH_TOKEN: browser_fixture_credential_12345678901234567890
       ALLOWED_HOSTS: localhost:8000,127.0.0.1:8000,api:8000

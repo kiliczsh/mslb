@@ -31,6 +31,13 @@ class DispatchRefused(TrafficError):
         super().__init__(code=reason)
 
 
+class GrowthHeld(TrafficError):
+    """Hold optional membership growth while existing bounded traffic can continue."""
+
+    def __init__(self) -> None:
+        super().__init__(code="RESOURCE_PRESSURE")
+
+
 class Refusal(Exception):
     """Carry a safe semantic proxy status/code without privileged daemon diagnostics."""
 

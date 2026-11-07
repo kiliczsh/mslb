@@ -9,10 +9,12 @@ from mslb_contracts.docker_runtime import StopReason
 from mslb_contracts.docker_settings import DockerSettings
 from mslb_persistence.docker_records import ControlLease, ResourceRecord
 from mslb_persistence.docker_resources import DockerResources
+from mslb_persistence.errors import StoreError
+from mslb_persistence.resource_evidence import ResourceEvidenceStore
 
 from mslb_controller.backend_http import BackendHttp
 from mslb_controller.control_client import ControlClient
-from mslb_controller.errors import TrafficError
+from mslb_controller.errors import EngineError, GrowthHeld, TrafficError
 from mslb_controller.physical_scaling import ReadyBackend
 from mslb_controller.routing_models import BackendSpec
 
@@ -43,55 +45,84 @@ class PhysicalResources:
     async def provision(self) -> ReadyBackend:
         """Reserve, inspect/create, start and health-check before routing membership exists."""
         self.check()
-        async with asyncio.timeout(delay=15):
-            records = await self.resources.list(lease=self.lease())
-            occupied = {
-                record.name
-                for record in records
-                if record.state not in {"removed", "released", "abandoned"}
-            }
-            static = next(
-                (name for name in ("backend-a", "backend-b") if name not in occupied), None
-            )
-            record = (
-                await self.resources.reserve_static(lease=self.lease(), name=static)
-                if static is not None
-                else await self.resources.prepare_dynamic(lease=self.lease())
-            )
-            await self.observe(resource=record)
-            self.check()
-            if record.kind == "dynamic":
-                await self.client.resource(
-                    lease=self.lease(), identifier=record.id, action="create"
+        record: ResourceRecord | None = None
+        try:
+            if self.resources.database.enforce_resource_guard:
+                report = await ResourceEvidenceStore(database=self.resources.database).read()
+                if not report.decision.admit:
+                    if report.decision.stop_running:
+                        raise TrafficError(code="RESOURCE_PRESSURE")
+                    raise GrowthHeld
+            async with asyncio.timeout(delay=15):
+                records = await self.resources.list(lease=self.lease())
+                occupied = {
+                    record.name
+                    for record in records
+                    if record.state not in {"removed", "released", "abandoned"}
+                }
+                static = next(
+                    (name for name in ("backend-a", "backend-b") if name not in occupied), None
                 )
-                record = await self.resources.get(lease=self.lease(), resource_id=record.id)
+                record = (
+                    await self.resources.reserve_static(lease=self.lease(), name=static)
+                    if static is not None
+                    else await self.resources.prepare_dynamic(lease=self.lease())
+                )
                 await self.observe(resource=record)
                 self.check()
-                await self.client.resource(lease=self.lease(), identifier=record.id, action="start")
-            else:
-                await self.client.resource(
-                    lease=self.lease(), identifier=record.id, action="inspect"
+                if record.kind == "dynamic":
+                    await self.client.resource(
+                        lease=self.lease(), identifier=record.id, action="create"
+                    )
+                    record = await self.resources.get(lease=self.lease(), resource_id=record.id)
+                    await self.observe(resource=record)
+                    self.check()
+                    await self.client.resource(
+                        lease=self.lease(), identifier=record.id, action="start"
+                    )
+                else:
+                    await self.client.resource(
+                        lease=self.lease(), identifier=record.id, action="inspect"
+                    )
+                record = await self.resources.get(lease=self.lease(), resource_id=record.id)
+                await self.observe(resource=record)
+                spec = BackendSpec(
+                    id=record.name,
+                    logical_admission_mem_mb=self.settings.logical_admission_mem_mb
+                    if record.kind == "dynamic"
+                    else 1024,
+                    max_inflight=self.settings.backend_inflight if record.kind == "dynamic" else 4,
+                    starts_per_second=self.settings.starts_per_backend_second,
                 )
-            record = await self.resources.get(lease=self.lease(), resource_id=record.id)
-            await self.observe(resource=record)
-            spec = BackendSpec(
-                id=record.name,
-                logical_admission_mem_mb=self.settings.logical_admission_mem_mb
-                if record.kind == "dynamic"
-                else 1024,
-                max_inflight=self.settings.backend_inflight if record.kind == "dynamic" else 4,
-                starts_per_second=self.settings.starts_per_backend_second,
-            )
-            for _ in range(20):
-                self.check()
-                try:
-                    observed = await self.http.health(spec=spec)
-                except TrafficError:
-                    observed = None
-                if observed is not None and observed.ready:
-                    return ReadyBackend(spec=spec, observed=observed)
-                await asyncio.sleep(delay=0.1)
-            raise TrafficError(code="INVALID_BACKEND")
+                for _ in range(20):
+                    self.check()
+                    try:
+                        observed = await self.http.health(spec=spec)
+                    except TrafficError:
+                        observed = None
+                    if observed is not None and observed.ready:
+                        return ReadyBackend(spec=spec, observed=observed)
+                    await asyncio.sleep(delay=0.1)
+                raise TrafficError(code="INVALID_BACKEND")
+        except (StoreError, EngineError) as failure:
+            if not self.resources.database.enforce_resource_guard:
+                raise
+            report = await ResourceEvidenceStore(database=self.resources.database).read()
+            pressure_refusal = (
+                isinstance(failure, StoreError) and failure.code == "RESOURCE_PRESSURE"
+            ) or (isinstance(failure, EngineError) and failure.code == "CONTROL_REFUSED")
+            if pressure_refusal and not report.decision.admit and not report.decision.stop_running:
+                if record is not None:
+                    # Cleanup accepts held admission. If reconciliation is uncertain its
+                    # failure propagates and capacity stays reserved for fenced recovery.
+                    await self.client.resource(
+                        lease=self.lease(), identifier=record.id, action="cleanup"
+                    )
+                    await self.observe(
+                        resource=await self.resources.get(lease=self.lease(), resource_id=record.id)
+                    )
+                raise GrowthHeld from None
+            raise
 
     async def retire(self, *, backend_id: str) -> None:
         """Resolve the exact persisted identity; static containers are never stopped."""

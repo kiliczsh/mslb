@@ -7,6 +7,7 @@ import uvicorn
 from fastapi import FastAPI
 from mslb_application.managed_files import ManagedFiles
 from mslb_application.storage_values import StorageLimits
+from mslb_contracts.resources import parse_resource_guard
 from mslb_persistence.database import Database
 
 from mslb_api.app import create_app
@@ -19,7 +20,11 @@ def build() -> FastAPI:
     return create_app(
         settings=settings,
         database=Database(
-            url=os.environ["DATABASE_URL"], capacity_profile=settings.capacity_profile
+            url=os.environ["DATABASE_URL"],
+            capacity_profile=settings.capacity_profile,
+            enforce_resource_guard=parse_resource_guard(
+                value=os.environ.get(key="RESOURCE_GUARD_ENABLED", default="true")
+            ),
         ),
         inputs=ManagedFiles(
             root=Path(os.environ.get(key="INPUT_ROOT", default="/data/inputs")), limits=limits

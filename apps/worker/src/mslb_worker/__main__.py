@@ -14,6 +14,7 @@ from mslb_application.notifications import OutboxNotifications
 from mslb_application.storage_values import StorageLimits
 from mslb_application.worker import Worker
 from mslb_contracts.capacity_profiles import parse_capacity_profile, validate_isolated_profile
+from mslb_contracts.resources import parse_resource_guard
 from mslb_persistence.database import Database
 from mslb_persistence.jobs import Jobs
 
@@ -36,6 +37,9 @@ async def main(*, once: bool) -> None:
     validate_isolated_profile(profile=profile, installation_id=isolation_id)
     database = Database(
         url=os.environ["DATABASE_URL"],
+        enforce_resource_guard=parse_resource_guard(
+            value=os.environ.get(key="RESOURCE_GUARD_ENABLED", default="true")
+        ),
         schema=os.environ.get(key="DATABASE_SCHEMA", default="public"),
         capacity_profile=profile,
     )

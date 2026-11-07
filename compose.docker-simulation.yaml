@@ -145,6 +145,7 @@ services:
     cpus: 0.5
     pids_limit: 32
     environment:
+      RESOURCE_GUARD_ENABLED: "true"
       DATABASE_URL: postgresql://mslb:local-demo-only@postgres/mslb
       PROXY_BIND_HOST: 0.0.0.0
     volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro", "controller-auth:/run/controller-auth:ro", "guard-auth:/run/guard-auth:ro"]

@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from http import HTTPStatus
 
 from mslb_application.resource_policy import ResourcePolicy
-from mslb_contracts.resources import ResourceProbe
+from mslb_contracts.resources import ResourceProbe, safe_to_admit
 from mslb_controller.control_client import ControlClient
 from mslb_controller.engine import EngineError
 from mslb_controller.resource_client import ResourceClient
@@ -45,11 +45,17 @@ async def check_resource_probe() -> None:
             report = await ResourceEvidenceStore(database=database).read()
             if (
                 report.received_at is None
-                or report.decision.admit
-                or not report.decision.stop_running
+                or (
+                    report.decision.admit
+                    and (
+                        report.probe is None
+                        or not safe_to_admit(probe=report.probe, now=datetime.now(tz=UTC))
+                    )
+                )
+                or (not report.decision.admit and report.decision.reason is None)
             ):
                 raise RuntimeError(
-                    "Default guard did not publish a fresh explicit readiness refusal"
+                    "Default guard did not publish fresh consistent resource evidence"
                 )
             service = next(item for item in probe.services if item.service == "resource-guard")
             if service.container_id is None or service.limit_bytes != 128 * 1024**2:

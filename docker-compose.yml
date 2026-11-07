@@ -199,6 +199,7 @@ services:
       target: runtime
     command: [python, -m, mslb_worker]
     environment:
+      RESOURCE_GUARD_ENABLED: "true"
       DATABASE_URL: postgresql://mslb:local-demo-only@postgres/mslb
       REDIS_URL: redis://redis:6379/0
       INPUT_ROOT: /data/inputs
@@ -234,6 +235,7 @@ services:
     mem_limit: 384m
     memswap_limit: 384m
     environment:
+      RESOURCE_GUARD_ENABLED: "true"
       DATABASE_URL: postgresql://mslb:local-demo-only@postgres/mslb
       INPUT_ROOT: /data/inputs
       OUTPUT_ROOT: /data/outputs
@@ -273,6 +275,21 @@ services:
     depends_on:
       api: {condition: service_healthy}
       worker: {condition: service_healthy}
+    networks: [internal]
+  docker-public-check:
+    <<: *tool
+    image: mslb-python-tools:local
+    command: [python, scripts/check_docker_api.py]
+    mem_limit: 256m
+    memswap_limit: 256m
+    pids_limit: 48
+    environment:
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+      AUTH_TOKEN: ${AUTH_TOKEN:-}
+    depends_on:
+      api: {condition: service_healthy}
+      container-controller: {condition: service_healthy}
+      resource-guard: {condition: service_healthy}
     networks: [internal]
   mcp-check:
     <<: *tool

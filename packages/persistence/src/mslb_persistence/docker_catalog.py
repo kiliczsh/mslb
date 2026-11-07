@@ -127,6 +127,30 @@ class DockerCatalog:
 
         return await self.database.transaction(operation=operation)
 
+    async def current_deployment(self, *, static_ids: tuple[str, str]) -> DeploymentRecord:
+        """Resolve trusted enrollment matching both immutable IDs from fresh guard evidence."""
+
+        async def operation(session: AsyncSession) -> UUID:
+            identifier = await session.scalar(
+                statement=select(DockerDeployment.id)
+                .where(
+                    DockerDeployment.definition["static"][0]["container_id"].as_string()
+                    == static_ids[0],
+                    DockerDeployment.definition["static"][1]["container_id"].as_string()
+                    == static_ids[1],
+                )
+                .order_by(DockerDeployment.created_at.desc(), DockerDeployment.id.desc())
+                .limit(limit=1)
+            )
+            if identifier is None:
+                raise StoreError(
+                    code="NOT_READY", message="Current controller deployment is not enrolled"
+                )
+            return identifier
+
+        identifier = await self.database.transaction(operation=operation)
+        return await self.deployment(deployment_id=identifier)
+
     async def snapshot(self, run_id: UUID) -> DockerSnapshot:
         """Read one coherent trusted deployment and dataset view for operational submission."""
 

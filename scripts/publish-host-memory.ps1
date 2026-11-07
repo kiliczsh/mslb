@@ -1,21 +1,30 @@
 # Run alongside Docker Desktop startup; keep this process running while accepting work.
+[CmdletBinding()]
+param([string]$StopFile = '', [string]$ContainerName = '')
+
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 if ($env:OS -ne "Windows_NT") {
     throw "Windows host memory sampling requires Windows PowerShell and Docker Desktop."
 }
+if ($ContainerName -and $ContainerName -notmatch '^mslb-host-memory-[a-f0-9]{12}$') {
+    throw 'Host memory writer name must be a unique project-owned identifier.'
+}
 
 $hostBridgeStart = [System.Diagnostics.ProcessStartInfo]::new()
 $hostBridgeStart.FileName = "docker"
-$hostBridgeStart.Arguments = "compose --profile tools run --rm --no-deps -T host-memory-writer"
+$hostBridgeNameArgument = if ($ContainerName) { "--name $ContainerName " } else { '' }
+$hostBridgeStart.Arguments = "compose --profile tools run --rm --no-deps -T ${hostBridgeNameArgument}host-memory-writer"
 $hostBridgeStart.WorkingDirectory = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $hostBridgeStart.UseShellExecute = $false
 $hostBridgeStart.CreateNoWindow = $true
 $hostBridgeStart.RedirectStandardInput = $true
+$hostBridgeStart.RedirectStandardError = $true
 $hostBridgeProcess = [System.Diagnostics.Process]::new()
 $hostBridgeProcess.StartInfo = $hostBridgeStart
 $hostBridgeStarted = $false
+$hostBridgeStopped = $false
 
 try {
     if (-not $hostBridgeProcess.Start()) {
@@ -23,6 +32,10 @@ try {
     }
     $hostBridgeStarted = $true
     while (-not $hostBridgeProcess.HasExited) {
+        if ($StopFile -and (Test-Path -LiteralPath $StopFile)) {
+            $hostBridgeStopped = $true
+            break
+        }
         $hostOperatingSystem = Get-CimInstance -ClassName Win32_OperatingSystem `
             -Property TotalVisibleMemorySize, FreePhysicalMemory
         $hostTotalBytes = [long]([decimal]$hostOperatingSystem.TotalVisibleMemorySize * 1024)
@@ -44,7 +57,12 @@ try {
         $hostBridgeProcess.StandardInput.Flush()
         Start-Sleep -Milliseconds 1000
     }
-    throw "The isolated host memory writer stopped with exit code $($hostBridgeProcess.ExitCode)."
+    if (-not $hostBridgeStopped) {
+        $hostBridgeBuffer = [char[]]::new(4096)
+        $hostBridgeRead = $hostBridgeProcess.StandardError.Read($hostBridgeBuffer, 0, $hostBridgeBuffer.Length)
+        $hostBridgeDiagnostic = [string]::new($hostBridgeBuffer, 0, $hostBridgeRead)
+        throw "The isolated host memory writer stopped with exit code $($hostBridgeProcess.ExitCode): $hostBridgeDiagnostic"
+    }
 }
 finally {
     if ($hostBridgeStarted) {

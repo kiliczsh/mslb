@@ -7,6 +7,7 @@ import signal
 from pathlib import Path
 
 from mslb_application.files import ManagedFiles, StorageLimits
+from mslb_contracts.resources import parse_resource_guard
 from mslb_persistence.database import Database
 
 from mslb_controller.control_client import ControlClient
@@ -18,13 +19,12 @@ logger = logging.getLogger(name=__name__)
 
 async def main() -> None:
     """Enroll trusted deployment, supervise durable work and leave expiry recovery authoritative."""
-    enabled = os.environ.get(key="RESOURCE_GUARD_ENABLED", default="true")
-    if enabled not in {"true", "false"}:
-        raise ValueError("Invalid server resource-guard setting")
     database = Database(
         url=os.environ["DATABASE_URL"],
         schema=os.environ.get(key="CONTROL_DATABASE_SCHEMA", default="public"),
-        enforce_resource_guard=enabled == "true",
+        enforce_resource_guard=parse_resource_guard(
+            value=os.environ.get(key="RESOURCE_GUARD_ENABLED", default="true")
+        ),
     )
     limits = StorageLimits()
     inputs = await asyncio.to_thread(

@@ -49,12 +49,22 @@ def test_invalid_frame_never_replaces_good_evidence(tmp_path: Path, raw: bytes) 
 @pytest.mark.parametrize(argnames="second", argvalues=[-4, 1])
 def test_writer_rejects_stale_and_future_host_clock(tmp_path: Path, second: int) -> None:
     with pytest.raises(expected_exception=ValueError, match="stale or repeated"):
-        host_memory.consume(
-            stream=io.BytesIO(
-                initial_bytes=frame(second=second).model_dump_json().encode() + b"\n"
-            ),
+        host_memory.write_frame(
+            raw=frame(second=second).model_dump_json().encode() + b"\n",
             directory=tmp_path,
+            previous=None,
         )
+
+
+def test_queued_stale_and_future_frames_never_replace_evidence_or_kill_the_feeder(
+    tmp_path: Path,
+) -> None:
+    old, future, first, latest = frame(second=-4), frame(second=1), frame(second=-1), frame()
+    raw = b"".join(
+        value.model_dump_json().encode() + b"\n" for value in (old, future, first, first, latest)
+    )
+    host_memory.consume(stream=io.BytesIO(initial_bytes=raw), directory=tmp_path)
+    assert (tmp_path / "memory.json").read_bytes() == latest.model_dump_json().encode()
 
 
 def test_host_contract_refuses_bool_oversized_inconsistent_and_non_utc_counters() -> None:

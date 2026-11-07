@@ -8,6 +8,7 @@ $PSNativeCommandUseErrorActionPreference = $false
 $verificationSteps = [System.Collections.Generic.List[object]]::new()
 $verificationTimer = [System.Diagnostics.Stopwatch]::StartNew()
 $verificationPassed = $false
+$verificationHostBridge = @{ Process = $null; StopFile = $null }
 $timingDirectory = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../.cache/verification'))
 
 function Invoke-TimedCheck {
@@ -87,6 +88,27 @@ try {
         'compose', 'up', '--no-build', '--force-recreate', '-d', '--wait'
     )
     Invoke-TimedCheck -Name 'Host loopback API and web connectivity' -Action {
+        if ($env:OS -eq 'Windows_NT') {
+            $engineSystem = & docker info --format '{{.OperatingSystem}}'
+            if ($LASTEXITCODE -ne 0) { throw 'Docker engine identification failed' }
+            if ($engineSystem -like '*Docker Desktop*') {
+                $existingFeeders = & docker ps --filter 'label=com.docker.compose.project=mslb' --filter 'label=com.docker.compose.service=host-memory-writer' --format '{{.Names}}'
+                if ($LASTEXITCODE -ne 0) { throw 'Host feeder discovery failed' }
+                if (-not $existingFeeders) {
+                    New-Item -ItemType Directory -Force -Path $timingDirectory | Out-Null
+                    $bridgeSuffix = [guid]::NewGuid().ToString('N').Substring(0, 12)
+                    $verificationHostBridge.StopFile = Join-Path $timingDirectory "bridge-$bridgeSuffix.stop"
+                    $bridgeLog = Join-Path $timingDirectory "bridge-$bridgeSuffix.log"
+                    $bridgeErrorLog = Join-Path $timingDirectory "bridge-$bridgeSuffix.stderr.log"
+                    $bridgeScript = Join-Path $PSScriptRoot 'publish-host-memory.ps1'
+                    $bridgeArguments = "-NoProfile -File `"$bridgeScript`" -StopFile `"$($verificationHostBridge.StopFile)`" -ContainerName mslb-host-memory-$bridgeSuffix"
+                    $verificationHostBridge.Process = Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList $bridgeArguments -WorkingDirectory (Get-Location).Path -WindowStyle Hidden -RedirectStandardOutput $bridgeLog -RedirectStandardError $bridgeErrorLog -PassThru
+                    Write-Host 'Started project-scoped Desktop host evidence feeder'
+                } else {
+                    Write-Host 'Using existing project-scoped Desktop host evidence feeder'
+                }
+            }
+        }
         $hostHealth = Invoke-WebRequest -Uri 'http://127.0.0.1:8000/api/v1/health/live' -TimeoutSec 5
         if ($hostHealth.StatusCode -ne 200) { throw 'Host loopback API health failed' }
         Write-Host 'Host loopback API connectivity verified'
@@ -94,10 +116,22 @@ try {
         if ($webHealth.StatusCode -ne 200) { throw 'Host loopback dashboard health failed' }
         Write-Host 'Host loopback dashboard connectivity verified'
     }
-    foreach ($service in @('dependencies-check', 'migrate', 'runtime-check', 'python-checks', 'persistence-checks', 'frontend-checks', 'worker-check', 'api-check', 'mcp-check', 'traffic-check', 'docker-proxy-check')) {
+    foreach ($service in @('dependencies-check', 'migrate', 'runtime-check', 'python-checks', 'persistence-checks', 'frontend-checks', 'worker-check', 'api-check', 'mcp-check', 'traffic-check', 'docker-proxy-check', 'docker-public-check')) {
         Invoke-CheckedDocker -DockerArguments @(
             'compose', '--profile', 'tools', 'run', '--rm', '--no-deps', $service
         )
+    }
+    # Redis is only a wake-up/cache hint. Exercise actual guarded durable work during
+    # its outage, and always restore this project's service before leaving the gate.
+    try {
+        Invoke-CheckedDocker -DockerArguments @('compose', 'stop', 'redis')
+        foreach ($service in @('worker-check', 'api-check')) {
+            Invoke-CheckedDocker -DockerArguments @(
+                'compose', '--profile', 'tools', 'run', '--rm', '--no-deps', $service
+            )
+        }
+    } finally {
+        Invoke-CheckedDocker -DockerArguments @('compose', 'up', '--no-build', '-d', '--wait', 'redis')
     }
     Invoke-TimedCheck -Name 'Isolated browser installation, tests and cleanup' -Action {
         & (Join-Path $PSScriptRoot 'check-browser.ps1')
@@ -113,6 +147,28 @@ try {
     $verificationPassed = $true
 }
 finally {
+    $bridgeCleanupFailure = $null
+    if ($null -ne $verificationHostBridge.Process) {
+        $verificationBridge = $verificationHostBridge.Process
+        try {
+            'stop' | Set-Content -LiteralPath $verificationHostBridge.StopFile -Encoding ascii
+            if (-not $verificationBridge.WaitForExit(8000)) {
+                $verificationBridge.Kill()
+                if (-not $verificationBridge.WaitForExit(5000)) {
+                    throw 'Owned Desktop feeder did not stop'
+                }
+            }
+            if ($verificationBridge.ExitCode -ne 0) {
+                $verificationPassed = $false
+                throw 'Owned Desktop feeder failed; inspect its bounded local diagnostic'
+            }
+        } catch {
+            $verificationPassed = $false
+            $bridgeCleanupFailure = $_
+        } finally {
+            $verificationBridge.Dispose()
+        }
+    }
     $verificationTimer.Stop()
     Pop-Location
     [Environment]::SetEnvironmentVariable('GIT_CONFIG_COUNT', $previousCount, 'Process')
@@ -126,4 +182,5 @@ finally {
         steps = $verificationSteps.ToArray()
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $timingDirectory 'last-run.json') -Encoding utf8
     Write-Host ('Verification elapsed: {0:N2}s' -f $verificationTimer.Elapsed.TotalSeconds)
+    if ($null -ne $bridgeCleanupFailure) { throw $bridgeCleanupFailure }
 }

@@ -37,6 +37,7 @@ from mslb_application.failures import failure
 from mslb_application.services import Services
 from mslb_application.waiting import RunWaiter
 from mslb_contracts.canonical import canonical_bytes
+from mslb_contracts.docker_views import DockerEventArguments, DockerRunCommand
 from mslb_contracts.http import CompareRequest
 from mslb_contracts.inputs import ServerInput
 from mslb_contracts.mcp import (
@@ -95,6 +96,8 @@ class McpAdapter:
                 "Use wait_for_simulations for bounded batch waiting, with progress opt-in. "
                 "Keep get_simulation_status for recovery or occasional explicit checks. "
                 "Resources and prompts are read-only."
+                " Use run_docker_simulation for actual HTTP traffic and get_docker_simulation "
+                "for its operational results. Logical wait and comparison tools accept logical IDs."
             ),
             on_list_tools=self.list_tools,
             on_call_tool=self.call_tool,
@@ -204,6 +207,20 @@ class McpAdapter:
     async def execute(self, *, name: str, argument: BaseModel) -> BaseModel:
         """Dispatch validated tool arguments to transport-neutral services."""
         service = self.services
+        if name == "run_docker_simulation" and isinstance(argument, DockerRunCommand):
+            return await service.docker.submit(
+                body=argument.simulation, key=argument.idempotency_key
+            )
+        if name == "list_docker_simulations" and isinstance(argument, PageArguments):
+            return await service.docker.history(limit=argument.limit, cursor=argument.cursor)
+        if name == "get_docker_simulation" and isinstance(argument, RunReference):
+            return await service.docker.detail(run_id=argument.run_id)
+        if name == "get_docker_events" and isinstance(argument, DockerEventArguments):
+            return await service.docker.events(
+                run_id=argument.run_id, limit=argument.limit, cursor=argument.cursor
+            )
+        if name == "cancel_docker_simulation" and isinstance(argument, RunReference):
+            return await service.docker.cancel(run_id=argument.run_id)
         if name == "list_servers" and isinstance(argument, PageArguments):
             return await service.list_servers(limit=argument.limit, cursor=argument.cursor)
         if name == "get_server" and isinstance(argument, ServerReference):
@@ -327,6 +344,18 @@ class McpAdapter:
                     result = ServerResource(page=await self.services.list_servers())
                 elif params.uri == "mslb://strategies":
                     result = self.services.strategies()
+                elif params.uri.startswith("mslb://docker-runs/"):
+                    match = re.fullmatch(
+                        pattern=r"mslb://docker-runs/([a-fA-F0-9-]{36})/summary", string=params.uri
+                    )
+                    if match is None:
+                        raise OperationError(
+                            code="NOT_FOUND", message="MCP resource is not registered"
+                        )
+                    run_id = RunReference.model_validate_json(
+                        json_data=canonical_bytes(value={"run_id": match[1]})
+                    ).run_id
+                    result = await self.services.docker.detail(run_id=run_id)
                 else:
                     match = re.fullmatch(
                         pattern=r"mslb://runs/([a-fA-F0-9-]{36})/(summary|events)",

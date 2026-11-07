@@ -5,6 +5,7 @@ import asyncio
 import pytest
 from mslb_contracts.docker_settings import DockerSettings
 from mslb_contracts.traffic import WorkRequest
+from mslb_controller.errors import GrowthHeld, TrafficError
 from mslb_controller.physical_scaling import PhysicalScaling, ReadyBackend
 from mslb_controller.router import Router
 from mslb_controller.routing_models import BackendSpec
@@ -105,6 +106,53 @@ def test_failed_retirement_keeps_member_excluded_and_holds_capacity() -> None:
             )
             assert reservation.backend.spec.id == "backend-a"
             reservation.release()
+        finally:
+            await http.close()
+
+    asyncio.run(main=scenario())
+
+
+def test_growth_hold_preserves_existing_traffic_and_hard_stop_still_propagates() -> None:
+    async def scenario() -> None:
+        clock, http = FakeClock(), Transport()
+        router = Router(
+            specs=(BackendSpec(id="backend-a"),), strategy="first_fit", http=http, clock=clock.now
+        )
+        hard = False
+
+        async def provision() -> ReadyBackend:
+            if hard:
+                raise TrafficError(code="RESOURCE_PRESSURE")
+            raise GrowthHeld
+
+        async def retire(*, backend_id: str) -> None:
+            raise RuntimeError("Unexpected retirement")
+
+        policy = PhysicalScaling(
+            settings=DockerSettings.model_validate(
+                obj={"initial_replicas": 1, "physical_scaling": {"enabled": True}}
+            ),
+            provision=provision,
+            retire=retire,
+            clock=clock.now,
+        )
+        try:
+            await router.refresh()
+            reservation = router.reserve(
+                request=WorkRequest(request_id="active", work_units=1, mem_mb=1)
+            )
+            for _ in range(5):
+                await policy.evaluate(router=router, pending=2)
+                clock.current += 1
+            assert len(router.states) == 1 and reservation.backend.inflight == 1
+            reservation.release()
+            next_request = router.reserve(
+                request=WorkRequest(request_id="later", work_units=1, mem_mb=1)
+            )
+            next_request.release()
+            hard = True
+            with pytest.raises(expected_exception=TrafficError):
+                await policy.evaluate(router=router, pending=2)
         finally:
             await http.close()
 

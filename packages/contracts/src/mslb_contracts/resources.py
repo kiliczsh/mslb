@@ -187,10 +187,16 @@ def safe_to_admit(*, probe: ResourceProbe, now: datetime | None = None) -> bool:
             )
         )
         and all(
-            item.healthy
-            and item.container_id is not None
+            (item.service == "redis" or (item.healthy and item.container_id is not None))
             and not item.oom_killed
             and item.working_set_bytes * 100 < item.limit_bytes * 70
             for item in probe.services
         )
     )
+
+
+def parse_resource_guard(*, value: str) -> bool:
+    """Parse a trusted service flag; production entrypoints default to enforcement."""
+    if value not in {"true", "false"}:
+        raise ValueError("RESOURCE_GUARD_ENABLED must be true or false")
+    return value == "true"

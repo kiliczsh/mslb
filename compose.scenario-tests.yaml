@@ -14,6 +14,7 @@ services:
     extends: {file: docker-compose.yml, service: worker}
     profiles: !reset []
     environment:
+      RESOURCE_GUARD_ENABLED: "false"
       CAPACITY_PROFILE: ${SCENARIO_CAPACITY_PROFILE:?Explicit capacity required}
       SCENARIO_INSTALLATION_ID: ${SCENARIO_INSTALLATION_ID:?Isolation UUID required}
     depends_on:
@@ -24,6 +25,7 @@ services:
     ports: !reset []
     networks: !override [internal]
     environment:
+      RESOURCE_GUARD_ENABLED: "false"
       AUTH_ENABLED: "true"
       AUTH_TOKEN: isolated_scenario_credential_12345678901234567890
       ALLOWED_HOSTS: api:8000,127.0.0.1:8000

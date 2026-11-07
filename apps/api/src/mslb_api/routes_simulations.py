@@ -6,11 +6,11 @@ from uuid import UUID
 from fastapi import APIRouter, Request
 from mslb_application.queries import Queries
 from mslb_application.services import Services
+from mslb_contracts.docker_views import DockerSimulationCreate, SimulationRequest
 from mslb_contracts.http import (
     CompareRequest,
     RunDetail,
     SimulationAccepted,
-    SimulationCreate,
     StrategyView,
 )
 from mslb_contracts.metric_views import ComparisonView
@@ -40,13 +40,20 @@ def register_simulations(*, router: APIRouter, services: Services, queries: Quer
         status_code=HTTPStatus.ACCEPTED.value,
         response_model=SimulationAccepted,
     )
-    async def submit(body: SimulationCreate, request: Request) -> Response:
-        """Durably queue immutable logical work and support idempotent retries."""
-        run = await services.submit(body=body, key=request.headers.get("idempotency-key"))
+    async def submit(body: SimulationRequest, request: Request) -> Response:
+        """Queue a frozen logical or operational variant with idempotent retries."""
+        operational = isinstance(body, DockerSimulationCreate)
+        run = (
+            await services.docker.submit(body=body, key=request.headers.get("idempotency-key"))
+            if isinstance(body, DockerSimulationCreate)
+            else await services.submit(body=body, key=request.headers.get("idempotency-key"))
+        )
         return json_response(
             model=run,
             status=HTTPStatus.ACCEPTED.value,
-            headers={"Location": f"/api/v1/simulations/{run.run_id}"},
+            headers={
+                "Location": f"/api/v1/{'docker/' if operational else ''}simulations/{run.run_id}"
+            },
         )
 
     @router.get(path="/simulations", response_model=Page[RunView])

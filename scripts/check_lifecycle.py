@@ -44,6 +44,7 @@ async def server(database: Database) -> asyncio.subprocess.Process:
         | {
             "DATABASE_URL": os.environ["TEST_DATABASE_URL"],
             "CONTROL_DATABASE_SCHEMA": database.schema,
+            "RESOURCE_GUARD_ENABLED": "false",
         },
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,

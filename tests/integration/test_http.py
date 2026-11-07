@@ -186,7 +186,7 @@ def test_rest_crud_upload_durable_execution_downloads_and_sse(
                 ).status_code == HTTPStatus.CONFLICT.value
                 for malformed in (
                     {"dataset_id": dataset, "max_simulation_ticks": True},
-                    {"dataset_id": dataset, "mode": "docker"},
+                    {"dataset_id": dataset, "mode": "unsupported"},
                 ):
                     assert (
                         await client.post(url="simulations", json=malformed)

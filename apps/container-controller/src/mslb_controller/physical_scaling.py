@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from mslb_contracts.docker_settings import DockerSettings
 from mslb_contracts.traffic import BackendHealth
 
+from mslb_controller.errors import GrowthHeld
 from mslb_controller.router import Router
 from mslb_controller.routing_models import BackendSpec
 from mslb_controller.traffic_protocols import RetireBackend
@@ -60,7 +61,12 @@ class PhysicalScaling:
             self.pending_samples >= policy.pending_samples
             and len(router.states) < self.settings.max_replicas
         ):
-            ready = await self.provision()
+            try:
+                ready = await self.provision()
+            except GrowthHeld:
+                # Keep the sample cadence and all existing reservations. Hard pressure,
+                # stale ownership and uncertain cleanup are different failures.
+                return
             router.add(spec=ready.spec, observed=ready.observed)
             self.changed_at, self.pending_samples = self.clock(), 0
             return

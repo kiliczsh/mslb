@@ -18,6 +18,7 @@ from mslb_persistence.jobs import Jobs
 from mslb_persistence.reads import check_limit
 
 from mslb_application.cursors import Position
+from mslb_application.docker_services import DockerServices
 from mslb_application.errors import OperationError
 from mslb_application.queries import Queries
 from mslb_application.submissions import Submissions
@@ -34,6 +35,12 @@ class Services:
             jobs,
             submissions,
             queries,
+        )
+        self.docker = DockerServices(
+            catalog=catalog,
+            inputs=submissions.files,
+            queries=queries,
+            admission=submissions.admission,
         )
 
     async def list_servers(self, limit: int = 100, cursor: str | None = None) -> Page[ServerView]:

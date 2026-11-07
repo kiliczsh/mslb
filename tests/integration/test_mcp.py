@@ -41,7 +41,7 @@ async def call(
     return value
 
 
-def test_official_client_discovers_and_exercises_all_tools_resources_and_prompts(
+def test_official_client_discovers_catalog_and_exercises_logical_tools_resources_and_prompts(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
@@ -211,7 +211,7 @@ def test_official_client_discovers_and_exercises_all_tools_resources_and_prompts
                     )
                     resources = await client.list_resources()
                     templates = await client.list_resource_templates()
-                    assert len(resources.resources) == 2 and len(templates.resource_templates) == 2
+                    assert len(resources.resources) == 2 and len(templates.resource_templates) == 3
                     for uri in (
                         "mslb://servers",
                         "mslb://strategies",
@@ -510,8 +510,8 @@ def test_official_http_client_auth_origin_and_request_correlation(
                 ):
                     assert client.server_info is not None
                     assert client.server_info.name == "mslb"
-                    assert client.server_info.version == "2.1.0"
-                    assert len((await client.list_tools()).tools) == 13
+                    assert client.server_info.version == "2.2.0"
+                    assert len((await client.list_tools()).tools) == 18
                     result = await client.call_tool(name="list_strategies", arguments={})
                     assert not result.is_error and result.meta is not None
                     assert result.meta["request_id"] == request_ids[-1]

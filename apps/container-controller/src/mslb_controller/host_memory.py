@@ -14,6 +14,10 @@ DIRECTORY = Path("/run/host-memory")
 FRAME_BYTES = 512
 
 
+class OutdatedHostFrame(ValueError):
+    """Reject queued, future or replayed counters without replacing current evidence."""
+
+
 def read_host_memory() -> HostMemoryEvidence | None:
     """Read only a root-owned regular frame from the guard's read-only volume."""
     if sys.platform != "linux":
@@ -49,7 +53,7 @@ def write_frame(*, raw: bytes, directory: Path, previous: datetime | None) -> da
     if not 0 <= (datetime.now(tz=UTC) - frame.measured_at).total_seconds() <= 3 or (
         previous is not None and frame.measured_at <= previous
     ):
-        raise ValueError("Host memory evidence is stale or repeated")
+        raise OutdatedHostFrame("Host memory evidence is stale or repeated")
     temporary = directory / "memory.tmp"
     descriptor = os.open(
         path=temporary,
@@ -69,7 +73,12 @@ def consume(*, stream: BinaryIO, directory: Path) -> None:
     """Keep at most one bounded line in memory; EOF leaves evidence to expire."""
     previous = None
     while raw := stream.readline(FRAME_BYTES + 1):
-        previous = write_frame(raw=raw, directory=directory, previous=previous)
+        try:
+            previous = write_frame(raw=raw, directory=directory, previous=previous)
+        except OutdatedHostFrame:
+            # Startup/transport pauses can leave older frames in the bounded pipe. Keep
+            # rejecting them until actual fresh counters arrive; stored evidence still expires.
+            continue
 
 
 def main() -> None:

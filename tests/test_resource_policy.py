@@ -11,6 +11,8 @@ from mslb_contracts.resources import (
     ResourceProbe,
     ServiceMemory,
     host_memory_headroom,
+    memory_bounds,
+    parse_resource_guard,
     safe_to_admit,
 )
 from pydantic import ValidationError
@@ -219,3 +221,50 @@ def test_future_measurement_cannot_poison_later_valid_recovery() -> None:
         current = probe(second=second)
         decision = policy.evaluate(probe=current, now=current.measured_at)
         assert decision.admit is (second == 5)
+
+
+@pytest.mark.parametrize(argnames="absent", argvalues=(False, True))
+def test_optional_redis_outage_keeps_full_budget_and_durable_admission(absent: bool) -> None:
+    policy = ResourcePolicy()
+    baseline = memory_bounds(probe=probe())[0]
+    value = probe()
+    for second in range(3):
+        value = probe(second=second)
+        services = tuple(
+            item.model_copy(
+                update={
+                    "healthy": False,
+                    "container_id": None,
+                    "usage_bytes": 0,
+                    "working_set_bytes": 0,
+                }
+            )
+            if absent and item.service == "redis"
+            else item.model_copy(update={"healthy": False})
+            if item.service == "redis"
+            else item
+            for item in value.services
+        )
+        value = value.model_copy(update={"services": services})
+        decision = policy.evaluate(probe=value, now=value.measured_at)
+        assert decision.admit is (second == 2) and not decision.stop_running
+        assert decision.cap_sum_bytes == baseline
+        assert safe_to_admit(probe=value)
+    pressured = value.model_copy(
+        update={
+            "services": tuple(
+                item.model_copy(update={"oom_killed": True}) if item.service == "redis" else item
+                for item in value.services
+            )
+        }
+    )
+    assert policy.evaluate(probe=pressured, now=pressured.measured_at).stop_running
+    assert not safe_to_admit(probe=pressured)
+
+
+@pytest.mark.parametrize(argnames="value", argvalues=("", "TRUE", "1", "false "))
+def test_resource_consumer_flags_reject_ambiguous_configuration(value: str) -> None:
+    with pytest.raises(expected_exception=ValueError, match="RESOURCE_GUARD_ENABLED"):
+        parse_resource_guard(value=value)
+    assert parse_resource_guard(value="true")
+    assert not parse_resource_guard(value="false")

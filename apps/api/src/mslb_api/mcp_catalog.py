@@ -3,6 +3,14 @@
 from dataclasses import dataclass
 
 from mslb_contracts.catalog import ServerView
+from mslb_contracts.docker_artifacts import HttpRecord
+from mslb_contracts.docker_views import (
+    DockerEventArguments,
+    DockerRunCommand,
+    DockerRunDetail,
+    DockerRunView,
+    DockerSimulationCreate,
+)
 from mslb_contracts.durability import PersistedEvent
 from mslb_contracts.fractions import FractionValue
 from mslb_contracts.http import (
@@ -36,7 +44,7 @@ from mslb_contracts.run_views import RunView, WaitResult
 from pydantic import BaseModel
 
 DIALECT = "https://json-schema.org/draft/2020-12/schema"
-CONTRACT_VERSION = "2.1.0"
+CONTRACT_VERSION = "2.2.0"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -143,6 +151,44 @@ TOOLS = (
         read_only=False,
     ),
 )
+TOOLS = (
+    *TOOLS,
+    ToolContract(
+        name="run_docker_simulation",
+        description=(
+            "Durably queue bounded real HTTP traffic. Physical scaling uses real seconds "
+            "and actual containers; results are operationally nondeterministic."
+        ),
+        input=DockerRunCommand,
+        outputs=(SimulationAccepted,),
+        read_only=False,
+    ),
+    ToolContract(
+        name="list_docker_simulations",
+        description="Read a bounded operational-only history page.",
+        input=PageArguments,
+        outputs=(Page[DockerRunView],),
+    ),
+    ToolContract(
+        name="get_docker_simulation",
+        description="Read durable lifecycle, admission and verified final HTTP results.",
+        input=RunReference,
+        outputs=(DockerRunDetail,),
+    ),
+    ToolContract(
+        name="get_docker_events",
+        description="Page verified completed HTTP observations with real elapsed seconds.",
+        input=DockerEventArguments,
+        outputs=(Page[HttpRecord],),
+    ),
+    ToolContract(
+        name="cancel_docker_simulation",
+        description="Request cancellation and retain reservations through owned cleanup.",
+        input=RunReference,
+        outputs=(DockerRunDetail,),
+        read_only=False,
+    ),
+)
 TOOL_BY_NAME = {tool.name: tool for tool in TOOLS}
 
 RESOURCES = (
@@ -150,6 +196,7 @@ RESOURCES = (
     ("strategies", "mslb://strategies", Page[StrategyView]),
     ("run-summary", "mslb://runs/{run_id}/summary", RunDetail),
     ("run-events", "mslb://runs/{run_id}/events", EventResource),
+    ("docker-summary", "mslb://docker-runs/{run_id}/summary", DockerRunDetail),
 )
 PROMPTS = (
     ("analyze_performance", "Analyze a persisted run using actual tool results.", RunReference),
@@ -173,6 +220,9 @@ COMMON = {
     "metrics": MetricsView,
     "fraction": FractionValue,
     "event": PersistedEvent,
+    "docker-run": DockerRunDetail,
+    "docker-create": DockerSimulationCreate,
+    "docker-event": HttpRecord,
 }
 
 
