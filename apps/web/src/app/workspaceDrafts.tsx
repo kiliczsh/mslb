@@ -26,6 +26,7 @@ function createDrafts() {
     serverSession: 0,
     settings: structuredClone(defaultSettings),
     selectedRun: null as string | null,
+    autoPlaybackRun: null as string | null,
     runCursor: null as string | null,
     retry: null as { body: string; key: string } | null,
     demo: createDemoDraft(),

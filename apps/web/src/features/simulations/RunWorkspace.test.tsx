@@ -74,6 +74,7 @@ it("submits named autoscaling controls as exact frozen settings and reuses inter
   await vi.waitFor(() => expect(client.isFetching()).toBe(0));
   expect(screen.getByLabelText("Execution mode")).toHaveProperty("value", "sequential");
   expect(screen.getByRole("button", { name: "Review snapshot" })).toHaveProperty("disabled", false);
+  await user.click(screen.getByText("Advanced settings"));
   await user.click(screen.getByText("Simulated autoscaling settings"));
   await user.selectOptions(screen.getByLabelText("Simulated autoscaling"), "enabled");
   await user.selectOptions(screen.getByLabelText("Scaling server template"), "custom");
@@ -130,6 +131,7 @@ it("preserves invalid fraction input and requires a complete enabled policy befo
   const { api, submit, client } = workspace();
   const user = userEvent.setup();
   await vi.waitFor(() => expect(client.isFetching()).toBe(0));
+  await user.click(screen.getByText("Advanced settings"));
   await user.click(screen.getByText("Simulated autoscaling settings"));
   fireEvent.change(screen.getByLabelText("Scale-out CPU threshold numerator"), {
     target: { value: "2" },
@@ -157,6 +159,7 @@ it("invalidates snapshot review when policy, dataset or current server versions 
   await vi.waitFor(() => expect(client.isFetching()).toBe(0));
   await user.click(screen.getByRole("button", { name: "Review snapshot" }));
   expect(screen.getByRole("button", { name: "Confirm and queue run" })).toBeTruthy();
+  await user.click(screen.getByText("Advanced settings"));
   await user.click(screen.getByText("Simulated autoscaling settings"));
   fireEvent.change(screen.getByLabelText("Observation window (ticks)"), { target: { value: "8" } });
   expect(screen.getByRole("button", { name: "Review snapshot" })).toBeTruthy();
@@ -196,7 +199,9 @@ it("copies saved policies into named controls and preserves nullable defaults on
   const { api, submit, client } = workspace({ configuration });
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: /first fit.*failed/ }));
+  await user.click(await screen.findByText("Validation and saved configuration"));
   await user.click(await screen.findByRole("button", { name: "Copy settings for a new run" }));
+  await user.click(screen.getByText("Advanced settings"));
   await user.click(screen.getByText("Simulated autoscaling settings"));
   expect(screen.getByLabelText("Observation window (ticks)")).toHaveProperty("value", "9");
   expect(screen.getByLabelText("Template memory capacity (MB)")).toHaveProperty("value", "80");

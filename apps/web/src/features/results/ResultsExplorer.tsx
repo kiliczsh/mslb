@@ -11,14 +11,18 @@ export function ResultsExplorer({
   api,
   run,
   terminalTick,
+  autoPlay = false,
+  onAutoPlayStarted,
 }: {
   api: Api;
   run: Run;
   terminalTick: number;
+  autoPlay?: boolean;
+  onAutoPlayStarted?: (() => void) | undefined;
 }) {
-  const [tab, setTab] = useState("metrics");
+  const [tab, setTab] = useState(autoPlay ? "playback" : "metrics");
   return (
-    <section className="panel" aria-label="Persisted results explorer">
+    <section className="panel results-explorer" aria-label="Persisted results explorer">
       <nav aria-label="Result views">
         {[
           { name: "metrics", Icon: ChartLineIcon },
@@ -39,7 +43,15 @@ export function ResultsExplorer({
         ))}
       </nav>
       {tab === "metrics" && <RunMetrics api={api} runId={run.id} terminalTick={terminalTick} />}
-      {tab === "playback" && <RunPlayback api={api} runId={run.id} terminalTick={terminalTick} />}
+      {tab === "playback" && (
+        <RunPlayback
+          api={api}
+          runId={run.id}
+          terminalTick={terminalTick}
+          autoPlay={autoPlay}
+          onAutoPlayStarted={onAutoPlayStarted}
+        />
+      )}
       {tab === "comparison" && <RunComparison api={api} run={run} />}
       {tab === "downloads" && <RunDownloads key={run.id} api={api} runId={run.id} />}
     </section>
