@@ -9,8 +9,11 @@ from mslb_api.streams.cleanup import finish
 
 
 class _Multipart(MultiPartParser):
+    """Close upload spools when cancellation or body limits interrupt multipart parsing."""
+
     @override
     async def parse(self) -> FormData:
+        """Stream and validate the multipart upload, closing partial files on failure."""
         try:
             return await super().parse()
         except BaseException:

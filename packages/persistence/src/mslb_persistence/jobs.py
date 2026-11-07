@@ -17,6 +17,7 @@ from mslb_persistence.transaction_clock import database_now as _clock
 
 
 def ownership_predicate(lease: Lease) -> ColumnElement[bool]:
+    """Build the owner, attempt and fence predicates required for a lease mutation."""
     return and_(
         Job.kind == "logical",
         Job.run_id == lease.run_id,
@@ -98,6 +99,8 @@ class Jobs:
         self.database = database
 
     async def get(self, run_id: UUID) -> JobRecord:
+        """Read the durable job state for one run or raise NOT_FOUND."""
+
         async def operation(session: AsyncSession) -> JobRecord:
             job = await session.get(entity=Job, ident=run_id)
             if job is None:
@@ -211,6 +214,7 @@ class Jobs:
         return await self.database.transaction(operation=operation)
 
     async def acknowledge_cancel(self, lease: Lease) -> JobRecord:
+        """Record cancellation only while the caller still owns the fenced lease."""
         return await self._finish(
             lease=lease, error_code="INTERRUPTED", retryable=False, cancellation_only=True
         )
@@ -285,6 +289,8 @@ class Jobs:
         return await self.database.transaction(operation=operation)
 
     async def reap_expired(self) -> None:
+        """Reconcile expired owners into bounded retries or terminal cancellation/failure."""
+
         async def operation(session: AsyncSession) -> None:
             slot = await _slot(session=session, skip_locked=True)
             if slot is not None:
@@ -309,6 +315,8 @@ class Jobs:
         return await self.database.transaction(operation=operation)
 
     async def mark_outbox_delivered(self, message_id: UUID) -> None:
+        """Acknowledge a durable notification after its wakeup hint was published."""
+
         async def operation(session: AsyncSession) -> None:
             await session.execute(
                 statement=update(table=Outbox)
@@ -319,6 +327,8 @@ class Jobs:
         await self.database.transaction(operation=operation)
 
     async def prune_outbox(self) -> None:
+        """Prune at most 500 notifications older than 24 hours; job polling remains available."""
+
         async def operation(session: AsyncSession) -> None:
             # Old hints may expire even when Redis is unavailable. Jobs remain
             # authoritative and discoverable through PostgreSQL polling.

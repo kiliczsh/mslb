@@ -22,7 +22,7 @@ from mslb_persistence.docker_records import DeploymentRecord
 
 from tests.integration.helpers import scratch
 from tests.integration.test_docker_control import claim, expire, prepared
-from tests.test_docker_engine import fixture
+from tests.unit.platform.test_docker_engine import fixture
 
 
 class ObservedEngine(Engine):

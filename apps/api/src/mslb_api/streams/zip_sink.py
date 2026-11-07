@@ -19,10 +19,12 @@ class _ZipSink(io.RawIOBase):
 
     @override
     def writable(self) -> bool:
+        """Advertise the write-only sink capability required by zipfile."""
         return True
 
     @override
     def write(self, b: Buffer, /) -> int:
+        """Forward bounded ZIP bytes under backpressure and report the consumed byte count."""
         value = memoryview(b)
         for offset in range(0, len(value), 64 * 1024):
             deadline = time.monotonic() + 5

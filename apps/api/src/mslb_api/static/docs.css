@@ -1,0 +1,38 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #17202a;
+  background: #fff;
+}
+body {
+  margin: 0;
+}
+body > header {
+  padding: 1.25rem;
+  border-bottom: 1px solid #ccd3dc;
+}
+h1 {
+  margin: 0.5rem 0;
+}
+input,
+button {
+  font: inherit;
+  padding: 0.5rem;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+label {
+  display: block;
+  margin-bottom: 0.4rem;
+}
+a {
+  color: #1756a9;
+}
+button {
+  cursor: pointer;
+}
+@media (max-width: 400px) {
+  button {
+    display: block;
+    margin-top: 0.5rem;
+  }
+}

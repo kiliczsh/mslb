@@ -24,7 +24,7 @@ from mslb_engine.run_config import RunConfig
 from mslb_engine.simulator import Simulation
 from pydantic import ValidationError
 
-from tests.test_checkpoints import append, contents
+from tests.unit.application.test_checkpoints import append, contents
 
 
 def large_snapshot(

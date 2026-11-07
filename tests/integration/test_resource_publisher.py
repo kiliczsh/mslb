@@ -12,7 +12,7 @@ from mslb_persistence.resource_evidence import ResourceEvidenceStore
 from sqlalchemy import func, update
 
 from tests.integration.helpers import scratch
-from tests.test_resource_policy import probe as synthetic_probe
+from tests.unit.platform.test_resource_policy import probe as synthetic_probe
 
 
 def fresh() -> ResourceProbe:

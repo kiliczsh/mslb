@@ -12,6 +12,7 @@ from mslb_controller.proxy import create_app
 
 
 def build() -> FastAPI:
+    """Compose the restricted Docker proxy from private credentials and ownership stores."""
     return create_app(
         database=Database(
             url=os.environ["DATABASE_URL"],

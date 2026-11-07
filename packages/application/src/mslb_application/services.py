@@ -64,6 +64,7 @@ class Services:
         )
 
     async def get_server(self, server_id: str) -> ServerView:
+        """Read the current versioned server through the shared application boundary."""
         try:
             normalized = normalize_identifier(value=server_id)
         except ValueError:
@@ -82,11 +83,13 @@ class Services:
         )
 
     async def create_server(self, body: ServerInput) -> ServerView:
+        """Create a validated server for future run snapshots."""
         return await self.catalog.create_server(server=body)
 
     async def update_server(
         self, server_id: str, body: ServerPatch, expected_version: int
     ) -> ServerView:
+        """Apply a version-checked capacity patch without changing historical snapshots."""
         previous = await self.get_server(server_id=server_id)
         values = previous.model_dump(exclude={"version"}) | body.model_dump(exclude_unset=True)
         return await self.catalog.update_server(
@@ -94,6 +97,7 @@ class Services:
         )
 
     async def delete_server(self, server_id: str, expected_version: int) -> str:
+        """Delete the expected live server version while preserving run history."""
         previous = await self.get_server(server_id=server_id)
         await self.catalog.delete_server(server_id=previous.id, expected_version=expected_version)
         return previous.id
@@ -122,12 +126,14 @@ class Services:
         )
 
     async def submit(self, body: SimulationCreate, key: str | None = None) -> SimulationAccepted:
+        """Register immutable inputs and durably enqueue one idempotent logical run."""
         settings = RunSettings.model_validate(obj=body.model_dump(exclude={"dataset_id"}))
         run = await self.submissions.submit(dataset_id=body.dataset_id, settings=settings, key=key)
         status = (await self.queries.run(run_id=run.id)).status
         return SimulationAccepted(run_id=run.id, status=status, snapshot_digest=run.snapshot_digest)
 
     async def detail(self, run_id: UUID) -> RunDetail:
+        """Read the durable logical execution view shared by REST and MCP."""
         run = await self.queries.run(run_id=run_id)
         validation = (
             (await self.queries.completed(run_id=run_id))[1] if run.status == "completed" else None
@@ -140,5 +146,6 @@ class Services:
         )
 
     async def cancel(self, run_id: UUID) -> RunView:
+        """Request durable logical cancellation without overriding terminal results."""
         await self.jobs.cancel(run_id=run_id)
         return await self.queries.run(run_id=run_id)

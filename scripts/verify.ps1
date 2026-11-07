@@ -121,11 +121,6 @@ try {
             'compose', '--profile', 'tools', 'run', '--rm', '--no-deps', $service
         )
     }
-    Invoke-CheckedDocker -DockerArguments @(
-        'compose', '--profile', 'tools', 'run', '--rm', '--no-deps',
-        '-e', 'BROWSER_TEST_INSTALLATION=guarded', 'browser-checks',
-        'pnpm', 'test:browser', 'browser/docker.spec.ts'
-    )
     Invoke-TimedCheck -Name 'Project controller/backend/control outage recovery' -Action {
         & (Join-Path $PSScriptRoot 'check-controller-faults.ps1')
     }
@@ -144,9 +139,6 @@ try {
     } finally {
         Invoke-CheckedDocker -DockerArguments @('compose', 'up', '--no-build', '-d', '--wait', 'redis')
     }
-    Invoke-TimedCheck -Name 'Isolated browser installation, tests and cleanup' -Action {
-        & (Join-Path $PSScriptRoot 'check-browser.ps1')
-    }
     Invoke-CheckedDocker -DockerArguments @(
         'compose', '--profile', 'tools', 'run', '--rm', '--no-deps', 'bundle-runner'
     )
@@ -154,6 +146,15 @@ try {
         'compose', '--profile', 'tools', 'run', '--rm', '--no-deps', 'bundle-runner',
         'verify', '/data/exports/scaled-example'
     )
+    # Browser acceptance runs last, after all lower-level and recovery checks.
+    Invoke-CheckedDocker -DockerArguments @(
+        'compose', '--profile', 'tools', 'run', '--rm', '--no-deps',
+        '-e', 'BROWSER_TEST_INSTALLATION=guarded', 'browser-checks',
+        'pnpm', 'test:browser', 'browser/docker.spec.ts'
+    )
+    Invoke-TimedCheck -Name 'Isolated browser installation, tests and cleanup' -Action {
+        & (Join-Path $PSScriptRoot 'check-browser.ps1')
+    }
     Write-Host 'Docker builds and all implemented checks passed without warnings.'
     $verificationPassed = $true
 }

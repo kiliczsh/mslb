@@ -64,6 +64,7 @@ class DockerReads:
     async def runs(
         self, *, after: tuple[datetime, UUID] | None = None, limit: int = 100
     ) -> tuple[DockerRunView, ...]:
+        """Page physical run summaries with stable ordering and bounded results."""
         check_limit(limit=limit)
 
         async def operation(session: AsyncSession) -> tuple[DockerRunView, ...]:
@@ -82,6 +83,8 @@ class DockerReads:
         return await self.database.transaction(operation=operation)
 
     async def run(self, *, run_id: UUID) -> DockerRead:
+        """Read durable status, frozen snapshot metadata and committed physical progress."""
+
         async def operation(session: AsyncSession) -> DockerRead:
             row = (
                 await session.execute(

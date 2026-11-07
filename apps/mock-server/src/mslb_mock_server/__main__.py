@@ -7,6 +7,7 @@ from mslb_mock_server.app import Settings, create_app
 
 
 def build() -> FastAPI:
+    """Create the bounded synthetic backend from validated environment configuration."""
     return create_app(settings=Settings.environment())
 
 

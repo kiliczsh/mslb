@@ -3,7 +3,6 @@
 import asyncio
 import hashlib
 from collections.abc import Callable
-from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -33,7 +32,7 @@ from mslb_persistence.reads import Reads, check_limit
 from pydantic import BaseModel
 
 from mslb_application.artifact_validation import ARTIFACT_NAMES
-from mslb_application.cursors import Cursors, Position
+from mslb_application.cursors import Cursors, Position, history_position
 from mslb_application.download import Download as Download
 from mslb_application.errors import OperationError
 from mslb_application.managed_files import ManagedFiles
@@ -140,9 +139,10 @@ class Queries:
         return self._bounded(value=Page[T](items=tuple(items), next_cursor=cursor))
 
     async def runs(self, limit: int = 100, cursor: str | None = None) -> Page[RunView]:
+        """Page logical run summaries through signed, query-bound cursors."""
         check_limit(limit=limit)
         point = self.cursors.decode(context="runs", token=cursor)
-        after = self._history_position(point=point)
+        after = history_position(point=point)
         rows = await self.reads.runs(after=after, limit=limit)
         return self._page(
             rows=rows,
@@ -168,7 +168,7 @@ class Queries:
         }
         point = self.cursors.decode(context=context, token=cursor)
         rows = await HistoryReads(database=self.reads.database).page(
-            kind=kind, filters=filters, before=self._history_position(point=point), limit=limit
+            kind=kind, filters=filters, before=history_position(point=point), limit=limit
         )
         page = self._page(
             rows=rows[:limit],
@@ -181,9 +181,10 @@ class Queries:
         return page
 
     async def datasets(self, limit: int = 100, cursor: str | None = None) -> Page[DatasetView]:
+        """Page dataset metadata without materializing stored CSV contents."""
         check_limit(limit=limit)
         point = self.cursors.decode(context="datasets", token=cursor)
-        rows = await self.reads.datasets(after=self._history_position(point=point), limit=limit)
+        rows = await self.reads.datasets(after=history_position(point=point), limit=limit)
         return self._page(
             rows=rows,
             limit=limit,
@@ -191,31 +192,12 @@ class Queries:
             position=lambda row: Position(created_at=row.created_at, id=row.id),
         )
 
-    @staticmethod
-    def _history_position(point: Position) -> tuple[datetime, UUID] | None:
-        if (
-            point.created_at is None
-            and point.id is None
-            and point.sequence == 0
-            and point.key is None
-        ):
-            return None
-        if (
-            point.created_at is None
-            or point.created_at.tzinfo is None
-            or point.id is None
-            or point.sequence
-            or point.key is not None
-        ):
-            raise OperationError(
-                code="VALIDATION_ERROR", message="Cursor does not contain a history position"
-            )
-        return point.created_at, point.id
-
     async def run(self, run_id: UUID) -> RunView:
+        """Read one logical run's durable status and committed progress."""
         return self._bounded(value=await self.reads.run(run_id=run_id))
 
     async def dataset(self, dataset_id: UUID) -> DatasetView:
+        """Read one public dataset view by its validated identifier."""
         return self._bounded(value=await self.reads.dataset(dataset_id=dataset_id))
 
     async def events(
@@ -274,6 +256,7 @@ class Queries:
         return manifest
 
     async def completed(self, run_id: UUID) -> tuple[RunView, BundleManifest, FileReference]:
+        """Require a completed, published logical run before serving result artifacts."""
         run = await self.reads.run(run_id=run_id)
         if run.status != "completed":
             raise OperationError(

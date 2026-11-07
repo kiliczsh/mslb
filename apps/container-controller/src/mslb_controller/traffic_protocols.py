@@ -8,12 +8,23 @@ from mslb_controller.router import Router
 
 
 class Clock(Protocol):
-    def now(self) -> float: ...
-    async def pause(self, *, seconds: float) -> None: ...
+    """Separate live scheduling time from deterministic test clocks."""
+
+    def now(self) -> float:
+        """Return the current monotonic time in seconds."""
+        ...
+
+    async def pause(self, *, seconds: float) -> None:
+        """Wait for a bounded scheduling interval measured in seconds."""
+        ...
 
 
 class EventSink(Protocol):
-    async def append(self, *, event: HttpEvent) -> None: ...
+    """Append HTTP lifecycle events without coupling routing to artifact storage."""
+
+    async def append(self, *, event: HttpEvent) -> None:
+        """Append one HTTP lifecycle event to the attempt's bounded output stream."""
+        ...
 
 
 class Membership(Protocol):

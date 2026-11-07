@@ -43,5 +43,6 @@ class Notifications:
                 return
 
     def close(self) -> None:
+        """Signal the background notifier and wait at most two seconds for its thread."""
         self.done.set()
         self.thread.join(timeout=2)

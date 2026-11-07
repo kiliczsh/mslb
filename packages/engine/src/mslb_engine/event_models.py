@@ -33,6 +33,7 @@ class ScaleDecision:
     reason: str | None
 
     def to_data(self) -> dict[str, object]:
+        """Serialize the stable scaling decision fields used by canonical artifacts."""
         return {
             "t": self.t,
             "action": self.action,
@@ -44,6 +45,7 @@ class ScaleDecision:
         }
 
     def canonical_line(self) -> str:
+        """Encode one deterministic scaling decision as compact JSON followed by LF."""
         return json.dumps(obj=self.to_data(), ensure_ascii=False, separators=(",", ":")) + "\n"
 
 

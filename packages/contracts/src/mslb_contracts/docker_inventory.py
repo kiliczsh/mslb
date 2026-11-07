@@ -30,6 +30,7 @@ class DeploymentSpec(DockerModel):
 
     @model_validator(mode="after")
     def members(self) -> Self:
+        """Require unique approved backend identities within the deployment envelope."""
         if (
             tuple(item.name for item in self.static) != ("backend-a", "backend-b")
             or len({item.container_id for item in self.static}) != 2
@@ -53,6 +54,7 @@ class DockerSnapshot(DockerModel):
 
     @model_validator(mode="after")
     def arrival(self) -> Self:
+        """Require the final CSV arrival to precede the real-time execution deadline."""
         if self.latest_arrival >= self.configuration.duration_seconds:
             raise ValueError("Dataset arrivals exceed the real-time run duration")
         return self

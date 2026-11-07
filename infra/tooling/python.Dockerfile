@@ -6,6 +6,17 @@ COPY infra/tooling/pyright/package.json infra/tooling/pyright/package-lock.json 
 RUN --mount=type=cache,id=mslb-npm,target=/root/.npm,sharing=locked \
     npm ci --ignore-scripts --no-audit --no-fund
 
+FROM node:24-bookworm-slim@sha256:01d566e8d94d8c619591d78652babfccd3c6992a3dffa9ed5ab39e11cf6c70e9 AS documentation
+WORKDIR /opt/mslb-redoc
+COPY infra/tooling/redoc/package.json infra/tooling/redoc/package-lock.json ./
+RUN --mount=type=cache,id=mslb-npm,target=/root/.npm,sharing=locked \
+    npm ci --ignore-scripts --no-audit --no-fund
+
+COPY apps/api/src/mslb_api/static/client.js ./client.js
+RUN node --input-type=module --check < client.js
+COPY infra/tooling/redoc/prepare.mjs ./prepare.mjs
+RUN node prepare.mjs
+
 FROM python:3.13-slim-bookworm@sha256:a5a7017efc5969e00ae2b91c8eb0631049a569652aa4ffc4501769049ae45c72 AS python-base
 ENV UV_COMPILE_BYTECODE=0 UV_LINK_MODE=copy PYTHONDONTWRITEBYTECODE=1 RUFF_CACHE_DIR=/tmp/ruff
 WORKDIR /app
@@ -32,6 +43,7 @@ ENV UV_CACHE_DIR=/tmp/uv NODE_OPTIONS=--max-old-space-size=768
 COPY --from=pyright /usr/local/bin/node /usr/local/bin/node
 COPY --from=pyright /opt/mslb-pyright/node_modules /opt/mslb-pyright/node_modules
 COPY . /app/
+COPY --from=documentation /opt/mslb-redoc/assets/ /app/apps/api/src/mslb_api/static/
 RUN --mount=type=cache,id=mslb-uv,target=/root/.cache/uv,sharing=locked \
     uv sync --locked --all-packages --group dev
 COPY docs/assignment/test-data/ /fixtures/
@@ -49,6 +61,7 @@ COPY apps/api/ /app/apps/api/
 COPY apps/worker/ /app/apps/worker/
 COPY apps/mock-server/ /app/apps/mock-server/
 COPY apps/container-controller/ /app/apps/container-controller/
+COPY --from=documentation /opt/mslb-redoc/assets/ /app/apps/api/src/mslb_api/static/
 RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
     --mount=type=cache,id=mslb-uv,target=/root/.cache/uv,sharing=locked \
     uv sync --locked --all-packages --no-dev

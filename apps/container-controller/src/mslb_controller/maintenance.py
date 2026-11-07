@@ -13,6 +13,7 @@ from mslb_persistence.database import Database
 
 
 async def main(*, apply: bool, limit: int, min_age_seconds: int) -> None:
+    """Plan or apply managed-output maintenance using the configured database."""
     database = Database(
         url=os.environ["DATABASE_URL"],
         schema=os.environ.get(key="DATABASE_SCHEMA", default="public"),

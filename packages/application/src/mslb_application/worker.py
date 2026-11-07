@@ -69,6 +69,7 @@ class Worker:
         self.dropped_notifications = 0
 
     def notify(self, phase: str, lease: Lease, tick: int = 0) -> None:
+        """Notify the optional phase observer; count and isolate callback failures."""
         if self.observer is not None:
             try:
                 self.observer(phase, lease, tick)

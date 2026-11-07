@@ -27,6 +27,7 @@ class MaterializationAdmission:
         self.lock = asyncio.Lock()
 
     async def run[T](self, operation: Callable[[], Awaitable[T]]) -> T:
+        """Materialize bounded work under the shared concurrency admission limit."""
         if self.lock.locked():
             raise OperationError(
                 code="RATE_LIMITED", message="Input processing capacity is occupied"

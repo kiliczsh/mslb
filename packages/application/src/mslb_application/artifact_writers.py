@@ -19,6 +19,8 @@ from mslb_application.errors import OperationError
 
 @dataclass(frozen=True, slots=True)
 class BundleLimits:
+    """Bound per-artifact and aggregate output bytes for a logical result bundle."""
+
     artifact_bytes: int = 256 * 1024 * 1024
     total_bytes: int = 512 * 1024 * 1024
 
@@ -33,6 +35,8 @@ class BundleLimits:
 
 
 class _Budget:
+    """Track remaining aggregate artifact bytes shared by all bundle writers."""
+
     def __init__(self, limits: BundleLimits) -> None:
         self.limits = limits
         self.total = 0
@@ -48,6 +52,7 @@ class _Artifact:
         self.digest = hashlib.sha256()
 
     def write(self, data: bytes) -> None:
+        """Check file/aggregate byte budgets, then write and account for successful bytes."""
         if (
             self.size + len(data) > self.budget.limits.artifact_bytes
             or self.budget.total + len(data) > self.budget.limits.total_bytes
@@ -62,6 +67,7 @@ class _Artifact:
         self.digest.update(data)
 
     def json(self, value: object) -> None:
+        """Encode and append one canonical JSON record under the artifact budget."""
         encoder = json.JSONEncoder(
             ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
         )
@@ -70,10 +76,12 @@ class _Artifact:
         self.write(data=b"\n")
 
     def sync(self) -> None:
+        """Flush buffered output and synchronize the file before publication."""
         self.stream.flush()
         os.fsync(fd=self.stream.fileno())
 
     def metadata(self) -> ArtifactMetadata:
+        """Return the current byte count and SHA-256 digest without flushing the file."""
         return ArtifactMetadata(size_bytes=self.size, sha256=self.digest.hexdigest())
 
 

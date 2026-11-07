@@ -28,6 +28,7 @@ class CreationIntent(DockerModel):
 
     @property
     def name(self) -> str:
+        """Derive the deterministic owned container name from this fenced creation intent."""
         return f"mslb-{self.intent_id.hex}-{self.slot}"
 
     def daemon_body(self) -> dict[str, object]:
@@ -107,6 +108,7 @@ class StoppedStatic(DockerModel):
 
     @model_validator(mode="after")
     def identity(self) -> Self:
+        """Verify the stopped container still matches its enrolled static identity."""
         if self.container_id != self.definition.backend.container_id:
             raise ValueError("Stopped receipt changes immutable static identity")
         return self

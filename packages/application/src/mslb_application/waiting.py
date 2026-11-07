@@ -11,6 +11,8 @@ from mslb_application.queries import Queries
 
 
 class ProgressReporter(Protocol):
+    """Report bounded batch-wait progress without owning or scheduling simulations."""
+
     async def __call__(self, *, progress: int, message: str) -> None: ...
 
 
@@ -92,6 +94,7 @@ class RunWaiter:
 
     @staticmethod
     def message(*, statuses: tuple[RunStatus, ...]) -> str:
+        """Format a bounded progress update for the current batch wait."""
         return "Persisted runs: " + "; ".join(
             f"{str(object=row.run_id)[:8]} {row.status}, attempt {row.attempts}"
             + (

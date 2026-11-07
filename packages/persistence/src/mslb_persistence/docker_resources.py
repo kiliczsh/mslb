@@ -71,6 +71,8 @@ class DockerResources:
         self.database = database
 
     async def get(self, lease: ControlLease, resource_id: UUID) -> ResourceRecord:
+        """Require a current fenced lease before reading one owned resource intent."""
+
         async def operation(session: AsyncSession) -> ResourceRecord:
             await current(session=session, lease=lease)
             return resource_record(
@@ -100,6 +102,8 @@ class DockerResources:
         return await self.database.transaction(operation=operation)
 
     async def list(self, lease: ControlLease) -> tuple[ResourceRecord, ...]:
+        """Require current lease ownership before reading the run resource inventory."""
+
         async def operation(session: AsyncSession) -> tuple[ResourceRecord, ...]:
             await current(session=session, lease=lease)
             return tuple(

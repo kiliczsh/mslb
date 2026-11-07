@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.integration.helpers import scratch
-from tests.test_resource_policy import probe as synthetic_probe
+from tests.unit.platform.test_resource_policy import probe as synthetic_probe
 
 
 def healthy_evidence() -> tuple[ResourceProbe, ResourceDecision]:

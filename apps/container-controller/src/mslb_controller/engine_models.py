@@ -7,6 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class EngineModel(BaseModel):
+    """Decode typed daemon fields while tolerating unrelated upstream response fields."""
+
     model_config = ConfigDict(strict=True, extra="ignore")
 
 

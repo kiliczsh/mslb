@@ -9,7 +9,7 @@ from mslb_persistence.jobs import Jobs
 from mslb_worker.redis_notifications import RedisHints
 
 from tests.integration.helpers import scratch
-from tests.integration.test_persistence import prepare
+from tests.integration.persistence_helpers import prepare
 
 
 def test_redis_hints_are_uuid_only_bounded_expiring_and_namespaced() -> None:

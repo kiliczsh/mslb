@@ -89,6 +89,7 @@ def _records(stream: BinaryIO, count: int, horizon: int) -> Iterator[_Record]:
 
 
 def validate_trace(
+    *,
     stream: BinaryIO,
     servers: tuple[Server, ...],
     requests: tuple[Request, ...],
@@ -102,17 +103,9 @@ def validate_trace(
     separately by golden fixtures. Dynamic membership requires an independently
     reconstructed scaling-decision sidecar.
     """
-    if not 1 <= len(servers) <= 64 or not 1 <= len(requests) <= config.max_requests:
-        raise ReplayError("Invalid input collection size")
-    if len(servers) > config.max_metric_series:
-        raise ReplayError("Initial cluster exceeds metric history budget")
-    by_server = {server.id: server for server in sorted(servers, key=lambda server: server.id)}
-    by_request = {request.request_id: request for request in requests}
-    if len(by_server) != len(servers) or len(by_request) != len(requests):
-        raise ReplayError("Duplicate input IDs")
-    ordered_requests = sorted(requests, key=lambda request: (request.t, request.request_id))
-    if ordered_requests[-1].t >= config.max_simulation_ticks:
-        raise ReplayError("Arrival outside configured horizon")
+    by_server, by_request, ordered_requests = _validated_inputs(
+        servers=servers, requests=requests, config=config
+    )
     records = iter(
         _records(stream=stream, count=len(requests), horizon=config.max_simulation_ticks)
     )
@@ -127,47 +120,23 @@ def validate_trace(
     event_count = 0
     sample_count = 0
     tick = 0
-    max_memory = max(server.mem_mb for server in servers)
-    policy = config.autoscaling.resolved(initial_count=len(servers))
-    scaling = ScalingReplay(
-        stream=scale_stream,
-        policy=policy,
-        initial_servers=servers,
-        bit_limit=config.max_fraction_bits,
-        max_series=config.max_metric_series,
+    scaling, max_memory = _scaling_context(
+        servers=servers, config=config, scale_stream=scale_stream
     )
-    if (
-        policy.enabled
-        and policy.server_template is not None
-        and policy.max_servers is not None
-        and policy.max_servers > len(servers)
-    ):
-        max_memory = max(max_memory, policy.server_template.mem_mb)
+    policy = scaling.policy
     while tick <= config.max_simulation_ticks:
         scaling.activate(tick=tick, members=by_server, running=running, memory=memory)
-        boundary: dict[str, list[_Record]] = {kind: [] for kind in _PRIORITY}
-        while following is not None and following.t == tick:
-            if following.rid not in by_request:
-                raise ReplayError("Unknown request ID")
-            boundary[following.kind].append(following)
-            event_count += 1
-            following = next(records, None)
-        for values in boundary.values():
-            if len({record.rid for record in values}) != len(values):
-                raise ReplayError("Duplicate lifecycle event")
-        due = {
-            rid: sid for sid, active in running.items() for rid, left in active.items() if left == 0
-        }
-        finishes = boundary["REQUEST_FINISHED"]
-        if {record.rid for record in finishes} != set(due):
-            raise ReplayError("Missing, early, or late completion")
-        for record in finishes:
-            sid = due[record.rid]
-            if record.sid != sid:
-                raise ReplayError("Finish server differs from start server")
-            del running[sid][record.rid]
-            memory[sid] -= by_request[record.rid].mem_mb
-            finished.add(record.rid)
+        boundary, following, count = _boundary(
+            records=records, following=following, by_request=by_request, tick=tick
+        )
+        event_count += count
+        _verify_finishes(
+            finishes=boundary["REQUEST_FINISHED"],
+            running=running,
+            memory=memory,
+            by_request=by_request,
+            finished=finished,
+        )
         arriving: list[Request] = []
         while arrivals < len(ordered_requests) and ordered_requests[arrivals].t == tick:
             arriving.append(ordered_requests[arrivals])
@@ -188,39 +157,16 @@ def validate_trace(
         }
         for rid in due_drops:
             del pending[rid]
-        starts = dict.fromkeys(by_server, 0)
-        for record in boundary["REQUEST_STARTED"]:
-            sid, rid = record.sid, record.rid
-            if (
-                sid is None
-                or sid not in by_server
-                or rid not in pending
-                or rid in started
-                or rid in dropped
-            ):
-                raise ReplayError("Illegal start or unknown server")
-            server, request = by_server[sid], pending[rid]
-            if (
-                memory[sid] + request.mem_mb > server.mem_mb
-                or starts[sid] >= server.rate_limit_per_sec
-                or (config.mode == "sequential" and running[sid])
-            ):
-                raise ReplayError("Memory, rate, or sequential overlap violation")
-            starts[sid] += 1
-            memory[sid] += request.mem_mb
-            running[sid][rid] = Fraction(numerator=request.work_units)
-            started.add(rid)
-            del pending[rid]
-        # A trace may not invent queue waiting or overflow drops while an eligible
-        # server could have accepted the request at this boundary.
-        for request in pending.values():
-            if any(
-                request.mem_mb + memory[s.id] <= s.mem_mb
-                and starts[s.id] < s.rate_limit_per_sec
-                and (config.mode == "concurrent" or not running[s.id])
-                for s in by_server.values()
-            ):
-                raise ReplayError("Scheduling is not work-conserving")
+        _verify_starts(
+            boundary=boundary,
+            by_server=by_server,
+            pending=pending,
+            running=running,
+            memory=memory,
+            started=started,
+            dropped=dropped,
+            config=config,
+        )
         if config.max_queue_size is not None:
             survivors = sorted(
                 pending.values(), key=lambda request: (request.t, request.request_id)
@@ -251,42 +197,7 @@ def validate_trace(
         scaling.check_decision(
             tick=tick, members=by_server, running=running, pending_count=len(pending)
         )
-        total_consumed = Fraction()
-        for sid in sorted(running):
-            active = running[sid]
-            if active:
-                allocation = Fraction(
-                    numerator=by_server[sid].cpu_units_per_tick, denominator=len(active)
-                )
-                consumed = Fraction(numerator=0)
-                if (
-                    max(allocation.numerator.bit_length(), allocation.denominator.bit_length())
-                    > config.max_fraction_bits
-                ):
-                    raise ReplayError("Arithmetic complexity bound exceeded")
-                for rid in sorted(active):
-                    consumed += min(active[rid], allocation)
-                    remaining = max(Fraction(numerator=0), active[rid] - allocation)
-                    if (
-                        max(consumed.numerator.bit_length(), consumed.denominator.bit_length())
-                        > config.max_fraction_bits
-                    ):
-                        raise ReplayError("Arithmetic complexity bound exceeded")
-                    if (
-                        max(remaining.numerator.bit_length(), remaining.denominator.bit_length())
-                        > config.max_fraction_bits
-                    ):
-                        raise ReplayError("Arithmetic complexity bound exceeded")
-                    active[rid] = remaining
-                total_consumed += consumed
-                if (
-                    max(
-                        total_consumed.numerator.bit_length(),
-                        total_consumed.denominator.bit_length(),
-                    )
-                    > config.max_fraction_bits
-                ):
-                    raise ReplayError("Cluster arithmetic complexity bound exceeded")
+        total_consumed = _consume_interval(by_server=by_server, running=running, config=config)
         scaling.observe(
             consumed=total_consumed,
             capacity=sum(server.cpu_units_per_tick for server in by_server.values()),
@@ -303,3 +214,177 @@ def validate_trace(
             next_arrival = ordered_requests[arrivals].t
             tick = min(next_arrival, following.t if following is not None else next_arrival)
     raise ReplayError("Unreachable terminal state")
+
+
+def _verify_starts(
+    *,
+    boundary: dict[str, list[_Record]],
+    by_server: dict[str, Server],
+    pending: dict[str, Request],
+    running: dict[str, dict[str, Fraction]],
+    memory: dict[str, int],
+    started: set[str],
+    dropped: set[str],
+    config: RunConfig,
+) -> None:
+    """Independently check eligibility and work conservation without the engine scheduler."""
+    starts = dict.fromkeys(by_server, 0)
+    for record in boundary["REQUEST_STARTED"]:
+        sid, rid = record.sid, record.rid
+        if (
+            sid is None
+            or sid not in by_server
+            or rid not in pending
+            or rid in started
+            or rid in dropped
+        ):
+            raise ReplayError("Illegal start or unknown server")
+        server, request = by_server[sid], pending[rid]
+        if (
+            memory[sid] + request.mem_mb > server.mem_mb
+            or starts[sid] >= server.rate_limit_per_sec
+            or (config.mode == "sequential" and running[sid])
+        ):
+            raise ReplayError("Memory, rate, or sequential overlap violation")
+        starts[sid] += 1
+        memory[sid] += request.mem_mb
+        running[sid][rid] = Fraction(numerator=request.work_units)
+        started.add(rid)
+        del pending[rid]
+    # A trace may not invent queue waiting or overflow drops while an eligible
+    # server could have accepted the request at this boundary.
+    for request in pending.values():
+        if any(
+            request.mem_mb + memory[s.id] <= s.mem_mb
+            and starts[s.id] < s.rate_limit_per_sec
+            and (config.mode == "concurrent" or not running[s.id])
+            for s in by_server.values()
+        ):
+            raise ReplayError("Scheduling is not work-conserving")
+
+
+def _consume_interval(
+    *, by_server: dict[str, Server], running: dict[str, dict[str, Fraction]], config: RunConfig
+) -> Fraction:
+    """Replay exact equal-share CPU consumption without calling the simulator."""
+    total_consumed = Fraction()
+    for sid in sorted(running):
+        active = running[sid]
+        if active:
+            allocation = Fraction(
+                numerator=by_server[sid].cpu_units_per_tick, denominator=len(active)
+            )
+            consumed = Fraction(numerator=0)
+            if (
+                max(allocation.numerator.bit_length(), allocation.denominator.bit_length())
+                > config.max_fraction_bits
+            ):
+                raise ReplayError("Arithmetic complexity bound exceeded")
+            for rid in sorted(active):
+                consumed += min(active[rid], allocation)
+                remaining = max(Fraction(numerator=0), active[rid] - allocation)
+                if (
+                    max(consumed.numerator.bit_length(), consumed.denominator.bit_length())
+                    > config.max_fraction_bits
+                ):
+                    raise ReplayError("Arithmetic complexity bound exceeded")
+                if (
+                    max(remaining.numerator.bit_length(), remaining.denominator.bit_length())
+                    > config.max_fraction_bits
+                ):
+                    raise ReplayError("Arithmetic complexity bound exceeded")
+                active[rid] = remaining
+            total_consumed += consumed
+            if (
+                max(
+                    total_consumed.numerator.bit_length(),
+                    total_consumed.denominator.bit_length(),
+                )
+                > config.max_fraction_bits
+            ):
+                raise ReplayError("Cluster arithmetic complexity bound exceeded")
+    return total_consumed
+
+
+def _validated_inputs(
+    *, servers: tuple[Server, ...], requests: tuple[Request, ...], config: RunConfig
+) -> tuple[dict[str, Server], dict[str, Request], list[Request]]:
+    """Validate replay collection identities and horizon before allocating lifecycle state."""
+    if not 1 <= len(servers) <= 64 or not 1 <= len(requests) <= config.max_requests:
+        raise ReplayError("Invalid input collection size")
+    if len(servers) > config.max_metric_series:
+        raise ReplayError("Initial cluster exceeds metric history budget")
+    by_server = {server.id: server for server in sorted(servers, key=lambda server: server.id)}
+    by_request = {request.request_id: request for request in requests}
+    if len(by_server) != len(servers) or len(by_request) != len(requests):
+        raise ReplayError("Duplicate input IDs")
+    ordered_requests = sorted(requests, key=lambda request: (request.t, request.request_id))
+    if ordered_requests[-1].t >= config.max_simulation_ticks:
+        raise ReplayError("Arrival outside configured horizon")
+    return by_server, by_request, ordered_requests
+
+
+def _verify_finishes(
+    *,
+    finishes: list[_Record],
+    running: dict[str, dict[str, Fraction]],
+    memory: dict[str, int],
+    by_request: dict[str, Request],
+    finished: set[str],
+) -> None:
+    """Require completions exactly where independent remaining work reaches zero."""
+    due = {rid: sid for sid, active in running.items() for rid, left in active.items() if left == 0}
+    if {record.rid for record in finishes} != set(due):
+        raise ReplayError("Missing, early, or late completion")
+    for record in finishes:
+        sid = due[record.rid]
+        if record.sid != sid:
+            raise ReplayError("Finish server differs from start server")
+        del running[sid][record.rid]
+        memory[sid] -= by_request[record.rid].mem_mb
+        finished.add(record.rid)
+
+
+def _scaling_context(
+    *, servers: tuple[Server, ...], config: RunConfig, scale_stream: BinaryIO | None
+) -> tuple[ScalingReplay, int]:
+    """Resolve the independent scaling sidecar and maximum possible server memory."""
+    max_memory = max(server.mem_mb for server in servers)
+    policy = config.autoscaling.resolved(initial_count=len(servers))
+    scaling = ScalingReplay(
+        stream=scale_stream,
+        policy=policy,
+        initial_servers=servers,
+        bit_limit=config.max_fraction_bits,
+        max_series=config.max_metric_series,
+    )
+    if (
+        policy.enabled
+        and policy.server_template is not None
+        and policy.max_servers is not None
+        and policy.max_servers > len(servers)
+    ):
+        max_memory = max(max_memory, policy.server_template.mem_mb)
+    return scaling, max_memory
+
+
+def _boundary(
+    *,
+    records: Iterator[_Record],
+    following: _Record | None,
+    by_request: dict[str, Request],
+    tick: int,
+) -> tuple[dict[str, list[_Record]], _Record | None, int]:
+    """Read one canonical tick boundary and reject unknown or duplicate lifecycle records."""
+    event_count = 0
+    boundary: dict[str, list[_Record]] = {kind: [] for kind in _PRIORITY}
+    while following is not None and following.t == tick:
+        if following.rid not in by_request:
+            raise ReplayError("Unknown request ID")
+        boundary[following.kind].append(following)
+        event_count += 1
+        following = next(records, None)
+    for values in boundary.values():
+        if len({record.rid for record in values}) != len(values):
+            raise ReplayError("Duplicate lifecycle event")
+    return boundary, following, event_count

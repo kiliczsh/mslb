@@ -80,6 +80,7 @@ class Backend:
                 release(done=future)
 
     async def close(self) -> None:
+        """Release backend executor resources during application shutdown."""
         self.closed = True
         for stopped in self.active.values():
             stopped.set()
@@ -88,6 +89,7 @@ class Backend:
         self.pool.shutdown(wait=True, cancel_futures=True)
 
     def health(self) -> BackendHealth:
+        """Return backend identity, configured capacity and cumulative work counters."""
         return BackendHealth(
             backend_id=self.settings.backend_id,
             ready=not self.closed,

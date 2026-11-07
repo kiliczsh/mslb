@@ -62,7 +62,11 @@ try {
     Invoke-BrowserDocker -DockerArguments ($composeArguments + @('up', '-d', '--wait', '--no-build', 'web', 'worker'))
     $testArguments = @('run', '--rm', '--no-deps')
     if ($browserArtifacts) {
-        $testArguments += @('--volume', ($browserArtifacts + ':/evidence'), '-e', 'UI_SCREENSHOT_DIRECTORY=/evidence')
+        $testArguments += @(
+            '--volume', ($browserArtifacts + ':/evidence'),
+            '-e', 'UI_SCREENSHOT_DIRECTORY=/evidence',
+            '-e', 'PLAYWRIGHT_OUTPUT_DIR=/evidence/results'
+        )
     }
     $testArguments += @('browser-checks')
     if ($Grep) { $testArguments += @('pnpm', 'test:browser', '--grep', $Grep) }

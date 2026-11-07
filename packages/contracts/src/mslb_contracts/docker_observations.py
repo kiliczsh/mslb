@@ -19,6 +19,7 @@ class BackendSample(DockerModel):
 
     @model_validator(mode="after")
     def utc(self) -> Self:
+        """Require UTC wall time for a scoped backend observation."""
         offset = self.observed_at.utcoffset()
         if offset is None or offset.total_seconds() != 0:
             raise ValueError("Backend observations require UTC")
@@ -40,6 +41,7 @@ class BackendMeasurements(DockerModel):
 
     @model_validator(mode="after")
     def accounting(self) -> Self:
+        """Verify scoped counter deltas, peak observations and monotonic resource identity."""
         first, latest = self.first, self.latest
         if (first.resource_id, first.container_id, first.health.backend_id) != (
             latest.resource_id,

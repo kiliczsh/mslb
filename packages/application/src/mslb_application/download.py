@@ -22,5 +22,6 @@ class Download:
     def open(self) -> Generator[BinaryIO]:
         # Verify before sending headers; adapters stream this open file in 64 KiB
         # chunks and close it on disconnect. No caller-provided path is accepted.
+        """Verify the referenced managed file and hold its stream until the reader finishes."""
         with self.files.verified_stream(reference=self.reference) as stream:
             yield stream

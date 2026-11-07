@@ -83,6 +83,7 @@ def consume(*, stream: BinaryIO, directory: Path) -> None:
 
 def main() -> None:
     # Linux-only writer image. Exclusive volume lock rejects a second host feeder.
+    """Read bounded host-memory frames and publish private, monotonic evidence on Linux."""
     if sys.platform != "linux":
         raise RuntimeError("Host evidence volume writes require Linux containers")
     import fcntl

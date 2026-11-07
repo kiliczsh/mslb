@@ -23,9 +23,11 @@ class WorkFile:
 
     @property
     def position(self) -> int:
+        """Return the current scratch-file byte offset."""
         return self.size + len(self.buffer)
 
     def write(self, data: bytes) -> None:
+        """Append bytes only within the declared scratch-file capacity."""
         if self.check is not None:
             self.check()
         if self.position + len(data) > 256 * 1024**2:
@@ -38,6 +40,7 @@ class WorkFile:
                 self.flush()
 
     def flush(self) -> None:
+        """Flush the bounded spool buffer under storage admission; fsync is separate."""
         if self.buffer:
             with self.files._lock(name=".write-lock"):
                 if self.check is not None:
@@ -53,5 +56,6 @@ class WorkFile:
         self.stream.seek(self.size)
 
     def sync(self) -> None:
+        """Flush and synchronize scratch bytes before a durable checkpoint references them."""
         self.flush()
         os.fsync(fd=self.stream.fileno())

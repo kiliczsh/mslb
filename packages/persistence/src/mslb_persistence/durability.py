@@ -319,6 +319,8 @@ class Durability:
         return await self.database.transaction(operation=operation)
 
     async def recovery(self, lease: Lease) -> RecoveryState | None:
+        """Read only committed checkpoints, output chunks and terminal recovery state."""
+
         async def operation(session: AsyncSession) -> RecoveryState | None:
             await _job(session=session, lease=lease)
             run = await session.get(entity=Run, ident=lease.run_id)

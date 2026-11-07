@@ -112,6 +112,8 @@ class DockerCatalog:
         return await self.database.transaction(operation=operation)
 
     async def deployment(self, deployment_id: UUID) -> DeploymentRecord:
+        """Read the enrolled deployment identity used to freeze physical runs."""
+
         async def operation(session: AsyncSession) -> DeploymentRecord:
             row = await session.get(entity=DockerDeployment, ident=deployment_id)
             if row is None:

@@ -4,6 +4,7 @@ import json
 
 
 def canonical_bytes(value: object) -> bytes:
+    """Encode stable sorted JSON with UTF-8 and a final LF for hashing and storage."""
     return (
         json.dumps(
             obj=value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False

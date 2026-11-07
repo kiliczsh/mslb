@@ -6,6 +6,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from mslb_contracts.inputs import PositiveValue, normalize_identifier
 
+# A work unit controls bounded CPU iterations, never a physical memory allocation.
+OPERATIONS_PER_UNIT = 2048
+MAX_OPERATIONS = 2_000_000
+
 
 class WorkRequest(BaseModel):
     """Logical memory is an admission reservation, never an allocation instruction."""
@@ -18,6 +22,7 @@ class WorkRequest(BaseModel):
     @field_validator("request_id")
     @classmethod
     def normalize_id(cls, value: str) -> str:
+        """Normalize the identifier echoed by the bounded synthetic HTTP backend."""
         return normalize_identifier(value=value)
 
 
@@ -28,7 +33,7 @@ class WorkCompleted(BaseModel):
     backend_id: Annotated[str, Field(pattern=r"^[a-z][a-z0-9-]{0,127}$")]
     request_id: Annotated[str, Field(min_length=1, max_length=128)]
     outcome: Literal["completed"] = "completed"
-    operations: Annotated[int, Field(ge=1, le=2_000_000)]
+    operations: Annotated[int, Field(ge=1, le=MAX_OPERATIONS)]
     checksum: Annotated[str, Field(pattern=r"^[0-9a-f]{8}$")]
     duration_ms: Annotated[float, Field(ge=0, le=3000, allow_inf_nan=False)]
 
@@ -44,7 +49,7 @@ class BackendHealth(BaseModel):
     inflight: Annotated[int, Field(ge=0, le=4)]
     reserved_mem_mb: Annotated[int, Field(ge=0, le=1_000_000_000)]
     operations_per_unit: Annotated[int, Field(ge=2048, le=2048)] = 2048
-    max_operations: Annotated[int, Field(ge=2_000_000, le=2_000_000)] = 2_000_000
+    max_operations: Annotated[int, Field(ge=2_000_000, le=MAX_OPERATIONS)] = 2_000_000
     work_timeout_ms: Annotated[int, Field(ge=2000, le=2000)] = 2000
     rss_bytes: Annotated[int, Field(ge=0)] | None
     cgroup_memory_bytes: Annotated[int, Field(ge=0)] | None

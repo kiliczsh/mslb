@@ -21,6 +21,7 @@ class ServerPatch(ReadModel):
 
     @model_validator(mode="after")
     def nonempty(self) -> Self:
+        """Reject an empty server patch before optimistic version handling."""
         if not self.model_fields_set or any(
             getattr(self, key) is None for key in self.model_fields_set
         ):

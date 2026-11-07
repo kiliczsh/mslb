@@ -40,6 +40,7 @@ class HttpEvent(DockerModel):
 
     @model_validator(mode="after")
     def outcome(self) -> Self:
+        """Require outcome-specific HTTP status, error and timing fields."""
         if self.kind == "completed":
             if (
                 self.result is None
@@ -75,6 +76,7 @@ class TrafficSummary(DockerModel):
 
     @model_validator(mode="after")
     def accounting(self) -> Self:
+        """Require complete terminal outcome totals and consistent status/stop reasons."""
         if self.completed + self.failed + self.dropped + self.unexecuted != self.total:
             raise ValueError("Every HTTP request requires exactly one terminal outcome")
         if (

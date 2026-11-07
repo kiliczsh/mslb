@@ -57,6 +57,7 @@ class PhysicalResources:
     observe: ResourceObserver
 
     def check(self) -> None:
+        """Raise TrafficError when trusted physical resource evidence is unsafe."""
         reason = self.stop()
         if reason is not None:
             raise TrafficError(code=reason)

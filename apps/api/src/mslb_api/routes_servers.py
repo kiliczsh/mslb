@@ -19,6 +19,7 @@ from mslb_api.route_values import Cursor, Limit
 
 
 def version(request: Request) -> int:
+    """Parse a required strong If-Match ETag for optimistic server mutations."""
     match = re.fullmatch(pattern=r'"([1-9][0-9]{0,9})"', string=request.headers.get("if-match", ""))
     if match is None:
         raise OperationError(
@@ -31,6 +32,7 @@ def register_servers(*, router: APIRouter, services: Services) -> None:
     """Register the servers endpoints on the composed application router."""
 
     async def server(server_id: str) -> ServerView:
+        """Resolve the normalized server identity through shared application validation."""
         return await services.get_server(server_id=server_id)
 
     @router.get(path="/servers", response_model=Page[ServerView])

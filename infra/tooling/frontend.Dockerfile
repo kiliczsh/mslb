@@ -9,6 +9,7 @@ COPY apps/web/patches/ /app/patches/
 RUN --mount=type=cache,id=mslb-pnpm,target=/pnpm/store,sharing=locked \
     pnpm install --frozen-lockfile --store-dir /pnpm/store --package-import-method=copy
 COPY apps/web/ /app/
+COPY apps/api/src/mslb_api/static/ /documentation/
 RUN pnpm build
 USER node
-CMD ["sh", "-c", "pnpm check && pnpm test"]
+CMD ["sh", "-c", "pnpm check && pnpm exec biome ci --error-on-warnings --config-path /app/biome.json /documentation && pnpm test"]

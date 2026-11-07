@@ -26,6 +26,7 @@ STATUS = {
 def error_response(
     code: str, message: str, request_id: str, details: tuple[FieldError, ...] = ()
 ) -> Response:
+    """Build a bounded error envelope with a correlation ID and the contract HTTP status."""
     headers = {"X-Request-ID": request_id, "Cache-Control": "no-store"}
     if code in {"RESOURCE_PRESSURE", "RATE_LIMITED", "NOT_READY", "STORAGE_LIMIT_EXCEEDED"}:
         headers["Retry-After"] = "1"

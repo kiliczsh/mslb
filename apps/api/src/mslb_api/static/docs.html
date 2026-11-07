@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>mslb API reference</title>
+    <link rel="stylesheet" href="/api/docs/docs.css" />
+    <script type="module" src="/api/docs/client.js"></script>
+  </head>
+  <body>
+    <header>
+      <a href="/">mslb</a>
+      <h1>API reference</h1>
+      <p>REST endpoints, request models, responses and access requirements.</p>
+      <p id="status" role="status">Loading the API schema…</p>
+      <form id="authentication" hidden>
+        <label for="credential">Bearer token</label>
+        <input id="credential" type="password" autocomplete="off" required maxlength="256" />
+        <button type="submit">Load authenticated reference</button>
+        <p>The credential is used for this request and is never saved in browser storage.</p>
+      </form>
+      <a href="/api/v1/openapi.json">OpenAPI JSON</a>
+    </header>
+    <main id="reference" aria-label="API reference"></main>
+  </body>
+</html>

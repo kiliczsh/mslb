@@ -113,4 +113,5 @@ class BackendHttp:
             raise TrafficError(code="CONNECTION_FAILED", backend_id=spec.id) from None
 
     async def close(self) -> None:
+        """Close pooled backend HTTP connections after in-flight traffic has settled."""
         await self.client.aclose()

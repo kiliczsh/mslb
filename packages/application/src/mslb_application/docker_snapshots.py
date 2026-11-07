@@ -15,6 +15,7 @@ MAX_SNAPSHOT_BYTES = 16 * 1024
 
 def save_docker_snapshot(*, files: ManagedFiles, snapshot: DockerSnapshot) -> FileReference:
     # Frozen models can still be constructed with an unchecked model_copy update.
+    """Publish a canonical physical snapshot and return its verified managed-file reference."""
     checked = DockerSnapshot.model_validate(obj=snapshot.model_dump())
     return files.publish(
         key=f"docker/snapshots/{checked.digest()}.json",

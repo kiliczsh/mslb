@@ -73,6 +73,7 @@ class ManagedFiles:
             os.close(fd=descriptor)
 
     def path(self, key: str) -> Path:
+        """Resolve a validated managed key beneath the private storage root."""
         if not re.fullmatch(pattern=r"[a-z0-9][a-z0-9._/-]{0,255}", string=key) or any(
             part in {"", ".", ".."} for part in key.split(sep="/")
         ):
@@ -184,6 +185,7 @@ class ManagedFiles:
 
     @staticmethod
     def run_scope(key: str) -> str | None:
+        """Return the run-level quota namespace for a managed key, or None."""
         parts = key.split(sep="/")
         if len(parts) >= 3 and (
             parts[0] == "runs"
@@ -272,6 +274,7 @@ class ManagedFiles:
 
     @contextmanager
     def work_file(self, key: str) -> Generator["WorkFile"]:
+        """Open a private bounded scratch file inside the managed storage namespace."""
         if self.read_only or self.run_scope(key=key) is None:
             raise OperationError(
                 code="FORBIDDEN", message="Work files require a writable run namespace"
@@ -327,6 +330,7 @@ class ManagedFiles:
             return data
 
     def load_requests(self, digest: str, size_bytes: int) -> tuple[RequestInput, ...]:
+        """Verify the managed CSV and parse requests within the configured capacity profile."""
         path = self.path(key=f"datasets/{digest}.csv")
         if not path.is_file() or path.stat().st_size != size_bytes:
             raise OperationError(code="VALIDATION_FAILED", message="Stored dataset length mismatch")
@@ -347,6 +351,7 @@ class ManagedFiles:
         return requests
 
     def save_snapshot(self, snapshot: RunSnapshot) -> FileReference:
+        """Publish an immutable canonical run snapshot under its digest-derived key."""
         verify_snapshot(snapshot=snapshot)
         return self.publish(
             key=f"snapshots/{snapshot.snapshot_digest}.json",
@@ -355,6 +360,7 @@ class ManagedFiles:
         )
 
     def load_snapshot(self, key: str, expected_digest: str) -> RunSnapshot:
+        """Verify stored snapshot bytes and reconstruct the validated frozen input model."""
         if key != f"snapshots/{expected_digest}.json":
             raise OperationError(
                 code="VALIDATION_FAILED", message="Snapshot reference does not match identity"
@@ -374,6 +380,7 @@ class ManagedFiles:
 
     @contextmanager
     def verified_stream(self, reference: FileReference) -> Generator[BinaryIO]:
+        """Open a managed file only after checking its size and digest against the reference."""
         path = self.path(key=reference.key)
         if not path.is_file() or self._hash(path=path, maximum=reference.size_bytes) != (
             reference.size_bytes,

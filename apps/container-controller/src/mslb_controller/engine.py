@@ -77,6 +77,7 @@ class Engine:
             raise EngineError(code="ENGINE_UNAVAILABLE") from None
 
     async def image(self, image_id: str | None = None) -> ImageInfo:
+        """Read approved image metadata through the restricted Docker proxy."""
         if image_id is not None and not re.fullmatch(
             pattern=r"sha256:[0-9a-f]{64}", string=image_id
         ):
@@ -89,12 +90,14 @@ class Engine:
         return value
 
     async def network(self) -> NetworkInfo:
+        """Inspect one approved network identity through the restricted proxy."""
         value = await self._request(method="GET", path=f"/networks/{NETWORK}", model=NetworkInfo)
         if value is None:
             raise EngineError(code="ENGINE_RESPONSE")
         return value
 
     async def inspect(self, reference: str) -> ContainerInfo:
+        """Read container identity, state and ownership evidence from the daemon boundary."""
         if not re.fullmatch(
             pattern=r"[0-9a-f]{64}|mslb-backend-[ab]-1|mslb-[0-9a-f]{32}-[0-3]",
             string=reference,
@@ -108,6 +111,7 @@ class Engine:
         return value
 
     async def create(self, intent: CreationIntent) -> Created:
+        """Create a container from a validated, fenced resource intent."""
         value = await self._request(
             method="POST",
             path=f"/containers/create?name={intent.name}",
@@ -121,6 +125,7 @@ class Engine:
         return value
 
     async def start(self, container_id: str) -> None:
+        """Start one approved container through the fenced daemon boundary."""
         self._id(value=container_id)
         await self._request(
             method="POST",
@@ -130,6 +135,7 @@ class Engine:
         )
 
     async def stop(self, container_id: str) -> None:
+        """Stop an owned container using the bounded shutdown grace period."""
         self._id(value=container_id)
         await self._request(
             method="POST",
@@ -139,6 +145,7 @@ class Engine:
         )
 
     async def remove(self, container_id: str) -> None:
+        """Remove an owned container through the restricted resource lifecycle."""
         self._id(value=container_id)
         await self._request(
             method="DELETE",
@@ -153,4 +160,5 @@ class Engine:
             raise EngineError(code="INVALID_REFERENCE")
 
     async def close(self) -> None:
+        """Close the daemon-proxy HTTP client owned by this instance."""
         await self.client.aclose()

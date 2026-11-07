@@ -109,6 +109,7 @@ async def guard(
 
 
 def execution(lease: ControlLease, job: Job) -> None:
+    """Require active lease and job phases before increasing physical work."""
     if lease.phase != "running" or job.status != "running":
         raise StoreError(
             code="INVALID_STATE", message="Only active execution can increase Docker work"
@@ -122,6 +123,7 @@ class DockerControl:
         self.database = database
 
     async def cancel(self, run_id: UUID) -> JobRecord:
+        """Request cancellation transactionally while preserving terminal run states."""
         return await Jobs(database=self.database).cancel(run_id=run_id, kind="docker")
 
     async def claim(self, owner: str, lease_seconds: int = 30) -> ControlLease | None:

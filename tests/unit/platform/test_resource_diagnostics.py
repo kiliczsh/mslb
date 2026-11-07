@@ -10,7 +10,7 @@ from mslb_controller.engine import EngineError
 from mslb_controller.resource_client import ResourceClient
 
 from scripts.check_resource_probe import diagnostic_probe
-from tests.test_resource_policy import probe
+from tests.unit.platform.test_resource_policy import probe
 
 
 @pytest.mark.parametrize(

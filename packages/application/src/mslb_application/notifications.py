@@ -9,6 +9,8 @@ from sqlalchemy.exc import DBAPIError
 
 
 class WakeupHints(Protocol):
+    """Publish optional wakeup hints while durable jobs remain discoverable by polling."""
+
     async def publish(self, *, run_id: UUID) -> bool:
         """Return true only when the ephemeral hint was accepted."""
         ...
@@ -19,11 +21,19 @@ class WakeupHints(Protocol):
 
 
 class NotificationOutbox(Protocol):
-    async def pending_outbox(self, *, limit: int) -> tuple[tuple[UUID, UUID], ...]: ...
+    """Define durable notification acknowledgement and retention operations."""
 
-    async def mark_outbox_delivered(self, *, message_id: UUID) -> None: ...
+    async def pending_outbox(self, *, limit: int) -> tuple[tuple[UUID, UUID], ...]:
+        """Read bounded undelivered notification identifiers in durable order."""
+        ...
 
-    async def prune_outbox(self) -> None: ...
+    async def mark_outbox_delivered(self, *, message_id: UUID) -> None:
+        """Acknowledge a published wakeup hint by its durable outbox identifier."""
+        ...
+
+    async def prune_outbox(self) -> None:
+        """Expire old outbox rows under the bounded retention policy."""
+        ...
 
 
 class OutboxNotifications:

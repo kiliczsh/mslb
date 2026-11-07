@@ -12,6 +12,7 @@ HEALTH = Path("/run/mslb-tmp/guard-health.json")
 
 
 def write_health(*, path: Path | None = None) -> None:
+    """Atomically update the private Linux guard heartbeat."""
     if sys.platform != "linux":
         raise RuntimeError("Guard heartbeat storage requires Linux containers")
     destination = HEALTH if path is None else path

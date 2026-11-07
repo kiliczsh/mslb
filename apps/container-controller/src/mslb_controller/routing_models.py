@@ -46,6 +46,7 @@ class BackendSpec:
 
     @property
     def url(self) -> str:
+        """Build the approved backend base URL from its enrolled network identity."""
         return f"http://{self.id}:8080"
 
 
@@ -78,6 +79,7 @@ class Reservation:
     released: bool = False
 
     def release(self) -> None:
+        """Release this request's memory and in-flight reservation exactly once."""
         if self.released:
             return
         self.released = True

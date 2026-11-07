@@ -10,7 +10,11 @@ from mslb_contracts.checkpoints import (
 from mslb_engine.metrics import MetricAccumulator
 from mslb_engine.simulator import Simulation
 
+# Checkpoints fit the worker's bounded materialization slot; prefixes share a
+# separate aggregate output ceiling and exact arithmetic has a finite bit budget.
 MAX_CHECKPOINT_BYTES = 32 * 1024 * 1024
+MAX_PREFIX_BYTES = 512 * 1024**2
+MAX_CHECKPOINT_FRACTION_BITS = 4096
 
 
 PREFIX_NAMES: tuple[PrefixName, ...] = (

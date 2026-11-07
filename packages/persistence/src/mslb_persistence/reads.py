@@ -17,6 +17,7 @@ from mslb_persistence.output_models import OutputProgress
 
 
 def dataset_view(row: Dataset) -> DatasetView:
+    """Map stored dataset metadata into the bounded public response model."""
     return DatasetView(
         id=row.id,
         digest=row.digest,
@@ -78,6 +79,7 @@ def run_view(run: Run, job: Job, progress: OutputProgress | None) -> RunView:
 
 
 def check_limit(limit: int) -> None:
+    """Reject pagination sizes outside the supported API envelope."""
     if type(limit) is not int or not 1 <= limit <= 500:
         raise StoreError(code="VALIDATION_ERROR", message="Page limit must be between 1 and 500")
 
@@ -148,6 +150,8 @@ class Reads:
         return await self.database.transaction(operation=operation)
 
     async def dataset(self, dataset_id: UUID) -> DatasetView:
+        """Read one public dataset view without loading its stored CSV."""
+
         async def operation(session: AsyncSession) -> DatasetView:
             row = await session.get(entity=Dataset, ident=dataset_id)
             if row is None:

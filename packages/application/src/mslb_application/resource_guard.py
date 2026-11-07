@@ -30,6 +30,7 @@ class ResourcePublisher:
         self.busy = False
 
     def reset(self) -> None:
+        """Reset publisher ownership/revision and fail-closed admission warmup."""
         self.lease = None
         self.revision = 0
         self.policy = ResourcePolicy()

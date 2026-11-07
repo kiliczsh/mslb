@@ -10,6 +10,7 @@ from starlette.responses import Response
 def json_response(
     model: BaseModel, status: int = HTTPStatus.OK.value, headers: dict[str, str] | None = None
 ) -> Response:
+    """Serialize typed response data using the public JSON representation and headers."""
     payload = model.model_dump_json().encode()
     if len(payload) > 1024**2:
         raise OperationError(

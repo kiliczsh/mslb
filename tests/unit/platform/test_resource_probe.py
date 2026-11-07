@@ -10,7 +10,7 @@ from mslb_contracts.resources import MIB
 from mslb_controller.engine import PROJECT, EngineError
 from mslb_controller.resource_probe import ProbeEngine
 
-from tests.test_docker_engine import fixture
+from tests.unit.platform.test_docker_engine import fixture
 
 
 @pytest.mark.parametrize(

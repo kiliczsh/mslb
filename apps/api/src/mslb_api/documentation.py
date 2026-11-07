@@ -9,6 +9,17 @@ def configure_routes(*, router: APIRouter, auth_enabled: bool) -> None:
     for route in router.routes:
         if not isinstance(route, APIRoute):
             continue
+        subject = route.path.removeprefix("/api/v1/").split("/")[0]
+        route.tags = [
+            {
+                "servers": "Servers",
+                "datasets": "Datasets",
+                "simulations": "Logical simulations",
+                "docker": "Docker traffic",
+                "history": "History",
+                "strategies": "Strategies",
+            }.get(subject, "Installation")
+        ]
         extra: dict[str, object] = {}
         if not auth_enabled:
             # FastAPI appends extra security alternatives to its generated bearer entry.

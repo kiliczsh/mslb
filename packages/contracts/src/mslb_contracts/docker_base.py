@@ -19,4 +19,5 @@ class DockerModel(BaseModel):
     model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
 
     def digest(self) -> str:
+        """Hash the canonical JSON representation of this frozen operational contract."""
         return hashlib.sha256(data=canonical_bytes(value=self.model_dump(mode="json"))).hexdigest()

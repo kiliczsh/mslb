@@ -45,6 +45,7 @@ class DockerSettings(DockerModel):
 
     @model_validator(mode="after")
     def bounds(self) -> Self:
+        """Require minimum, initial and maximum replica populations in ascending order."""
         if not self.min_replicas <= self.initial_replicas <= self.max_replicas:
             raise ValueError("Replica bounds conflict")
         return self

@@ -13,11 +13,13 @@ from mslb_controller.routing_models import BackendSpec
 
 
 def peak(*, first: int | None, second: int | None) -> int | None:
+    """Combine scoped backend samples into peak runtime observations."""
     values = [value for value in (first, second) if value is not None]
     return max(values) if values else None
 
 
 def difference(*, first: int | None, last: int | None, reset: bool) -> int | None:
+    """Calculate monotonic backend counter deltas within one resource identity."""
     return None if reset or first is None or last is None else last - first
 
 

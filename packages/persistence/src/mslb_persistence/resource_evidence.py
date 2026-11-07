@@ -43,6 +43,7 @@ class EvidenceRecord:
 
 
 def unavailable(*, revision: int, stale: bool = False) -> EvidenceRecord:
+    """Create an explicit fail-closed result when resource evidence cannot be trusted."""
     return EvidenceRecord(
         revision=revision,
         received_at=None,
@@ -63,6 +64,7 @@ def validate_budget(
     # Clock freshness is checked separately by the SQL transaction/reader. Here only
     # validate the independently derived capacity/headroom, allowing either sampler
     # to finish first. A future host frame still cannot pass the database-clock check.
+    """Validate bounded resource evidence before persistence or admission reads."""
     budget_time = (
         datetime.now(tz=UTC)
         if probe is None
@@ -231,6 +233,8 @@ class ResourceEvidenceStore:
         return await self.database.transaction(operation=operation)
 
     async def read(self) -> EvidenceRecord:
+        """Read the latest validated resource frame with its persisted decision."""
+
         async def operation(session: AsyncSession) -> EvidenceRecord:
             row = await session.get(entity=ResourceEvidence, ident=1)
             if row is None:

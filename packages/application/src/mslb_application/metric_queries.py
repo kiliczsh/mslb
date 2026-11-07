@@ -20,6 +20,7 @@ JSON = TypeAdapter(type=JsonValue)
 
 
 def exact(value: object) -> Fraction:
+    """Read an exact metric fraction without converting it to floating point."""
     if type(value) is int and abs(value) <= 2**53 - 1:
         return Fraction(numerator=value)
     return FractionValue.model_validate(obj=value).to_fraction()
@@ -160,6 +161,7 @@ def chart_samples(stream: BinaryIO, metric: str, server_id: str | None) -> Gener
 
 
 def comparison_identity(run: RunView) -> ComparisonIdentity:
+    """Identify compatible dataset, server snapshot and execution-mode comparison inputs."""
     settings = run.configuration.model_dump(mode="json", exclude={"strategy", "autoscaling"})
     return ComparisonIdentity(
         dataset_digest=run.dataset_digest,

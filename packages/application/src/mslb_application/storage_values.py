@@ -46,6 +46,8 @@ class FileReference:
 
 @dataclass(frozen=True, slots=True)
 class _Staged:
+    """Hold a private staged file until validated bytes are atomically published."""
+
     path: Path
     sha256: str
     size_bytes: int

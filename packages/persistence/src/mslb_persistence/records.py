@@ -13,6 +13,7 @@ from mslb_persistence.job_models import Job, Run
 
 
 def server_view(server: ManagedServer) -> ServerView:
+    """Map a current server row into its versioned public representation."""
     return ServerView(
         id=server.id,
         version=server.version,
@@ -23,6 +24,7 @@ def server_view(server: ManagedServer) -> ServerView:
 
 
 def server_input(server: ManagedServer) -> ServerInput:
+    """Freeze a database server row into a simulation input value."""
     return ServerInput(
         id=server.id,
         cpu_units_per_tick=server.cpu_units_per_tick,
@@ -49,6 +51,7 @@ class DatasetRecord:
 
     @classmethod
     def from_model(cls, row: Dataset) -> Self:
+        """Detach dataset metadata from a database ORM row."""
         return cls(
             id=row.id,
             digest=row.digest,
@@ -77,6 +80,7 @@ class RunRecord:
 
     @classmethod
     def from_model(cls, row: Run) -> Self:
+        """Detach immutable snapshot identity, server versions and creation metadata."""
         return cls(
             id=row.id,
             snapshot_digest=row.snapshot_digest,
@@ -111,6 +115,7 @@ class JobRecord:
 
     @classmethod
     def from_model(cls, row: Job) -> Self:
+        """Detach job status, attempt/fence counters and lease expiry from an ORM row."""
         return cls(
             run_id=row.run_id,
             status=row.status,

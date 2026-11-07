@@ -163,6 +163,7 @@ class ScalingReplay:
             self.available_at = tick + self.policy.cooldown_ticks + 1
 
     def observe(self, consumed: Fraction, capacity: int, drops: int, arrivals: int) -> None:
+        """Independently reconstruct the policy observation for one replayed interval."""
         if self.policy.enabled:
             self.observations.append(
                 (
@@ -173,5 +174,6 @@ class ScalingReplay:
             )
 
     def finish(self) -> None:
+        """Reject unconsumed scaling decisions at the verified terminal boundary."""
         if self.pending_at is not None or (self.stream is not None and self.stream.read(1)):
             raise ReplayError("Unapplied activation or trailing scaling sidecar data")

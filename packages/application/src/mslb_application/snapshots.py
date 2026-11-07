@@ -25,6 +25,7 @@ from pydantic import ValidationError
 
 
 def domain_inputs(snapshot: RunSnapshot) -> tuple[tuple[Server, ...], tuple[Request, ...]]:
+    """Convert validated frozen transport inputs into immutable engine values."""
     return (
         tuple(
             Server(
@@ -171,6 +172,7 @@ def make_snapshot(
 
 
 def verify_snapshot(snapshot: RunSnapshot) -> RunSnapshot:
+    """Recompute input and configuration digests before trusting a frozen run snapshot."""
     if snapshot.engine_version != __version__:
         raise InputError(field="engine_version", reason="incompatible_engine_version")
     expected = make_snapshot(
@@ -182,6 +184,7 @@ def verify_snapshot(snapshot: RunSnapshot) -> RunSnapshot:
 
 
 def read_snapshot(stream: BinaryIO) -> RunSnapshot:
+    """Read bounded JSON snapshot bytes and verify their immutable input digests."""
     payload = stream.read(32 * 1024 * 1024 + 1)
     if len(payload) > 32 * 1024 * 1024:
         raise InputError(field="snapshot", reason="payload_too_large")

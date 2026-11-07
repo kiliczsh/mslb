@@ -75,8 +75,10 @@ class Database:
         raise StoreError(code="INTERNAL_ERROR", message="Transaction retry exhausted")
 
     async def ready(self) -> bool:
+        """Probe database connectivity without mutating application state."""
         async with self.engine.connect() as connection:
             return await connection.scalar(statement=select(literal(value=1))) == 1
 
     async def close(self) -> None:
+        """Dispose of this database instance's asynchronous connection pool."""
         await self.engine.dispose()

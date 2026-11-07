@@ -11,7 +11,7 @@ from mslb_controller.physical_scaling import PhysicalScaling, ReadyBackend
 from mslb_controller.router import Router
 from mslb_controller.routing_models import BackendSpec
 
-from tests.test_traffic_driver import FakeClock, Transport
+from tests.unit.platform.test_traffic_driver import FakeClock, Transport
 
 
 def test_distinct_samples_cooldown_and_idle_dynamic_retirement_preserve_reservations() -> None:

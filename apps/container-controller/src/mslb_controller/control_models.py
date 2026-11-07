@@ -19,6 +19,8 @@ class ResourceReply(BaseModel):
 
 
 class EnrollmentReply(BaseModel):
+    """Return the controller-verified deployment identity and enrollment result."""
+
     model_config = ConfigDict(strict=True, extra="forbid")
     id: UUID
     definition: DeploymentSpec

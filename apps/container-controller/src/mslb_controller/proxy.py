@@ -30,6 +30,7 @@ from mslb_controller.resource_probe import ProbeEngine
 
 
 def reply(*, record: ResourceRecord, running: object = None) -> JSONResponse:
+    """Render resource identity, state and running status without daemon metadata."""
     return JSONResponse(
         content={
             "id": str(object=record.id),
@@ -42,6 +43,7 @@ def reply(*, record: ResourceRecord, running: object = None) -> JSONResponse:
 
 
 async def body[T: BaseModel](*, request: Request, model: type[T]) -> T:
+    """Read a bounded request body before validating daemon control arguments."""
     if request.headers.get("content-type", "").split(sep=";")[0] != "application/json":
         raise Refusal(status=HTTPStatus.UNSUPPORTED_MEDIA_TYPE.value, code="JSON_REQUIRED")
     if request.headers.get("content-encoding", "identity") != "identity":

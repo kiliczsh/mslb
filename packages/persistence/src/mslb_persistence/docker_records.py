@@ -14,6 +14,8 @@ from mslb_persistence.errors import StoreError
 
 @dataclass(frozen=True, slots=True)
 class DeploymentRecord:
+    """Freeze the enrolled deployment metadata used for physical run snapshots."""
+
     id: UUID
     definition: DeploymentSpec
 

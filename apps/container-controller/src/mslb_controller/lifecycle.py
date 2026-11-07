@@ -31,6 +31,7 @@ class Lifecycle:
         self.engine, self.http = engine, http
 
     async def enroll(self) -> DeploymentRecord:
+        """Validate and persist static backends before admitting physical traffic."""
         image = await self.engine.image()
         net = await self.engine.network()
         first = await self.engine.inspect(reference=PROJECT + "-backend-a-1")

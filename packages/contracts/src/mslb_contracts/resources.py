@@ -45,6 +45,17 @@ SERVICE_LIMITS_MB: dict[ServiceName, int] = {
     "resource-guard": 128,
 }
 MIB = 1024**2
+# Admission starts below 70%, stops work at 85%, and recovers after three
+# distinct samples below 60%. These intentionally leave allocation headroom.
+ADMISSION_PRESSURE_PERCENT = 70
+STOP_PRESSURE_PERCENT = 85
+RECOVERY_PRESSURE_PERCENT = 60
+RECOVERY_SAMPLE_COUNT = 3
+MEASUREMENT_MAX_AGE_SECONDS = 3
+MIN_ENGINE_MEMORY_BYTES = 8 * 1024**3
+MIN_MEMORY_RESERVE_BYTES = 2 * 1024**3
+ENGINE_RESERVE_DIVISOR = 4  # Reserve at least 25% of engine RAM.
+HOST_RESERVE_DIVISOR = 10  # Reserve at least 10% of physical host RAM.
 STARTUP_AND_DYNAMIC_BYTES = (128 + 64 + 256) * MIB
 HOST_WRITER_BYTES = 64 * MIB
 
@@ -59,6 +70,7 @@ class HostMemoryEvidence(DockerModel):
 
     @model_validator(mode="after")
     def counters(self) -> Self:
+        """Require UTC host evidence and available memory within physical capacity."""
         offset = self.measured_at.utcoffset()
         if offset is None or offset.total_seconds() != 0:
             raise ValueError("Host resource evidence must use UTC")
@@ -81,6 +93,7 @@ class ServiceMemory(DockerModel):
 
     @model_validator(mode="after")
     def counters(self) -> Self:
+        """Reject impossible working sets or healthy measurements for absent services."""
         if self.working_set_bytes > self.usage_bytes:
             raise ValueError("Working set cannot exceed raw container memory usage")
         if self.container_id is None and (
@@ -104,6 +117,7 @@ class ResourceProbe(DockerModel):
     @field_validator("measured_at")
     @classmethod
     def utc(cls, value: datetime) -> datetime:
+        """Require a UTC timestamp on trusted resource probe frames."""
         offset = value.utcoffset()
         if offset is None or offset.total_seconds() != 0:
             raise ValueError("Resource evidence must use UTC")
@@ -111,6 +125,7 @@ class ResourceProbe(DockerModel):
 
     @model_validator(mode="after")
     def topology(self) -> Self:
+        """Require one measurement per approved service with the configured memory cap."""
         if {item.service for item in self.services} != set(
             SERVICE_LIMITS_MB
         ) or self.available_memory_bytes > self.engine_memory_bytes:
@@ -132,6 +147,7 @@ class ResourceDecision(DockerModel):
 
     @model_validator(mode="after")
     def status(self) -> Self:
+        """Require a refusal reason and prevent contradictory admission/stop decisions."""
         if self.admit and (self.stop_running or self.reason is not None):
             raise ValueError("An admitted resource decision cannot also refuse or stop work")
         if not self.admit and self.reason is None:
@@ -140,6 +156,7 @@ class ResourceDecision(DockerModel):
 
 
 def memory_bounds(*, probe: ResourceProbe | None) -> tuple[int, int, int]:
+    """Return service caps, engine reserve and remaining-growth headroom in bytes."""
     caps = (
         0
         if probe is None
@@ -148,7 +165,10 @@ def memory_bounds(*, probe: ResourceProbe | None) -> tuple[int, int, int]:
         + (HOST_WRITER_BYTES if probe.desktop_engine else 0)
     )
     working = 0 if probe is None else sum(item.working_set_bytes for item in probe.services)
-    reserve = max(2 * 1024**3, 0 if probe is None else probe.engine_memory_bytes // 4)
+    reserve = max(
+        MIN_MEMORY_RESERVE_BYTES,
+        0 if probe is None else probe.engine_memory_bytes // ENGINE_RESERVE_DIVISOR,
+    )
     return caps, reserve, max(0, caps - working) + reserve
 
 
@@ -156,7 +176,9 @@ def host_memory_fresh(*, probe: ResourceProbe, now: datetime) -> bool:
     """Check the independent host clock against the current trusted reader clock."""
     return not probe.desktop_engine or (
         probe.host_memory is not None
-        and 0 <= (now - probe.host_memory.measured_at).total_seconds() <= 3
+        and 0
+        <= (now - probe.host_memory.measured_at).total_seconds()
+        <= MEASUREMENT_MAX_AGE_SECONDS
     )
 
 
@@ -165,8 +187,10 @@ def host_memory_headroom(*, probe: ResourceProbe) -> int:
     caps, _reserve, _headroom = memory_bounds(probe=probe)
     growth = max(0, caps - sum(item.working_set_bytes for item in probe.services))
     host_reserve = max(
-        2 * 1024**3,
-        0 if probe.host_memory is None else probe.host_memory.total_memory_bytes // 10,
+        MIN_MEMORY_RESERVE_BYTES,
+        0
+        if probe.host_memory is None
+        else probe.host_memory.total_memory_bytes // HOST_RESERVE_DIVISOR,
     )
     return host_reserve + growth
 
@@ -175,7 +199,7 @@ def safe_to_admit(*, probe: ResourceProbe, now: datetime | None = None) -> bool:
     """Require measured service/engine/host headroom and healthy bounded consumers."""
     caps, reserve, headroom = memory_bounds(probe=probe)
     return (
-        probe.engine_memory_bytes >= 8 * 1024**3
+        probe.engine_memory_bytes >= MIN_ENGINE_MEMORY_BYTES
         and caps + reserve <= probe.engine_memory_bytes
         and probe.available_memory_bytes >= headroom
         and host_memory_fresh(probe=probe, now=probe.measured_at if now is None else now)
@@ -189,7 +213,7 @@ def safe_to_admit(*, probe: ResourceProbe, now: datetime | None = None) -> bool:
         and all(
             (item.service == "redis" or (item.healthy and item.container_id is not None))
             and not item.oom_killed
-            and item.working_set_bytes * 100 < item.limit_bytes * 70
+            and item.working_set_bytes * 100 < item.limit_bytes * ADMISSION_PRESSURE_PERCENT
             for item in probe.services
         )
     )

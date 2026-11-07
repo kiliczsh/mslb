@@ -31,6 +31,7 @@ class Submissions:
         self.followers = 0
 
     async def upload(self, source: BinaryIO, filename: str) -> DatasetRecord:
+        """Import a bounded CSV, verify its provenance and register durable dataset metadata."""
         if self.pending is not None:
             raise OperationError(
                 code="RATE_LIMITED", message="Input processing capacity is occupied"

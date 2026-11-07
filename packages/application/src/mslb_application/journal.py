@@ -55,6 +55,7 @@ def on_loop[T](loop: asyncio.AbstractEventLoop, operation: Awaitable[T]) -> T:
 
 
 def json_chunks(value: object) -> Generator[bytes]:
+    """Yield one canonical JSON document incrementally, followed by LF."""
     encoder = json.JSONEncoder(
         ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
     )
@@ -64,16 +65,19 @@ def json_chunks(value: object) -> Generator[bytes]:
 
 
 def stored(reference: FileReference) -> StoredFile:
+    """Convert a managed-file reference into its persistence transport value."""
     return StoredFile(key=reference.key, sha256=reference.sha256, size_bytes=reference.size_bytes)
 
 
 def file_reference(reference: StoredFile) -> FileReference:
+    """Adapt persisted file metadata for later managed-file verification."""
     return FileReference(
         key=reference.key, sha256=reference.sha256, size_bytes=reference.size_bytes
     )
 
 
 def stream_chunks(stream: BinaryIO, length: int) -> Generator[bytes]:
+    """Read a stream in bounded blocks without loading it all into memory."""
     remaining = length
     while remaining:
         block = stream.read(min(64 * 1024, remaining))
@@ -290,6 +294,7 @@ class Journal:
             )
 
     def checkpoint_needed(self) -> bool:
+        """Check whether the interval or byte threshold requires a durable checkpoint."""
         return self.simulation is not None and (
             checkpoint_due(simulation=self.simulation, previous=self.last_checkpoint)
             or any(

@@ -76,12 +76,14 @@ class TrafficDriver:
         )
 
     def elapsed(self) -> float:
+        """Return finite, nonnegative monotonic seconds since this traffic attempt began."""
         elapsed = self.clock.now() - self.started
         if not math.isfinite(elapsed) or elapsed < 0:
             raise TrafficError(code="CLOCK_UNAVAILABLE")
         return elapsed
 
     def halt(self) -> StopReason | None:
+        """Return the external stop reason or the reached real-time execution deadline."""
         reason = self.stop()
         if reason is not None:
             if reason not in {"CANCELLED", "FENCE_LOST", "RESOURCE_PRESSURE"}:
@@ -151,6 +153,7 @@ class TrafficDriver:
                 reservation.release()
 
     async def send(self, *, request: RequestInput, reservation: Reservation) -> WorkCompleted:
+        """Recheck stop/queue deadlines, then send one already reserved HTTP request."""
         reason = self.halt()
         if reason is not None:
             raise DispatchRefused(reason=reason)

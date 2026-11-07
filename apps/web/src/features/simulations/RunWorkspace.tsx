@@ -9,30 +9,26 @@ import {
   settingsSchema,
   terminal,
 } from "../../shared/api/contracts.js";
+import { ACTIVE_RUN_POLL_INTERVAL_MS } from "../../shared/api/polling.js";
 import { Feedback } from "../../shared/ui/Feedback.js";
-import { Help } from "../../shared/ui/Help.js";
 import {
-  ArrowRightIcon,
   CircleNotchIcon,
   ClockCounterClockwiseIcon,
-  CopyIcon,
-  DatabaseIcon,
   EyeIcon,
   FlaskIcon,
-  HardDrivesIcon,
-  SlidersHorizontalIcon,
 } from "../../shared/ui/Icons.js";
-import { StatusIcon } from "../../shared/ui/StatusIcon.js";
-import { failureMessage } from "../history/historyContracts.js";
 import { RunHistory } from "../history/RunHistory.js";
-import { AutoscalingControls } from "./AutoscalingControls.js";
+import { ClusterPreview } from "./ClusterPreview.js";
 import { LiveRun } from "./LiveRun.js";
+import { RunForm } from "./RunForm.js";
+import { RunSummary } from "./RunSummary.js";
 import { scalingPolicyError } from "./scalingPolicy.js";
 
 const ResultsExplorer = lazy(() =>
   import("../results/ResultsExplorer.js").then((module) => ({ default: module.ResultsExplorer })),
 );
 
+/** Coordinate configuration, idempotent submission, history and saved result views. */
 export function RunWorkspace({
   api,
   dataset,
@@ -70,7 +66,7 @@ export function RunWorkspace({
     queryFn: ({ signal }) => api.run(selected ?? "", signal),
     enabled: selected !== null && view === "results",
     refetchInterval: (query) =>
-      query.state.data && terminal(query.state.data.status) ? false : 1500,
+      query.state.data && terminal(query.state.data.status) ? false : ACTIVE_RUN_POLL_INTERVAL_MS,
   });
   const launch = useMutation({
     mutationKey: ["launch"],
@@ -166,9 +162,22 @@ export function RunWorkspace({
             </li>
           </ol>
           <div className="simulation-setup">
-            <form
-              className="run-form"
-              noValidate
+            <RunForm
+              dataset={dataset}
+              settings={settings}
+              servers={servers}
+              submission={{
+                registering,
+                reviewed,
+                localError,
+                advancedOpen,
+                error: launch.error,
+                isError: launch.isError,
+              }}
+              onChange={change}
+              onAdvancedOpenChange={setAdvancedOpen}
+              onReviewReset={() => setReviewKey(null)}
+              onChooseDataset={onChooseDataset}
               onSubmit={(event) => {
                 event.preventDefault();
                 if (registering) return;
@@ -180,331 +189,8 @@ export function RunWorkspace({
                 }
                 launch.mutate({ datasetId: dataset.id, configuration });
               }}
-            >
-              <fieldset className="configuration-fields" disabled={registering}>
-                <legend className="sr-only">Configure a logical run</legend>
-                <h3 className="simulation-section-title">
-                  <DatabaseIcon size={18} aria-hidden="true" /> Dataset
-                </h3>
-                <div className="simulation-dataset">
-                  <p>
-                    {dataset ? (
-                      <>
-                        Selected dataset: <strong>{dataset.source_filename}</strong> ·{" "}
-                        {dataset.request_count.toLocaleString()} requests
-                      </>
-                    ) : (
-                      "Select a dataset in Datasets before launching."
-                    )}
-                  </p>
-                  {onChooseDataset && (
-                    <button type="button" className="text-button" onClick={onChooseDataset}>
-                      {dataset ? "Change dataset" : "Choose dataset"}{" "}
-                      <ArrowRightIcon size={16} aria-hidden="true" />
-                    </button>
-                  )}
-                </div>
-                <h3 className="simulation-section-title">
-                  <SlidersHorizontalIcon size={18} aria-hidden="true" /> Strategy &amp; mode
-                </h3>
-                <div className="form-grid simulation-basics">
-                  <label>
-                    Execution mode
-                    <select
-                      aria-label="Execution mode"
-                      aria-describedby="simulation-mode-help"
-                      value={settings.mode}
-                      onChange={(event) =>
-                        change({
-                          ...settings,
-                          mode: settingsSchema.shape.mode.parse(event.target.value),
-                        })
-                      }
-                    >
-                      <option value="sequential">Sequential</option>
-                      <option value="concurrent">Concurrent</option>
-                    </select>
-                    <small id="simulation-mode-help" className="simulation-field-help">
-                      {settings.mode === "concurrent"
-                        ? "Active requests share each server’s CPU."
-                        : "One request runs at a time per server; original validator compatible."}
-                    </small>
-                  </label>
-                  <label>
-                    Scheduling strategy
-                    <select
-                      aria-label="Scheduling strategy"
-                      aria-describedby="simulation-strategy-help"
-                      value={settings.strategy}
-                      onChange={(event) =>
-                        change({
-                          ...settings,
-                          strategy: settingsSchema.shape.strategy.parse(event.target.value),
-                        })
-                      }
-                    >
-                      <option value="first_fit">First Fit</option>
-                      <option value="round_robin">Round Robin</option>
-                      <option value="least_connections">Least Connections</option>
-                      <option value="most_available_memory">Most Available Memory</option>
-                    </select>
-                    <small id="simulation-strategy-help" className="simulation-field-help">
-                      {
-                        {
-                          first_fit: "Uses the first eligible server by ID.",
-                          round_robin: "Rotates through eligible servers.",
-                          least_connections:
-                            "Chooses the eligible server with the fewest active requests.",
-                          most_available_memory:
-                            "Chooses the eligible server with the most free memory.",
-                        }[settings.strategy]
-                      }
-                    </small>
-                  </label>
-                </div>
-                <details
-                  className="simulation-advanced"
-                  open={advancedOpen}
-                  onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
-                >
-                  <summary>
-                    <SlidersHorizontalIcon className="summary-icon" size={16} aria-hidden="true" />{" "}
-                    Advanced settings
-                  </summary>
-                  <p className="muted simulation-advanced-status">
-                    Queue capacity: {settings.max_queue_size ?? "no limit"} · timeout:{" "}
-                    {settings.queue_timeout_ticks === null
-                      ? "off"
-                      : `${settings.queue_timeout_ticks} ticks`}{" "}
-                    · autoscaling: {settings.autoscaling.enabled ? "on" : "off"}
-                  </p>
-                  <div className="form-grid">
-                    <label>
-                      Queue capacity (blank: disabled)
-                      <input
-                        type="number"
-                        min={0}
-                        max={10_000}
-                        step={1}
-                        value={
-                          settings.max_queue_size !== null &&
-                          Number.isFinite(settings.max_queue_size)
-                            ? settings.max_queue_size
-                            : ""
-                        }
-                        onChange={(event) =>
-                          change({
-                            ...settings,
-                            max_queue_size:
-                              event.target.value === "" ? null : event.target.valueAsNumber,
-                          })
-                        }
-                      />
-                    </label>
-                    <label>
-                      Queue timeout ticks (blank: disabled)
-                      <input
-                        type="number"
-                        min={1}
-                        max={1_000_000}
-                        step={1}
-                        value={
-                          settings.queue_timeout_ticks !== null &&
-                          Number.isFinite(settings.queue_timeout_ticks)
-                            ? settings.queue_timeout_ticks
-                            : ""
-                        }
-                        onChange={(event) =>
-                          change({
-                            ...settings,
-                            queue_timeout_ticks:
-                              event.target.value === "" ? null : event.target.valueAsNumber,
-                          })
-                        }
-                      />
-                    </label>
-                    <label>
-                      Simulation horizon (ticks)
-                      <input
-                        type="number"
-                        required
-                        min={1}
-                        max={1_000_000}
-                        step={1}
-                        value={
-                          Number.isFinite(settings.max_simulation_ticks)
-                            ? settings.max_simulation_ticks
-                            : ""
-                        }
-                        onChange={(event) =>
-                          change({ ...settings, max_simulation_ticks: event.target.valueAsNumber })
-                        }
-                      />
-                    </label>
-                  </div>
-                  <AutoscalingControls
-                    policy={settings.autoscaling}
-                    onChange={(autoscaling) => change({ ...settings, autoscaling })}
-                  />
-                  <details>
-                    <summary>Effective execution limits</summary>
-                    <p>
-                      At most 64 logical servers, 10,000 input requests, 10 MiB CSV. Limits can be
-                      lowered; domain admission may reject a configuration that exceeds the
-                      installation envelope.
-                    </p>
-                    <div className="form-grid">
-                      {(["max_samples", "max_fraction_bits", "max_metric_series"] as const).map(
-                        (key) => (
-                          <label key={key}>
-                            {
-                              {
-                                max_samples: "Maximum samples",
-                                max_fraction_bits: "Maximum exact fraction bits",
-                                max_metric_series: "Maximum metric histories",
-                              }[key]
-                            }
-                            <input
-                              type="number"
-                              required
-                              min={1}
-                              max={
-                                {
-                                  max_samples: 1_000_000,
-                                  max_fraction_bits: 4096,
-                                  max_metric_series: 10_000,
-                                }[key]
-                              }
-                              step={1}
-                              value={Number.isFinite(settings[key]) ? settings[key] : ""}
-                              onChange={(event) =>
-                                change({ ...settings, [key]: event.target.valueAsNumber })
-                              }
-                            />
-                          </label>
-                        ),
-                      )}
-                    </div>
-                  </details>
-                </details>
-                <p className="muted simulation-effective">
-                  Queue:{" "}
-                  {settings.max_queue_size === null
-                    ? "no capacity limit"
-                    : `${settings.max_queue_size} requests`}{" "}
-                  · timeout:{" "}
-                  {settings.queue_timeout_ticks === null
-                    ? "off"
-                    : `${settings.queue_timeout_ticks} ticks`}{" "}
-                  · autoscaling: {settings.autoscaling.enabled ? "on" : "off"}
-                </p>
-              </fieldset>
-              <Feedback error={servers.error} />
-              <Feedback error={launch.error} />
-              {localError && <p role="alert">{localError}</p>}
-              {launch.isError && (
-                <p className="notice">
-                  A retry with unchanged settings reuses the same idempotency key. Check history if
-                  the previous response was interrupted.
-                </p>
-              )}
-              {reviewed && (
-                <div className="notice" role="status">
-                  <h3 className="simulation-section-title">Review snapshot inputs</h3>
-                  <p>
-                    {dataset?.source_filename} · {dataset?.request_count.toLocaleString()} requests
-                    · {settings.strategy.replaceAll("_", " ")} · {settings.mode}.
-                  </p>
-                  <p>
-                    Queue capacity: {settings.max_queue_size ?? "no limit"} · timeout:{" "}
-                    {settings.queue_timeout_ticks ?? "off"}
-                    {settings.queue_timeout_ticks !== null ? " ticks" : ""} · autoscaling:{" "}
-                    {settings.autoscaling.enabled ? "on" : "off"}.
-                  </p>
-                  <details className="simulation-review-details">
-                    <summary>Server capacities and versions</summary>
-                    <ul>
-                      {servers.data?.items.map((server) => (
-                        <li key={server.id}>
-                          {server.id} · CPU {server.cpu_units_per_tick} · memory {server.mem_mb} MB
-                          · starts {server.rate_limit_per_sec}/tick · version {server.version}
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
-                  <details className="simulation-review-details">
-                    <summary>Configuration to submit</summary>
-                    <pre>{JSON.stringify(settings, null, 2)}</pre>
-                  </details>
-                </div>
-              )}
-              <button
-                type="submit"
-                className="primary"
-                disabled={!dataset || !servers.data?.items.length || registering}
-              >
-                {registering ? (
-                  <CircleNotchIcon className="icon-spin" size={18} aria-hidden="true" />
-                ) : (
-                  <FlaskIcon size={18} aria-hidden="true" />
-                )}
-                {registering
-                  ? "Registering run…"
-                  : reviewed
-                    ? "Confirm and queue run"
-                    : "Review snapshot"}
-                <ArrowRightIcon size={18} aria-hidden="true" />
-              </button>
-              {reviewed && !registering && (
-                <button type="button" className="text-button" onClick={() => setReviewKey(null)}>
-                  Back to configuration
-                </button>
-              )}
-            </form>
-            <aside className="simulation-cluster" aria-label="Current cluster">
-              <div className="simulation-cluster-heading">
-                <h3 className="simulation-section-title">
-                  <HardDrivesIcon size={18} aria-hidden="true" /> Current cluster
-                </h3>
-                <Help text="Each run saves its inputs. Server edits affect future runs." />
-              </div>
-              {servers.isPending && <p role="status">Loading servers…</p>}
-              {servers.data && (
-                <>
-                  <p>
-                    {servers.data.items.length} servers ·{" "}
-                    {servers.data.items
-                      .reduce((sum, server) => sum + server.cpu_units_per_tick, 0)
-                      .toLocaleString()}{" "}
-                    CPU units/tick ·{" "}
-                    {servers.data.items
-                      .reduce((sum, server) => sum + server.mem_mb, 0)
-                      .toLocaleString()}{" "}
-                    MB
-                  </p>
-                  <ul className="cluster-preview">
-                    {servers.data.items.map((server) => (
-                      <li key={server.id}>
-                        <span className="mono">{server.id}</span>
-                        <span>
-                          {server.cpu_units_per_tick} CPU · {server.mem_mb.toLocaleString()} MB ·{" "}
-                          {server.rate_limit_per_sec} starts/tick
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-              {servers.data?.items.length === 0 && (
-                <p className="notice">Add a server in Servers before starting a simulation.</p>
-              )}
-              <p className="muted simulation-cluster-note">
-                Logical time in ticks. No real HTTP traffic.
-              </p>
-              <p className="muted simulation-cluster-note">
-                The run saves the latest server capacities when queued.
-              </p>
-            </aside>
+            />
+            <ClusterPreview servers={servers.data} pending={servers.isPending} />
           </div>
         </>
       )}
@@ -540,74 +226,18 @@ export function RunWorkspace({
           {!selected && <p>Select a run to inspect its persisted status.</p>}
           {detail.isFetching && !detail.data && selected && <p>Loading run details…</p>}
           {detail.data && (
-            <div className="panel result-summary">
-              <p className="mono">{detail.data.id}</p>
-              <p className="status icon-label">
-                <StatusIcon status={detail.data.status} />
-                {detail.data.status.replaceAll("_", " ")}
-              </p>
-              <p>
-                {detail.data.mode} · {detail.data.strategy} · attempt {detail.data.attempts}
-              </p>
-              {detail.data.progress && (
-                <p>
-                  Committed through tick {detail.data.progress.next_tick};{" "}
-                  {detail.data.progress.committed_events} events saved.
-                </p>
-              )}
-              {detail.data.error_code && (
-                <div className="notice error" role="alert">
-                  <strong>{failureMessage(detail.data.error_code)}</strong>
-                  {detail.data.error_code === "STORAGE_LIMIT_EXCEEDED" && (
-                    <p>
-                      Large pending queues can create large playback files. This failed run has no
-                      completed result bundle.
-                    </p>
-                  )}
-                  <small>Diagnostic: {detail.data.error_code}</small>
-                </div>
-              )}
-              {!terminal(detail.data.status) && (
-                <button
-                  type="button"
-                  disabled={cancel.isPending || detail.data.status === "cancel_requested"}
-                  onClick={() => cancel.mutate(detail.data.id)}
-                >
-                  {detail.data.status === "cancel_requested"
-                    ? "Cancellation pending"
-                    : "Cancel simulation"}
-                </button>
-              )}
-              <Feedback error={cancel.error} />
-              <details>
-                <summary>Validation and saved configuration</summary>
-                {detail.data.validation && (
-                  <>
-                    <p>
-                      Independent replay: {detail.data.validation.independent_replay}. Original
-                      validator: {detail.data.validation.original_validator.replaceAll("_", " ")}.
-                    </p>
-                    <p>
-                      Terminal tick {detail.data.validation.terminal_tick} ·{" "}
-                      {detail.data.validation.event_count} events
-                    </p>
-                  </>
-                )}
-                <p className="mono">Snapshot: {detail.data.snapshot_digest}</p>
-                <p className="mono">Dataset: {detail.data.dataset_digest}</p>
-                <p className="mono">Server snapshot: {detail.data.server_snapshot_digest}</p>
-                <pre>{JSON.stringify(detail.data.configuration, null, 2)}</pre>
-                <button
-                  type="button"
-                  onClick={() => {
-                    change(structuredClone(detail.data.configuration));
-                    setView("configure");
-                  }}
-                >
-                  <CopyIcon size={16} aria-hidden="true" /> Copy settings for a new run
-                </button>
-              </details>
-            </div>
+            <RunSummary
+              run={detail.data}
+              cancelling={cancel.isPending}
+              cancelError={cancel.error}
+              onCancel={() => {
+                if (detail.data) cancel.mutate(detail.data.id);
+              }}
+              onCopy={(configuration) => {
+                change(configuration);
+                setView("configure");
+              }}
+            />
           )}
           {detail.data && !terminal(detail.data.status) && (
             <div className="simulation-progress" role="status">

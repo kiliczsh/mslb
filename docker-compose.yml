@@ -4,8 +4,7 @@ include:
   - path: compose.docker-simulation.yaml
   - path: compose.dev.yaml
 
-x-tool: &tool
-  profiles: [tools]
+x-bounded-process: &bounded-process
   read_only: true
   tmpfs: [/tmp:size=128m]
   cap_drop: [ALL]
@@ -14,6 +13,10 @@ x-tool: &tool
   cpus: 1
   mem_limit: 1024m
   memswap_limit: 1024m
+
+x-tool: &tool
+  <<: *bounded-process
+  profiles: [tools]
 
 services:
   postgres:
@@ -96,8 +99,7 @@ services:
         assert os.getuid() == 1000
         print("Runtime imports, validator identity, non-root user and tool isolation verified")
   web:
-    <<: *tool
-    profiles: []
+    <<: *bounded-process
     image: mslb-web:local
     build:
       context: .
@@ -169,8 +171,7 @@ services:
       redis: {condition: service_healthy}
     networks: [internal]
   migrate:
-    <<: *tool
-    profiles: []
+    <<: *bounded-process
     image: mslb-python-runtime:local
     command: [python, -m, mslb_persistence.migrations]
     mem_limit: 128m
@@ -191,8 +192,7 @@ services:
       worker: {condition: service_healthy}
     networks: [internal]
   worker:
-    <<: *tool
-    profiles: []
+    <<: *bounded-process
     image: mslb-python-runtime:local
     build:
       context: .
@@ -225,8 +225,7 @@ services:
         mode: non-blocking
         max-buffer-size: 1m
   api:
-    <<: *tool
-    profiles: []
+    <<: *bounded-process
     image: mslb-python-runtime:local
     build:
       context: .

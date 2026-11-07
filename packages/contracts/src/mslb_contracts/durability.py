@@ -42,6 +42,7 @@ class PersistedEvent(CheckpointModel):
 
     @model_validator(mode="after")
     def lifecycle_fields(self) -> Self:
+        """Require server/reason fields appropriate to each persisted lifecycle event."""
         if (
             (self.server_id is not None) != (self.event in {"REQUEST_STARTED", "REQUEST_FINISHED"})
             or (self.reason is not None) != (self.event == "REQUEST_DROPPED")
@@ -52,6 +53,7 @@ class PersistedEvent(CheckpointModel):
         return self
 
     def canonical_trace_line(self) -> bytes:
+        """Render the original canonical trace fields without persistence-only metadata."""
         value: dict[str, str | int] = {
             "t": self.t,
             "event": self.event,

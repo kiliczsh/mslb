@@ -33,6 +33,7 @@ def register_history(*, router: APIRouter, queries: Queries) -> None:
         strategy: HistoryStrategy | None = None,
         mode: HistoryMode | None = None,
     ) -> Response:
+        """Filter newest-first run history with cursors bound to the selected filters."""
         return json_response(
             model=await queries.history(
                 kind=kind,

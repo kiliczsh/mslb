@@ -27,7 +27,7 @@ from mslb_controller.runtime_observations import RuntimeObservations
 from mslb_controller.traffic import TrafficDriver
 from mslb_persistence.docker_records import ResourceRecord
 
-from tests.test_traffic_driver import FakeClock, Transport, rows
+from tests.unit.platform.test_traffic_driver import FakeClock, Transport, rows
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

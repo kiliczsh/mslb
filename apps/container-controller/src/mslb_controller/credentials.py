@@ -13,12 +13,14 @@ type Role = Literal["controller", "guard"]
 
 
 def root(*, role: Role) -> Path:
+    """Locate the configured private directory for controller and resource-guard credentials."""
     if role not in {"controller", "guard"}:
         raise ValueError("Unknown private credential role")
     return Path("/run/controller-auth" if role == "controller" else "/run/guard-auth")
 
 
 def read_token(*, role: Role = "controller") -> str:
+    """Read a bounded private Linux credential and reject unsafe ownership or permissions."""
     if sys.platform != "linux":
         raise RuntimeError("Private credential storage requires Linux containers")
     descriptor = os.open(path=root(role=role) / "token", flags=os.O_RDONLY | os.O_NOFOLLOW)
@@ -39,6 +41,7 @@ def read_token(*, role: Role = "controller") -> str:
 
 
 def initialize(*, role: Role = "controller") -> None:
+    """Create missing private controller credentials without replacing existing secrets."""
     if sys.platform != "linux":
         raise RuntimeError("Private credential storage requires Linux containers")
     directory = root(role=role)

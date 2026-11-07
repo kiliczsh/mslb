@@ -153,6 +153,7 @@ class Router:
         return Reservation(backend=selected, request=request)
 
     async def send(self, request: WorkRequest) -> WorkCompleted:
+        """Reserve an eligible backend, send one request and release capacity on every exit."""
         reservation = self.reserve(request=request)
         try:
             return await self.http.work(reservation=reservation)

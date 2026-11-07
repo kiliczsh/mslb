@@ -36,6 +36,7 @@ class ServerReference(ReadModel):
     @field_validator("server_id")
     @classmethod
     def normalized(cls, value: str) -> str:
+        """Normalize the server identifier accepted by MCP CRUD operations."""
         return normalize_identifier(value=value)
 
 
@@ -81,6 +82,7 @@ class WaitArguments(ReadModel):
     @field_validator("run_ids")
     @classmethod
     def unique(cls, value: tuple[UUID, ...]) -> tuple[UUID, ...]:
+        """Reject duplicate simulation identifiers in a bounded batch wait."""
         if len(set(value)) != len(value):
             raise ValueError("Run IDs must be unique")
         return value

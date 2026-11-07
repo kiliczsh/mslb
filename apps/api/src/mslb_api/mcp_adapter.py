@@ -74,6 +74,7 @@ RESPONSE_LIMIT = 1024**2 - 65536 - 1024
 
 
 def correlation(*, context: ServerRequestContext[object]) -> str:
+    """Reuse the HTTP request ID or create a fallback MCP correlation UUID."""
     if isinstance(context.request, Request):
         return str(object=getattr(context.request.state, "request_id", str(object=uuid4())))
     return str(object=uuid4())
@@ -122,6 +123,7 @@ class McpAdapter:
 
     @asynccontextmanager
     async def admitted(self, *, waiting: bool = False) -> AsyncGenerator[None]:
+        """Reserve bounded MCP work capacity for the duration of one operation."""
         slots = self.wait_calls if waiting else self.calls
         if slots.locked():
             raise OperationError(
@@ -314,6 +316,7 @@ class McpAdapter:
     async def list_resources(
         self, context: ServerRequestContext[object], params: PaginatedRequestParams | None
     ) -> ListResourcesResult:
+        """Expose the bounded resource catalog advertised by this installation."""
         return ListResourcesResult(
             resources=[
                 Resource(name=name, uri=uri, mime_type="application/json")
@@ -325,6 +328,7 @@ class McpAdapter:
     async def list_templates(
         self, context: ServerRequestContext[object], params: PaginatedRequestParams | None
     ) -> ListResourceTemplatesResult:
+        """Describe parameterized resource URIs and their supported MIME types."""
         return ListResourceTemplatesResult(
             resource_templates=[
                 ResourceTemplate(name=name, uri_template=uri, mime_type="application/json")
@@ -398,6 +402,7 @@ class McpAdapter:
     async def list_prompts(
         self, context: ServerRequestContext[object], params: PaginatedRequestParams | None
     ) -> ListPromptsResult:
+        """List the documented simulation workflow prompts without running them."""
         prompts = []
         for name, description, model in PROMPTS:
             arguments = [

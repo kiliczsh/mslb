@@ -8,6 +8,7 @@ from mslb_application.errors import OperationError
 from mslb_application.queries import Queries
 from mslb_application.submissions import Submissions
 from mslb_contracts.dataset_views import DatasetPreview, DatasetView
+from mslb_contracts.inputs import MAX_UPLOAD_BYTES
 from mslb_contracts.pagination import Page
 from starlette.datastructures import UploadFile
 from starlette.responses import Response
@@ -51,7 +52,7 @@ def register_datasets(*, router: APIRouter, submissions: Submissions, queries: Q
             stream=request.stream(),
             max_files=1,
             max_fields=0,
-            max_part_size=10 * 1024**2,
+            max_part_size=MAX_UPLOAD_BYTES,
         )
         form = await parser.parse()
         try:
@@ -63,7 +64,7 @@ def register_datasets(*, router: APIRouter, submissions: Submissions, queries: Q
             if (
                 not isinstance(source, UploadFile)
                 or source.size is None
-                or source.size > 10 * 1024**2
+                or source.size > MAX_UPLOAD_BYTES
             ):
                 raise OperationError(code="PAYLOAD_TOO_LARGE", message="CSV upload exceeds 10 MiB")
             data = await submissions.upload(

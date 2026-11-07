@@ -19,6 +19,7 @@ class LeaseRef(BaseModel):
 
     def lease(self) -> ControlLease:
         # Expiry is read and enforced in PostgreSQL, never accepted from the caller.
+        """Convert the validated transport lease into the persistence ownership value."""
         return ControlLease(
             run_id=self.run_id,
             fence=self.fence,

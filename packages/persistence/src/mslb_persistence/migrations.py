@@ -12,6 +12,7 @@ from mslb_persistence.database import Database
 
 
 def configuration() -> Config:
+    """Locate package-owned Alembic scripts; callers attach the active connection."""
     config = Config()
     config.set_main_option(
         name="script_location", value=str(object=Path(__file__).parent / "alembic")
@@ -20,6 +21,8 @@ def configuration() -> Config:
 
 
 async def migrate(database: Database, revision: str = "head") -> None:
+    """Upgrade the supplied database to the requested revision, defaulting to head."""
+
     def upgrade(connection: Connection) -> None:
         config = configuration()
         config.attributes["connection"] = connection
@@ -30,6 +33,7 @@ async def migrate(database: Database, revision: str = "head") -> None:
 
 
 async def main() -> None:
+    """Run migrations using the validated database environment configuration."""
     database = Database(url=os.environ["DATABASE_URL"])
     try:
         await migrate(database=database)

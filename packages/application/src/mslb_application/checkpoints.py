@@ -21,13 +21,13 @@ from pydantic import ValidationError
 
 from mslb_application.checkpoint_prefixes import _require as _require
 from mslb_application.checkpoint_prefixes import _scan_prefix as _scan_prefix
+from mslb_application.checkpoint_restore import _restore_scaler as _restore_scaler
 from mslb_application.checkpoint_seals import capture_terminal_seal as capture_terminal_seal
 from mslb_application.checkpoint_seals import read_terminal_seal as read_terminal_seal
 from mslb_application.checkpoint_state import _capture as _capture
 from mslb_application.checkpoint_state import _fraction as _fraction
 from mslb_application.checkpoint_state import _preflight as _preflight
 from mslb_application.checkpoint_state import _restore as _restore
-from mslb_application.checkpoint_state import _restore_scaler as _restore_scaler
 from mslb_application.checkpoint_state import _server_input as _server_input
 from mslb_application.checkpoint_values import MAX_CHECKPOINT_BYTES as MAX_CHECKPOINT_BYTES
 from mslb_application.checkpoint_values import PREFIX_NAMES as PREFIX_NAMES

@@ -75,6 +75,8 @@ class Catalog:
         await self.database.transaction(operation=operation)
 
     async def list_servers(self) -> tuple[ServerView, ...]:
+        """Read current servers in stable identifier order."""
+
         async def operation(session: AsyncSession) -> tuple[ServerView, ...]:
             rows = await session.scalars(
                 statement=select(ManagedServer).order_by(ManagedServer.id).limit(limit=64)
@@ -244,6 +246,8 @@ class Catalog:
         return await self.database.transaction(operation=operation)
 
     async def get_dataset(self, dataset_id: UUID) -> DatasetRecord:
+        """Read dataset metadata or raise NOT_FOUND without materializing CSV contents."""
+
         async def operation(session: AsyncSession) -> DatasetRecord:
             row = await session.get(entity=Dataset, ident=dataset_id)
             if row is None:
@@ -253,6 +257,8 @@ class Catalog:
         return await self.database.transaction(operation=operation)
 
     async def get_run(self, run_id: UUID) -> RunRecord:
+        """Read the durable logical run record or raise NOT_FOUND."""
+
         async def operation(session: AsyncSession) -> RunRecord:
             row = await session.get(entity=Run, ident=run_id)
             if row is None:

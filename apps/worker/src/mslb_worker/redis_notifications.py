@@ -34,6 +34,7 @@ class RedisHints:
         )
 
     async def publish(self, *, run_id: UUID) -> bool:
+        """Publish a best-effort wakeup hint; PostgreSQL remains authoritative."""
         try:
             async with asyncio.timeout(delay=0.25):
                 # EVAL is a variadic Redis protocol call. One atomic command keeps
@@ -59,4 +60,5 @@ class RedisHints:
         await asyncio.sleep(delay=max(0, deadline - loop.time()))
 
     async def close(self) -> None:
+        """Close the Redis connection pool owned by this hint publisher."""
         await self.client.aclose()

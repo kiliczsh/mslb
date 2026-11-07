@@ -109,6 +109,7 @@ def settings_for_profile(*, settings: RunSettings, profile: CapacityProfile) -> 
 
 
 def public_settings(*, settings: StoredRunSettings) -> RunSettings:
+    """Select the public execution settings without exposing internal worker budgets."""
     if isinstance(settings, StressRunSettings):
         return RunSettings.model_validate(
             obj=settings.model_dump(mode="python", exclude={"capacity_profile", "max_requests"})

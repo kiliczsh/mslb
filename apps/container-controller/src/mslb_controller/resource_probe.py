@@ -23,18 +23,21 @@ from mslb_controller.probe_models import MemoryStats as MemoryStats
 
 
 def integer(*, value: object, minimum: int = 0) -> int:
+    """Require an actual integer at least the configured minimum; reject booleans."""
     if type(value) is not int or value < minimum:
         raise EngineError(code="RESOURCE_MEASUREMENTS")
     return value
 
 
 def boolean(*, value: object) -> bool:
+    """Require an actual boolean in daemon state metadata."""
     if type(value) is not bool:
         raise EngineError(code="RESOURCE_MEASUREMENTS")
     return value
 
 
 def available_memory() -> int:
+    """Read Linux available physical memory without counting swap as capacity."""
     with Path("/proc/meminfo").open(mode="rb") as stream:
         raw = stream.read(64 * 1024 + 1)
     if len(raw) > 64 * 1024:

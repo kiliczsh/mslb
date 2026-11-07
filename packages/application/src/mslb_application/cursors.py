@@ -46,6 +46,7 @@ class Cursors:
         self.secret = secret
 
     def encode(self, context: object, position: Position) -> str:
+        """Sign a bounded pagination position tied to its query kind and filters."""
         cursor = _Cursor(
             context=hashlib.sha256(data=canonical_bytes(value=context)).hexdigest(),
             expires=int(time.time()) + 24 * 60 * 60,
@@ -80,3 +81,20 @@ class Cursors:
             raise OperationError(
                 code="VALIDATION_ERROR", message="Invalid, expired, or unrelated cursor"
             ) from None
+
+
+def history_position(*, point: Position) -> tuple[datetime, UUID] | None:
+    """Require either the initial cursor or a complete aware timestamp/UUID position."""
+    if point.created_at is None and point.id is None and point.sequence == 0 and point.key is None:
+        return None
+    if (
+        point.created_at is None
+        or point.created_at.tzinfo is None
+        or point.id is None
+        or point.sequence
+        or point.key is not None
+    ):
+        raise OperationError(
+            code="VALIDATION_ERROR", message="Cursor does not contain a history position"
+        )
+    return point.created_at, point.id

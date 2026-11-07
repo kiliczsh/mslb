@@ -28,6 +28,8 @@ class FileRetention:
         self.database = database
 
     async def snapshot(self) -> RetentionSnapshot:
+        """Snapshot all database file references that maintenance must protect from deletion."""
+
         async def operation(session: AsyncSession) -> RetentionSnapshot:
             active_ids = tuple(
                 await session.scalars(

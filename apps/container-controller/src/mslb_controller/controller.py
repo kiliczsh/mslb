@@ -53,12 +53,15 @@ class Attempt:
     owns: bool = True
 
     def current(self) -> ControlLease:
+        """Return the latest monitored lease reference for fenced control requests."""
         return self.lease
 
     def stopped(self) -> StopReason | None:
+        """Return the recorded stop reason, or None while the attempt may continue."""
         return self.reason
 
     def stop(self, *, reason: StopReason, failure: str, owns: bool = True) -> None:
+        """Signal that this attempt must stop admitting and sending traffic."""
         if not owns or reason == "CANCELLED" or self.reason is None:
             self.reason, self.failure = reason, failure
         self.owns = self.owns and owns

@@ -228,12 +228,14 @@ COMMON = {
 
 
 def schema(model: type[BaseModel]) -> dict[str, object]:
+    """Produce the JSON input schema for a registered typed MCP argument model."""
     return {"$schema": DIALECT, **model.model_json_schema()}
 
 
 def output_schema(tool: ToolContract) -> dict[str, object]:
     # Merge definitions generated from the same DTO classes; reject accidental
     # name collisions instead of silently publishing ambiguous references.
+    """Advertise successful result variants and the bounded MCP error envelope."""
     definitions: dict[str, object] = {}
     variants: list[dict[str, object]] = []
     for model in (*tool.outputs, ErrorEnvelope):

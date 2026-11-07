@@ -63,6 +63,7 @@ class ControlClient:
             raise EngineError(code="CONTROL_RESPONSE") from None
 
     async def enroll(self) -> DeploymentRecord:
+        """Enroll approved static backend identities through the restricted control boundary."""
         value = await self._post(path="/control/enroll", payload="{}", model=EnrollmentReply)
         return DeploymentRecord(id=value.id, definition=value.definition)
 
@@ -86,4 +87,5 @@ class ControlClient:
         return value
 
     async def close(self) -> None:
+        """Close the authenticated control HTTP client owned by this instance."""
         await self.client.aclose()

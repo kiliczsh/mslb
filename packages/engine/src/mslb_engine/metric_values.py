@@ -39,6 +39,7 @@ class Distribution:
     p95: int | None
 
     def to_data(self) -> dict[str, JsonValue]:
+        """Serialize exact distribution statistics for the public metrics document."""
         return {
             "count": self.count,
             "mean": exact_value(value=self.mean),
@@ -127,6 +128,8 @@ class ServerTotals:
 
 @dataclass(frozen=True, slots=True)
 class ChartSample:
+    """Hold one bounded per-tick chart observation with exact resource values."""
+
     t: int
     duration_ticks: int
     value: Fraction

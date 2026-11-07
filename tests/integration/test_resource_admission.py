@@ -30,12 +30,12 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.integration.helpers import scratch
+from tests.integration.persistence_helpers import OutputFixture
+from tests.integration.persistence_helpers import prepare as prepare_persistence
 from tests.integration.test_docker_control import claim, manifest, prepared
-from tests.integration.test_persistence import OutputFixture
-from tests.integration.test_persistence import prepare as prepare_persistence
 from tests.integration.test_queries import prepare
 from tests.integration.test_resource_evidence import healthy_evidence
-from tests.test_resource_policy import probe as synthetic_probe
+from tests.unit.platform.test_resource_policy import probe as synthetic_probe
 
 
 def test_admission_holds_new_work_preserves_receipts_and_serializes_claims(tmp_path: Path) -> None:

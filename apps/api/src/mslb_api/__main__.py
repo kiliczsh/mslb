@@ -15,6 +15,7 @@ from mslb_api.settings import Settings, cursor_secret
 
 
 def build() -> FastAPI:
+    """Compose the API from validated environment, durable storage and private signing material."""
     settings = Settings.environment()
     limits = StorageLimits(capacity_profile=settings.capacity_profile)
     return create_app(

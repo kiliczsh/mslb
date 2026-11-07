@@ -39,6 +39,7 @@ class ScopeRecord(DockerModel):
     @field_validator("observed_at")
     @classmethod
     def utc(cls, value: datetime) -> datetime:
+        """Require UTC timestamps on operational artifact scope records."""
         offset = value.utcoffset()
         if offset is None or offset.total_seconds() != 0:
             raise ValueError("Artifact timestamps must use UTC")
@@ -106,6 +107,7 @@ class DockerProgress(ScopeRecord):
 
     @model_validator(mode="after")
     def samples(self) -> Self:
+        """Validate bounded unique backend identities and fresh observation timestamps."""
         names = [sample.health.backend_id for sample in self.backends]
         if (
             len(names) + len(self.unavailable_backends) > 4
@@ -136,6 +138,7 @@ class RuntimeRecord(ScopeRecord):
 
     @model_validator(mode="after")
     def measurements(self) -> Self:
+        """Verify runtime measurement identities and version-specific accounting."""
         if (
             (self.schema_version == 1 and self.observations)
             or (
@@ -165,6 +168,7 @@ class DockerManifest(DockerModel):
 
     @model_validator(mode="after")
     def artifacts_and_accounting(self) -> Self:
+        """Require the complete artifact set and internally consistent terminal accounting."""
         names = {"http_events.jsonl", "runtime_summary.json", "container_lifecycle.jsonl"}
         prefix = f"docker/{self.run_id.hex}/{self.publication_fence}/"
         if (

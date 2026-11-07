@@ -11,6 +11,7 @@ HEALTH = Path(tempfile.gettempdir()) / "mslb-worker" / "health.json"
 
 
 def healthy() -> bool:
+    """Require a fresh, valid worker heartbeat rather than process existence alone."""
     try:
         with HEALTH.open(mode="rb") as stream:
             record = json.loads(s=stream.read(1024))
@@ -23,6 +24,7 @@ def healthy() -> bool:
 
 
 def write_health() -> None:
+    """Atomically publish the current Linux worker heartbeat with private permissions."""
     if sys.platform != "linux":
         raise RuntimeError("Private worker heartbeat storage requires Linux containers")
     if HEALTH.parent.is_symlink():

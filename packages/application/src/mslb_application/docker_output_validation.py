@@ -9,6 +9,7 @@ from mslb_contracts.docker_artifacts import HttpRecord, LifecycleRecord, Runtime
 from mslb_contracts.docker_observations import BackendMeasurements
 from mslb_contracts.docker_runs import CreationIntent, DockerManifest, DockerSnapshot
 from mslb_contracts.inputs import RequestInput, input_digest
+from mslb_contracts.traffic import MAX_OPERATIONS, OPERATIONS_PER_UNIT
 from pydantic import ValidationError
 
 from mslb_application.errors import OperationError
@@ -16,20 +17,29 @@ from mslb_application.managed_files import ManagedFiles
 from mslb_application.storage_values import FileReference
 
 RESOLVED = {"removed", "released", "abandoned"}
+# Bound each parsed record and summary before allocating Pydantic models. The
+# larger version-2 summary includes scoped backend observations.
+EVENT_LINE_BYTES = 16 * 1024
+RUNTIME_SUMMARY_BYTES = 128 * 1024
+MAX_LIFECYCLE_RECORDS = 1024
+MAX_RESOURCE_IDENTITIES = 64
 
 
 def require(*, condition: bool, message: str) -> None:
+    """Reject an operational publication invariant with a stable validation error."""
     if not condition:
         raise OperationError(code="VALIDATION_FAILED", message=message)
 
 
 def chunks(*, stream: BinaryIO) -> Generator[bytes]:
+    """Yield artifact bytes in bounded blocks from the beginning of the stream."""
     stream.seek(0)
     while block := stream.read(64 * 1024):
         yield block
 
 
 def scoped(*, record: ScopeRecord, run_id: UUID, fence: int, snapshot: DockerSnapshot) -> None:
+    """Bind an operational record to the exact run, publication fence and snapshot."""
     require(
         condition=(record.run_id, record.fence, record.snapshot_digest)
         == (run_id, fence, snapshot.digest()),
@@ -49,10 +59,12 @@ def lifecycle_inventory(
     records: dict[UUID, LifecycleRecord] = {}
     capacities: dict[str, tuple[int, int]] = {}
     count = 0
-    while raw := stream.readline(16 * 1024 + 1):
+    while raw := stream.readline(EVENT_LINE_BYTES + 1):
         count += 1
         require(
-            condition=count <= 1024 and len(raw) <= 16 * 1024 and raw.endswith(b"\n"),
+            condition=count <= MAX_LIFECYCLE_RECORDS
+            and len(raw) <= EVENT_LINE_BYTES
+            and raw.endswith(b"\n"),
             message="Docker lifecycle stream exceeds its envelope",
         )
         event = LifecycleRecord.model_validate_json(json_data=raw)
@@ -69,7 +81,7 @@ def lifecycle_inventory(
         previous = records.get(event.resource_id)
         if previous is None:
             require(
-                condition=len(records) < 64
+                condition=len(records) < MAX_RESOURCE_IDENTITIES
                 and event.state == ("prepared" if event.kind == "dynamic" else "observed"),
                 message="Docker lifecycle lacks an initial reservation",
             )
@@ -132,51 +144,13 @@ def verify_docker_outputs(
         message="Docker publication inputs differ",
     )
     try:
-        with files.verified_stream(
-            reference=FileReference(**manifest.artifacts["runtime_summary.json"].model_dump())
-        ) as stream:
-            raw = stream.read(128 * 1024 + 1)
-        require(condition=len(raw) <= 128 * 1024, message="Docker summary exceeds its envelope")
-        runtime = RuntimeRecord.model_validate_json(json_data=raw)
-        require(
-            condition=runtime.schema_version == 2 or len(raw) <= 16 * 1024,
-            message="Legacy Docker summary exceeds its envelope",
-        )
-        require(
-            condition=canonical_bytes(value=runtime.model_dump(mode="json")) == raw,
-            message="Docker summary bytes are noncanonical",
-        )
-        scoped(
-            record=runtime,
-            run_id=manifest.run_id,
-            fence=manifest.publication_fence,
-            snapshot=snapshot,
+        runtime, capacities = _verified_runtime(
+            files=files, manifest=manifest, snapshot=snapshot, requests=requests
         )
         summary = runtime.traffic
-        require(
-            condition=summary.status == "completed"
-            and summary.total == len(requests)
-            and summary.peak_pending <= snapshot.configuration.max_pending
-            and summary.peak_inflight <= snapshot.configuration.global_inflight,
-            message="Docker summary is not a complete bounded execution",
-        )
-        with files.verified_stream(
-            reference=FileReference(**manifest.artifacts["container_lifecycle.jsonl"].model_dump())
-        ) as stream:
-            lifecycle_count, capacities = lifecycle_inventory(
-                stream=stream,
-                run_id=manifest.run_id,
-                fence=manifest.publication_fence,
-                snapshot=snapshot,
-                observations=runtime.observations,
-            )
-        require(
-            condition=lifecycle_count == runtime.lifecycle_events,
-            message="Docker lifecycle count differs",
-        )
         expected = {row.request_id: row for row in requests}
         states: dict[str, HttpRecord] = {}
-        counts = dict.fromkeys(("completed", "failed", "dropped", "unexecuted"), 0)
+        counts: dict[str, int] = dict.fromkeys(("completed", "failed", "dropped", "unexecuted"), 0)
         sequence = 0
         last_elapsed = 0.0
         active_http: dict[str, HttpRecord] = {}
@@ -185,11 +159,11 @@ def verify_docker_outputs(
         with files.verified_stream(
             reference=FileReference(**manifest.artifacts["http_events.jsonl"].model_dump())
         ) as stream:
-            while raw := stream.readline(16 * 1024 + 1):
+            while raw := stream.readline(EVENT_LINE_BYTES + 1):
                 sequence += 1
                 require(
                     condition=sequence <= len(requests) * 3
-                    and len(raw) <= 16 * 1024
+                    and len(raw) <= EVENT_LINE_BYTES
                     and raw.endswith(b"\n"),
                     message="Docker HTTP stream exceeds its envelope",
                 )
@@ -198,43 +172,19 @@ def verify_docker_outputs(
                     condition=canonical_bytes(value=event.model_dump(mode="json")) == raw,
                     message="Docker HTTP bytes are noncanonical",
                 )
-                scoped(
-                    record=event,
-                    run_id=manifest.run_id,
-                    fence=manifest.publication_fence,
+                previous = states.get(event.request_id)
+                _verify_http_event(
+                    event=event,
+                    previous=previous,
+                    sequence=sequence,
+                    last_elapsed=last_elapsed,
+                    elapsed_seconds=summary.elapsed_seconds,
+                    expected=expected,
+                    capacities=capacities,
+                    manifest=manifest,
                     snapshot=snapshot,
                 )
-                require(
-                    condition=event.sequence == sequence
-                    and event.request_id in expected
-                    and event.elapsed_seconds >= last_elapsed
-                    and event.elapsed_seconds <= summary.elapsed_seconds,
-                    message="Docker HTTP sequence/request/time differs",
-                )
                 last_elapsed = event.elapsed_seconds
-                previous = states.get(event.request_id)
-                allowed = {
-                    None: {"arrived", "unexecuted"},
-                    "arrived": {"admitted", "dropped", "unexecuted"},
-                    "admitted": {"completed", "failed", "unexecuted"},
-                }
-                require(
-                    condition=event.kind
-                    in allowed.get(previous.kind if previous is not None else None, set()),
-                    message="Docker HTTP outcome is duplicate or out of order",
-                )
-                if event.kind in {"admitted", "completed", "failed"}:
-                    require(
-                        condition=event.backend_id in capacities,
-                        message="Docker HTTP backend was never owned/observed",
-                    )
-                if event.kind in {"completed", "failed"}:
-                    require(
-                        condition=previous is not None
-                        and previous.backend_id == event.backend_id
-                        and previous.elapsed_seconds < snapshot.configuration.duration_seconds,
-                        message="Docker HTTP outcome changed backend",
-                    )
                 if event.kind == "arrived":
                     require(
                         condition=event.elapsed_seconds >= expected[event.request_id].t,
@@ -255,25 +205,20 @@ def verify_docker_outputs(
                         condition=len(active_http) <= snapshot.configuration.global_inflight,
                         message="Docker HTTP global inflight ceiling exceeded",
                     )
-                    if event.backend_id is None:
-                        raise OperationError(
-                            code="VALIDATION_FAILED", message="Docker backend identity is missing"
-                        )
-                    memory, limit = capacities[event.backend_id]
-                    assigned = [
-                        item for item in active_http.values() if item.backend_id == event.backend_id
-                    ]
-                    require(
-                        condition=len(assigned)
-                        <= min(limit, snapshot.configuration.backend_inflight)
-                        and sum(expected[item.request_id].mem_mb for item in assigned)
-                        <= min(memory, snapshot.configuration.logical_admission_mem_mb),
-                        message="Docker HTTP backend reservation ceiling exceeded",
+                    _verify_backend_reservation(
+                        event=event,
+                        active_http=active_http,
+                        expected=expected,
+                        capacities=capacities,
+                        snapshot=snapshot,
                     )
                 if event.result is not None:
                     require(
                         condition=event.result.operations
-                        == min(expected[event.request_id].work_units * 2048, 2_000_000),
+                        == min(
+                            expected[event.request_id].work_units * OPERATIONS_PER_UNIT,
+                            MAX_OPERATIONS,
+                        ),
                         message="Docker HTTP operation count differs",
                     )
                 if event.kind in counts:
@@ -288,25 +233,176 @@ def verify_docker_outputs(
                     counts[event.kind] += 1
                     active_http.pop(event.request_id, None)
                 states[event.request_id] = event
-        require(
-            condition=set(states) == set(expected)
-            and sum(counts.values()) == len(requests)
-            and not active_http
-            and not pending,
-            message="Docker HTTP terminal accounting is incomplete",
-        )
-        for name, count in counts.items():
-            require(
-                condition=count == getattr(summary, name) == getattr(manifest, name),
-                message="Docker HTTP terminal totals differ",
-            )
-        require(
-            condition=(summary.peak_pending, summary.peak_inflight)
-            == (peak_pending, peak_inflight),
-            message="Docker HTTP observed peaks differ from the event history",
+        _verify_http_totals(
+            states=states,
+            expected=expected,
+            counts=counts,
+            active_http=active_http,
+            pending=pending,
+            runtime=runtime,
+            manifest=manifest,
+            peak_pending=peak_pending,
+            peak_inflight=peak_inflight,
         )
         return runtime
     except (OSError, ValidationError):
         raise OperationError(
             code="VALIDATION_FAILED", message="Docker artifact is unavailable or invalid"
         ) from None
+
+
+def _verify_http_event(
+    *,
+    event: HttpRecord,
+    previous: HttpRecord | None,
+    sequence: int,
+    last_elapsed: float,
+    elapsed_seconds: float,
+    expected: dict[str, RequestInput],
+    capacities: dict[str, tuple[int, int]],
+    manifest: DockerManifest,
+    snapshot: DockerSnapshot,
+) -> None:
+    """Verify canonical scope, monotonic timing and a legal HTTP lifecycle transition."""
+    scoped(
+        record=event,
+        run_id=manifest.run_id,
+        fence=manifest.publication_fence,
+        snapshot=snapshot,
+    )
+    require(
+        condition=event.sequence == sequence
+        and event.request_id in expected
+        and event.elapsed_seconds >= last_elapsed
+        and event.elapsed_seconds <= elapsed_seconds,
+        message="Docker HTTP sequence/request/time differs",
+    )
+    allowed = {
+        None: {"arrived", "unexecuted"},
+        "arrived": {"admitted", "dropped", "unexecuted"},
+        "admitted": {"completed", "failed", "unexecuted"},
+    }
+    require(
+        condition=event.kind in allowed.get(previous.kind if previous is not None else None, set()),
+        message="Docker HTTP outcome is duplicate or out of order",
+    )
+    if event.kind in {"admitted", "completed", "failed"}:
+        require(
+            condition=event.backend_id in capacities,
+            message="Docker HTTP backend was never owned/observed",
+        )
+    if event.kind in {"completed", "failed"}:
+        require(
+            condition=previous is not None
+            and previous.backend_id == event.backend_id
+            and previous.elapsed_seconds < snapshot.configuration.duration_seconds,
+            message="Docker HTTP outcome changed backend",
+        )
+
+
+def _verified_runtime(
+    *,
+    files: ManagedFiles,
+    manifest: DockerManifest,
+    snapshot: DockerSnapshot,
+    requests: tuple[RequestInput, ...],
+) -> tuple[RuntimeRecord, dict[str, tuple[int, int]]]:
+    """Reopen the runtime summary and reconcile its complete owned resource history."""
+    with files.verified_stream(
+        reference=FileReference(**manifest.artifacts["runtime_summary.json"].model_dump())
+    ) as stream:
+        raw = stream.read(RUNTIME_SUMMARY_BYTES + 1)
+    require(
+        condition=len(raw) <= RUNTIME_SUMMARY_BYTES, message="Docker summary exceeds its envelope"
+    )
+    runtime = RuntimeRecord.model_validate_json(json_data=raw)
+    require(
+        condition=runtime.schema_version == 2 or len(raw) <= EVENT_LINE_BYTES,
+        message="Legacy Docker summary exceeds its envelope",
+    )
+    require(
+        condition=canonical_bytes(value=runtime.model_dump(mode="json")) == raw,
+        message="Docker summary bytes are noncanonical",
+    )
+    scoped(
+        record=runtime,
+        run_id=manifest.run_id,
+        fence=manifest.publication_fence,
+        snapshot=snapshot,
+    )
+    summary = runtime.traffic
+    require(
+        condition=summary.status == "completed"
+        and summary.total == len(requests)
+        and summary.peak_pending <= snapshot.configuration.max_pending
+        and summary.peak_inflight <= snapshot.configuration.global_inflight,
+        message="Docker summary is not a complete bounded execution",
+    )
+    with files.verified_stream(
+        reference=FileReference(**manifest.artifacts["container_lifecycle.jsonl"].model_dump())
+    ) as stream:
+        lifecycle_count, capacities = lifecycle_inventory(
+            stream=stream,
+            run_id=manifest.run_id,
+            fence=manifest.publication_fence,
+            snapshot=snapshot,
+            observations=runtime.observations,
+        )
+    require(
+        condition=lifecycle_count == runtime.lifecycle_events,
+        message="Docker lifecycle count differs",
+    )
+    return runtime, capacities
+
+
+def _verify_backend_reservation(
+    *,
+    event: HttpRecord,
+    active_http: dict[str, HttpRecord],
+    expected: dict[str, RequestInput],
+    capacities: dict[str, tuple[int, int]],
+    snapshot: DockerSnapshot,
+) -> None:
+    """Check actual backend membership, in-flight capacity and logical memory reservations."""
+    if event.backend_id is None:
+        raise OperationError(code="VALIDATION_FAILED", message="Docker backend identity is missing")
+    memory, limit = capacities[event.backend_id]
+    assigned = [item for item in active_http.values() if item.backend_id == event.backend_id]
+    require(
+        condition=len(assigned) <= min(limit, snapshot.configuration.backend_inflight)
+        and sum(expected[item.request_id].mem_mb for item in assigned)
+        <= min(memory, snapshot.configuration.logical_admission_mem_mb),
+        message="Docker HTTP backend reservation ceiling exceeded",
+    )
+
+
+def _verify_http_totals(
+    *,
+    states: dict[str, HttpRecord],
+    expected: dict[str, RequestInput],
+    counts: dict[str, int],
+    active_http: dict[str, HttpRecord],
+    pending: set[str],
+    runtime: RuntimeRecord,
+    manifest: DockerManifest,
+    peak_pending: int,
+    peak_inflight: int,
+) -> None:
+    """Reconcile terminal request membership, outcome totals and measured concurrency peaks."""
+    summary = runtime.traffic
+    require(
+        condition=set(states) == set(expected)
+        and sum(counts.values()) == len(expected)
+        and not active_http
+        and not pending,
+        message="Docker HTTP terminal accounting is incomplete",
+    )
+    for name, count in counts.items():
+        require(
+            condition=count == getattr(summary, name) == getattr(manifest, name),
+            message="Docker HTTP terminal totals differ",
+        )
+    require(
+        condition=(summary.peak_pending, summary.peak_inflight) == (peak_pending, peak_inflight),
+        message="Docker HTTP observed peaks differ from the event history",
+    )

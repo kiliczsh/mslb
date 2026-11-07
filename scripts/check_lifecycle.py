@@ -26,8 +26,8 @@ from scripts.check_controller import check_controller
 from scripts.check_docker_outputs import check_outputs
 from scripts.check_resource_probe import check_resource_probe
 from tests.integration.helpers import scratch
+from tests.integration.persistence_helpers import prepare
 from tests.integration.test_docker_control import expire
-from tests.integration.test_persistence import prepare
 
 
 def require(value: bool, message: str) -> None:

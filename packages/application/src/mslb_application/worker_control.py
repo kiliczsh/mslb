@@ -26,5 +26,6 @@ class _Control:
             self.stopped.set()
 
     def check(self) -> None:
+        """Raise ExecutionStopped when the background monitor records a stop reason."""
         if self.reason in {"cancel", "lease_lost", "resource_pressure"}:
             raise ExecutionStopped(self.reason)

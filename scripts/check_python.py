@@ -6,9 +6,9 @@ import subprocess
 def main() -> None:
     """Stop on the first failed check."""
     commands = [
-        ["just", "check"],
-        ["just", "check-mcp-schemas"],
-        ["just", "check-openapi-schemas"],
+        ["just", "check-python-local"],
+        ["python", "scripts/mcp_schemas.py", "check"],
+        ["python", "scripts/openapi_schemas.py", "check"],
         ["pytest"],
         [
             "python",

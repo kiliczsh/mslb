@@ -60,4 +60,5 @@ class ResourceClient:
             raise EngineError(code="RESOURCE_RESPONSE") from None
 
     async def close(self) -> None:
+        """Close the bounded read-only daemon resource-probe client."""
         await self.client.aclose()

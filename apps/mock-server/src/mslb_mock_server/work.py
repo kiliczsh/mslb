@@ -4,15 +4,23 @@ import time
 from dataclasses import dataclass
 from threading import Event
 
+from mslb_contracts.traffic import MAX_OPERATIONS as MAX_OPERATIONS
+from mslb_contracts.traffic import OPERATIONS_PER_UNIT as OPERATIONS_PER_UNIT
+
 from mslb_mock_server.errors import WorkStopped as WorkStopped
 
-OPERATIONS_PER_UNIT = 2048
-MAX_OPERATIONS = 2_000_000
 WORK_TIMEOUT_SECONDS = 2.0
+# FNV-style 32-bit mixing keeps the work deterministic and its integer size bounded.
+CHECK_INTERVAL_OPERATIONS = 256
+CHECKSUM_SEED = 0x811C9DC5
+CHECKSUM_PRIME = 16_777_619
+CHECKSUM_MASK = 0xFFFFFFFF
 
 
 @dataclass(frozen=True, slots=True)
 class CpuResult:
+    """Return measured CPU work and elapsed time from one bounded executor task."""
+
     operations: int
     checksum: str
     duration_ms: float
@@ -29,14 +37,14 @@ def execute(work_units: int, stopped: Event, deadline: float) -> CpuResult:
     if type(work_units) is not int or not 1 <= work_units <= 1_000_000_000:
         raise ValueError("Work units exceed the supported envelope")
     count = min(work_units * OPERATIONS_PER_UNIT, MAX_OPERATIONS)
-    value = 0x811C9DC5
-    for offset in range(0, count, 256):
+    value = CHECKSUM_SEED
+    for offset in range(0, count, CHECK_INTERVAL_OPERATIONS):
         if stopped.is_set():
             raise WorkStopped(code="WORK_CANCELLED")
         if time.monotonic() >= deadline:
             raise WorkStopped(code="WORK_TIMEOUT")
-        for index in range(offset, min(offset + 256, count)):
-            value = ((value ^ index) * 16_777_619) & 0xFFFFFFFF
+        for index in range(offset, min(offset + CHECK_INTERVAL_OPERATIONS, count)):
+            value = ((value ^ index) * CHECKSUM_PRIME) & CHECKSUM_MASK
     ended = time.monotonic()
     if stopped.is_set():
         raise WorkStopped(code="WORK_CANCELLED")

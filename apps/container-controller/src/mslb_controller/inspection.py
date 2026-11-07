@@ -31,17 +31,20 @@ READONLY = {"/proc/bus", "/proc/fs", "/proc/irq", "/proc/sys", "/proc/sysrq-trig
 
 
 def require(condition: bool) -> None:
+    """Reject daemon metadata that does not satisfy an enrollment invariant."""
     if not condition:
         raise EngineError(code="OWNERSHIP_CONFLICT")
 
 
 def mapping(value: object) -> dict[str, object]:
+    """Require a string-keyed object before inspecting untrusted daemon metadata."""
     if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
         raise EngineError(code="ENGINE_RESPONSE")
     return {str(object=key): item for key, item in value.items()}
 
 
 def strings(value: object) -> tuple[str, ...]:
+    """Require a bounded string collection in daemon metadata."""
     if (
         not isinstance(value, list)
         or len(value) > 64
@@ -52,6 +55,7 @@ def strings(value: object) -> tuple[str, ...]:
 
 
 def environment(value: object) -> dict[str, str]:
+    """Parse backend environment entries while rejecting ambiguous duplicate keys."""
     result: dict[str, str] = {}
     for item in strings(value=value):
         key, separator, content = item.partition("=")
@@ -61,6 +65,7 @@ def environment(value: object) -> dict[str, str]:
 
 
 def labels(value: object) -> dict[str, str]:
+    """Read a bounded string label map; enrollment checks ownership separately."""
     raw = mapping(value=value or {})
     if len(raw) > 64 or any(not isinstance(item, str) or len(item) > 4096 for item in raw.values()):
         raise EngineError(code="ENGINE_RESPONSE")
@@ -68,6 +73,7 @@ def labels(value: object) -> dict[str, str]:
 
 
 def network(info: NetworkInfo) -> None:
+    """Verify private bridge metadata and Compose ownership for the approved network."""
     require(
         condition=info.Name == NETWORK
         and info.Internal
@@ -303,6 +309,7 @@ def dynamic(
 def deployment(
     image: ImageInfo, net: NetworkInfo, first: ContainerInfo, second: ContainerInfo
 ) -> DeploymentSpec:
+    """Bind inspected containers to one validated installation and immutable image."""
     return DeploymentSpec(
         image_id=image.Id,
         network_id=net.Id,

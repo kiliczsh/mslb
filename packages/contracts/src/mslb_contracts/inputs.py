@@ -67,6 +67,7 @@ class ServerInput(BaseModel):
     @field_validator("id")
     @classmethod
     def normalize_id(cls, value: str) -> str:
+        """Normalize and validate a server identifier at the input boundary."""
         return normalize_identifier(value=value)
 
 
@@ -82,6 +83,7 @@ class RequestInput(BaseModel):
     @field_validator("request_id")
     @classmethod
     def normalize_id(cls, value: str) -> str:
+        """Normalize and validate a request identifier at the input boundary."""
         return normalize_identifier(value=value)
 
 
@@ -95,6 +97,7 @@ class ServerDocument(BaseModel):
     @field_validator("servers")
     @classmethod
     def order_unique_servers(cls, value: tuple[ServerInput, ...]) -> tuple[ServerInput, ...]:
+        """Sort servers deterministically and reject duplicate identifiers."""
         if len({server.id for server in value}) != len(value):
             raise ValueError("duplicate_normalized_identifier")
         return tuple(sorted(value, key=lambda server: server.id))

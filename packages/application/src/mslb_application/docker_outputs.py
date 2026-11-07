@@ -55,6 +55,7 @@ class DockerOutputs:
         self.lifecycle_count = 0
 
     async def run[T](self, *, operation: Callable[[], T]) -> T:
+        """Serialize artifact work until its thread settles, including cancellation."""
         async with self.lock:
             task = asyncio.create_task(coro=asyncio.to_thread(operation))
             return await settle(task=task)
@@ -64,6 +65,7 @@ class DockerOutputs:
         return self
 
     def open(self) -> None:
+        """Create private attempt-scoped output streams before traffic starts."""
         try:
             self.http = self.stack.enter_context(
                 cm=self.files.work_file(key=self.prefix + ".http.spool")
@@ -76,6 +78,7 @@ class DockerOutputs:
             raise
 
     def close(self) -> None:
+        """Close every owned operational output stream during cleanup."""
         self.stack.close()
         self.http, self.lifecycle = None, None
 
@@ -83,9 +86,11 @@ class DockerOutputs:
         await self.run(operation=self.close)
 
     async def append(self, *, event: HttpEvent) -> None:
+        """Append one scoped HTTP lifecycle event to the bounded canonical spool."""
         await self.run(operation=lambda: self.write_event(event=event))
 
     def write_event(self, *, event: HttpEvent) -> None:
+        """Write a caller-sequenced HTTP event with frozen run/fence/snapshot scope."""
         if self.http is None:
             raise OperationError(code="INVALID_STATE", message="Docker output spool is not open")
         record = HttpRecord(
@@ -98,6 +103,7 @@ class DockerOutputs:
         self.http.write(data=canonical_bytes(value=record.model_dump(mode="json")))
 
     async def observe(self, *, resource: ResourceRecord) -> None:
+        """Append a resource-state observation to this attempt's lifecycle spool."""
         await self.run(operation=lambda: self.write_resource(resource=resource))
 
     def write_resource(self, *, resource: ResourceRecord) -> None:
@@ -125,6 +131,7 @@ class DockerOutputs:
     async def finalize(
         self, *, summary: TrafficSummary, observations: tuple[BackendMeasurements, ...] = ()
     ) -> DockerManifest:
+        """Verify and publish immutable artifact files, then return their scoped manifest."""
         return await self.run(
             operation=lambda: self.publish(summary=summary, observations=observations)
         )

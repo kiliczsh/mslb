@@ -38,6 +38,7 @@ class ArtifactResponse(StreamingResponse):
         )
 
     def prepare(self) -> None:
+        """Open and verify a managed artifact before sending response headers."""
         for download in self.downloads:
             self.files.append(self.stack.enter_context(cm=download.open()))
 

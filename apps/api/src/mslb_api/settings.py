@@ -18,6 +18,7 @@ from mslb_contracts.capacity_profiles import (
 
 
 def valid_origin(origin: str) -> bool:
+    """Accept an exact HTTP origin without credentials, paths, wildcards or control characters."""
     try:
         parsed = urlsplit(url=origin)
     except ValueError:

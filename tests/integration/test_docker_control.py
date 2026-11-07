@@ -42,7 +42,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.integration.helpers import scratch
-from tests.integration.test_persistence import Prepared, prepare
+from tests.integration.persistence_helpers import Prepared, prepare
 
 
 @dataclass(frozen=True, slots=True)

@@ -28,6 +28,7 @@ class EventFeed:
         self.overflow = False
 
     def offer(self, frame: bytes) -> bool:
+        """Offer one encoded SSE frame; overflow closes the subscriber without enqueueing."""
         if self.queued_bytes + len(frame) > 64 * 1024 or self.queue.full():
             self.overflow = True
             self.closed.set()

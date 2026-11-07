@@ -4,6 +4,12 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from mslb_contracts.resources import (
+    ADMISSION_PRESSURE_PERCENT,
+    MEASUREMENT_MAX_AGE_SECONDS,
+    MIN_ENGINE_MEMORY_BYTES,
+    RECOVERY_PRESSURE_PERCENT,
+    RECOVERY_SAMPLE_COUNT,
+    STOP_PRESSURE_PERCENT,
     ResourceDecision,
     ResourceProbe,
     host_memory_fresh,
@@ -30,11 +36,14 @@ class ResourcePolicy:
         stop_running = False
         if probe is None:
             reason, stop_running = "MEASUREMENTS_UNAVAILABLE", True
-        elif not 0 <= (now - probe.measured_at).total_seconds() <= 3 or (
+        elif not 0 <= (now - probe.measured_at).total_seconds() <= MEASUREMENT_MAX_AGE_SECONDS or (
             self.last_measurement is not None and probe.measured_at < self.last_measurement
         ):
             reason, stop_running = "MEASUREMENTS_STALE", True
-        elif probe.engine_memory_bytes < 8 * 1024**3 or caps + reserve > probe.engine_memory_bytes:
+        elif (
+            probe.engine_memory_bytes < MIN_ENGINE_MEMORY_BYTES
+            or caps + reserve > probe.engine_memory_bytes
+        ):
             reason, stop_running = "ENGINE_CAPACITY", True
         elif any(
             item.service != "redis" and (not item.healthy or item.container_id is None)
@@ -42,7 +51,8 @@ class ResourcePolicy:
         ):
             reason, stop_running = "MISSING_SERVICE", True
         elif any(
-            item.oom_killed or item.working_set_bytes * 100 >= item.limit_bytes * 85
+            item.oom_killed
+            or item.working_set_bytes * 100 >= item.limit_bytes * STOP_PRESSURE_PERCENT
             for item in probe.services
         ):
             reason, stop_running = "RESOURCE_PRESSURE", True
@@ -63,7 +73,10 @@ class ResourcePolicy:
             and probe.host_memory.available_memory_bytes < host_memory_headroom(probe=probe)
         ):
             reason, stop_running = "HOST_MEMORY_HEADROOM", True
-        elif any(item.working_set_bytes * 100 >= item.limit_bytes * 70 for item in probe.services):
+        elif any(
+            item.working_set_bytes * 100 >= item.limit_bytes * ADMISSION_PRESSURE_PERCENT
+            for item in probe.services
+        ):
             reason = "RESOURCE_PRESSURE"
         if reason is not None:
             self.held, self.cool_samples = True, 0
@@ -82,12 +95,12 @@ class ResourcePolicy:
                 self.cool_samples = (
                     self.cool_samples + 1
                     if all(
-                        item.working_set_bytes * 100 < item.limit_bytes * 60
+                        item.working_set_bytes * 100 < item.limit_bytes * RECOVERY_PRESSURE_PERCENT
                         for item in probe.services
                     )
                     else 0
                 )
-            if self.cool_samples >= 3:
+            if self.cool_samples >= RECOVERY_SAMPLE_COUNT:
                 self.held = False
             else:
                 reason = "WARMING_UP"

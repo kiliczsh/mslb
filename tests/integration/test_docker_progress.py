@@ -14,7 +14,7 @@ from sqlalchemy import update
 
 from tests.integration.helpers import scratch
 from tests.integration.test_docker_control import claim, expire, prepared
-from tests.test_runtime_observations import health
+from tests.unit.platform.test_runtime_observations import health
 
 
 def test_live_frames_require_current_scope_ownership_and_independent_freshness() -> None:
