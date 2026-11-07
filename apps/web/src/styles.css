@@ -1112,8 +1112,7 @@ main:has(.guided-demo) {
   width: 100%;
   margin-bottom: 8px;
 }
-.demo-setup > p,
-.demo-setup details {
+.demo-setup > p {
   font-size: 0.83rem;
 }
 .demo-csv {
@@ -1130,13 +1129,46 @@ main:has(.guided-demo) {
   min-height: 320px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   border-block: 1px solid var(--line);
   padding: 32px;
   background: #f8faff;
 }
 .demo-empty p {
   max-width: 450px;
+}
+.demo-skeleton {
+  display: grid;
+  gap: 20px;
+  margin-top: 12px;
+}
+.demo-skeleton-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.demo-skeleton-metric,
+.demo-skeleton-scene {
+  background: #e2e7f0;
+  border-radius: 4px;
+  animation: demo-loading-pulse 1.4s ease-in-out infinite alternate;
+}
+.demo-skeleton-metric {
+  height: 48px;
+}
+.demo-skeleton-scene {
+  height: 120px;
+}
+@keyframes demo-loading-pulse {
+  to {
+    opacity: 0.4;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .demo-skeleton-metric,
+  .demo-skeleton-scene {
+    animation: none;
+  }
 }
 .demo-metrics {
   display: flex;

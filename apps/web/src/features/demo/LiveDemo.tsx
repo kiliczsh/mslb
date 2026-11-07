@@ -8,15 +8,17 @@ import {
 import { useState } from "react";
 import { useDraftState, useDraftStorage } from "../../app/workspaceDrafts.js";
 import { type Api, idempotencyKey } from "../../shared/api/api.js";
-import { terminal } from "../../shared/api/contracts.js";
+import { type Settings, terminal } from "../../shared/api/contracts.js";
 import { Feedback } from "../../shared/ui/Feedback.js";
 import { DemoComparison } from "./DemoComparison.js";
+import { DemoLoading } from "./DemoLoading.js";
 import { DemoResults } from "./DemoResults.js";
 import {
   type DemoSession,
   demoInput,
   demoRecipes,
   demoStrategies,
+  strategyDescriptions,
   strategyLabels,
 } from "./demoState.js";
 
@@ -33,11 +35,14 @@ export function LiveDemo({
   const [draft, setDraft] = useDraftState({ storage, name: "demo" });
   const client = useQueryClient();
   const [view, setView] = useState<"playback" | "comparison">("playback");
+  const [selectedStrategy, setSelectedStrategy] = useState<Settings["strategy"]>("first_fit");
   const registering = useIsMutating({ mutationKey: ["demo-launch"] }) > 0;
   const servers = useQuery({ queryKey: ["servers"], queryFn: ({ signal }) => api.servers(signal) });
   const plan = servers.data?.items.length
     ? demoInput({ servers: servers.data.items, kind: draft.recipe })
     : null;
+  const recipe = demoRecipes.find((value) => value.id === draft.recipe) ?? demoRecipes[0];
+  const previewSettings = draft.session?.settings ?? plan?.settings;
   const attempts = draft.session?.attempts ?? [];
   const ids = attempts.flatMap((attempt) => (attempt.runId ? [attempt.runId] : []));
   const runs = useQueries({
@@ -49,10 +54,18 @@ export function LiveDemo({
     })),
   });
   const first = runs[0]?.data;
+  const selectedAttempt = attempts.find((attempt) => attempt.strategy === selectedStrategy);
+  const selectedQuery = selectedAttempt?.runId
+    ? runs[ids.indexOf(selectedAttempt.runId)]
+    : undefined;
+  const selectedRun = selectedQuery?.data;
   const allTerminal = runs.length > 0 && runs.every((run) => run.data && terminal(run.data.status));
   const unresolved = attempts.some((attempt) => !attempt.runId);
   const locked = registering || unresolved || (ids.length > 0 && !allTerminal);
   const allCompleted = runs.length === 4 && runs.every((run) => run.data?.status === "completed");
+  const waitingForRun =
+    ids.length > 0 && !first?.error_code && !runs[0]?.error && (!first || !terminal(first.status));
+  const demoBusy = registering || waitingForRun;
   const comparison = useQuery({
     queryKey: ["comparison", ids],
     queryFn: ({ signal }) => api.compare(ids, signal),
@@ -60,7 +73,13 @@ export function LiveDemo({
   });
   const launch = useMutation({
     mutationKey: ["demo-launch"],
-    mutationFn: async ({ compare }: { compare: boolean }) => {
+    mutationFn: async ({
+      compare,
+      strategy,
+    }: {
+      compare: boolean;
+      strategy?: Settings["strategy"];
+    }) => {
       let session = storage.current.demo.session;
       if (!session) {
         if (!plan) throw new Error("Configure at least one server first.");
@@ -83,6 +102,11 @@ export function LiveDemo({
                 runId: null,
               },
           ),
+        };
+      } else if (strategy && !session.attempts.some((attempt) => attempt.strategy === strategy)) {
+        session = {
+          ...session,
+          attempts: [...session.attempts, { strategy, key: idempotencyKey(), runId: null }],
         };
       }
       const generation = session.generation;
@@ -141,6 +165,7 @@ export function LiveDemo({
                   checked={draft.recipe === recipe.id}
                   onChange={() => {
                     setDraft({ recipe: recipe.id, session: null });
+                    setSelectedStrategy("first_fit");
                     launch.reset();
                   }}
                 />
@@ -169,10 +194,11 @@ export function LiveDemo({
             onClick={() => {
               if (ids.length > 0 && !unresolved) {
                 setDraft((value) => ({ ...value, session: null }));
+                setSelectedStrategy("first_fit");
                 launch.reset();
               } else {
-                setView(attempts.length > 1 ? "comparison" : "playback");
-                launch.mutate({ compare: attempts.length > 1 });
+                setView(attempts.length === 4 ? "comparison" : "playback");
+                launch.mutate({ compare: attempts.length === 4 });
               }
             }}
           >
@@ -184,7 +210,7 @@ export function LiveDemo({
                   ? "New demo"
                   : "2 · Run demo"}
           </button>
-          {unresolved && (
+          {unresolved && !registering && (
             <p className="notice">
               The submission may have reached the server. Retry keeps its original workload and
               keys, even after navigation.
@@ -193,24 +219,37 @@ export function LiveDemo({
           <button className="demo-action" type="button" onClick={onServers}>
             Manage current servers
           </button>
-          <details>
-            <summary>What will run?</summary>
-            <p>
-              First Fit, concurrent mode, queue limits disabled, simulated autoscaling off. No
-              servers are changed. High capacities may absorb the entire burst.
-            </p>
-            <pre className="demo-csv">{draft.session?.csv ?? plan?.csv ?? "No workload yet."}</pre>
-          </details>
         </aside>
         <div className="demo-output">
-          {!first && (
-            <div className="demo-empty">
-              <h3>3 · Follow the decisions.</h3>
-              <p>
-                Run a workload to see its saved request flow, resource use and exact results here.
-              </p>
-              <p className="muted">Your saved results appear when the worker completes the run.</p>
-            </div>
+          {demoBusy && first?.status !== "completed" && (
+            <DemoLoading
+              title={registering ? "Preparing your demo…" : "Running your workload…"}
+              detail={
+                registering
+                  ? "Saving the workload and registering the run."
+                  : first?.status === "queued"
+                    ? "Your run is queued. Results will appear here when it completes."
+                    : "Processing requests and saving results. This view updates automatically."
+              }
+            />
+          )}
+          {!demoBusy && first?.status !== "completed" && (
+            <section className="demo-empty" aria-label="Workload preview">
+              <p className="eyebrow">What will run?</p>
+              <h3>{recipe.title}</h3>
+              <p>{recipe.preview}</p>
+              {previewSettings && (
+                <p className="muted">
+                  {strategyLabels[previewSettings.strategy]} · {previewSettings.mode} mode ·
+                  simulated autoscaling {previewSettings.autoscaling.enabled ? "on" : "off"}. Server
+                  configuration is unchanged.
+                </p>
+              )}
+              <pre className="demo-csv">
+                {draft.session?.csv ?? plan?.csv ?? "No workload yet."}
+              </pre>
+              <p className="muted">Your saved results appear here when the run completes.</p>
+            </section>
           )}
           {runs.length > 0 && (
             <p role="status">
@@ -250,18 +289,68 @@ export function LiveDemo({
                 </nav>
               )}
               {view === "playback" && (
-                <DemoResults
-                  key={first.id}
-                  api={api}
-                  runId={first.id}
-                  terminalTick={first.validation.terminal_tick}
-                />
+                <>
+                  <div className="actions">
+                    <label>
+                      Playback strategy
+                      <select
+                        value={selectedStrategy}
+                        disabled={locked}
+                        onChange={(event) => {
+                          const strategy = demoStrategies.find(
+                            (value) => value === event.target.value,
+                          );
+                          if (strategy) setSelectedStrategy(strategy);
+                        }}
+                      >
+                        {demoStrategies.map((strategy) => (
+                          <option key={strategy} value={strategy}>
+                            {strategyLabels[strategy]}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {!selectedAttempt && (
+                      <button
+                        type="button"
+                        className="primary"
+                        disabled={locked}
+                        onClick={() =>
+                          launch.mutate({ compare: false, strategy: selectedStrategy })
+                        }
+                      >
+                        Run {strategyLabels[selectedStrategy]}
+                      </button>
+                    )}
+                  </div>
+                  <p className="muted">{strategyDescriptions[selectedStrategy]}</p>
+                  {!selectedAttempt && (
+                    <p>Run this strategy on the same saved workload to see its request flow.</p>
+                  )}
+                  {(registering ||
+                    (selectedAttempt?.runId &&
+                      !selectedQuery?.error &&
+                      (!selectedRun || !terminal(selectedRun.status)))) && (
+                    <DemoLoading
+                      title={`Running ${strategyLabels[selectedStrategy]}…`}
+                      detail="Using the same saved workload and settings. Results appear here automatically."
+                    />
+                  )}
+                  {selectedRun?.status === "completed" && selectedRun.validation && (
+                    <DemoResults
+                      key={selectedRun.id}
+                      api={api}
+                      runId={selectedRun.id}
+                      terminalTick={selectedRun.validation.terminal_tick}
+                    />
+                  )}
+                </>
               )}
               <div className="actions">
                 <button
                   type="button"
                   className="primary"
-                  disabled={registering || attempts.length === 4 || unresolved}
+                  disabled={locked || attempts.length === 4}
                   onClick={() => {
                     setView("comparison");
                     launch.mutate({ compare: true });
@@ -269,7 +358,11 @@ export function LiveDemo({
                 >
                   4 · Compare all four strategies
                 </button>
-                <button type="button" onClick={() => onOpenRun(first.id)}>
+                <button
+                  type="button"
+                  disabled={!selectedRun}
+                  onClick={() => selectedRun && onOpenRun(selectedRun.id)}
+                >
                   Open full results and downloads
                 </button>
               </div>
@@ -279,6 +372,17 @@ export function LiveDemo({
           {view === "comparison" && !allCompleted && (
             <p role="status">The comparison appears after all four real runs complete.</p>
           )}
+          {view === "comparison" &&
+            !comparison.error &&
+            !comparison.data &&
+            (registering ||
+              runs.some((run) => run.data && !terminal(run.data.status)) ||
+              (allCompleted && comparison.isPending)) && (
+              <DemoLoading
+                title="Comparing strategies…"
+                detail={`${runs.filter((run) => run.data?.status === "completed").length} of 4 runs completed. Preparing the saved comparison.`}
+              />
+            )}
           {view === "comparison" && comparison.data && (
             <DemoComparison comparison={comparison.data} onOpenRun={onOpenRun} />
           )}

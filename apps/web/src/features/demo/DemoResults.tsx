@@ -1,9 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import type { Api } from "../../shared/api/api.js";
 import { Feedback } from "../../shared/ui/Feedback.js";
 import { FlowTopology } from "../results/FlowTopology.js";
 import { MetricNumber } from "../results/MetricNumber.js";
+import { DemoLoading } from "./DemoLoading.js";
 
 export function DemoResults({
   api,
@@ -23,6 +24,7 @@ export function DemoResults({
   });
   const frame = useQuery({
     queryKey: ["demo-playback", runId, tick, offset],
+    placeholderData: keepPreviousData,
     queryFn: ({ signal }) =>
       api.playback(
         runId,
@@ -36,6 +38,14 @@ export function DemoResults({
         signal,
       ),
   });
+  if (metrics.isPending && !metrics.error) {
+    return (
+      <DemoLoading
+        title="Loading saved results…"
+        detail="Reading metrics and the selected playback tick."
+      />
+    );
+  }
   return (
     <section aria-label="Guided saved results">
       <section className="demo-metrics" aria-label="Whole-run results">
@@ -77,15 +87,29 @@ export function DemoResults({
           Next tick
         </button>
       </div>
-      {frame.isFetching && <p role="status">Reading saved tick {tick}…</p>}
-      {frame.data && (
-        <FlowTopology
-          frame={frame.data}
-          playing={false}
-          selectedId={selected}
-          onInspect={setSelected}
+      <p className="muted" role="status">
+        {frame.isFetching
+          ? `Loading tick ${tick}…${frame.data ? ` Showing tick ${frame.data.tick} until it is ready.` : ""}`
+          : frame.data
+            ? `Showing saved tick ${frame.data.tick}.`
+            : "Saved playback is unavailable."}
+      </p>
+      {frame.isPending && !frame.error && (
+        <DemoLoading
+          title={`Loading saved tick ${tick}…`}
+          detail="Reading the saved request flow."
         />
       )}
+      <div aria-busy={frame.isFetching}>
+        {frame.data && (
+          <FlowTopology
+            frame={frame.data}
+            playing={false}
+            selectedId={selected}
+            onInspect={setSelected}
+          />
+        )}
+      </div>
       {frame.data && frame.data.membership_count > 32 && (
         <div className="actions">
           <button

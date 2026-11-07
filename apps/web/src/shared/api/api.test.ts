@@ -110,7 +110,7 @@ describe("bounded same-origin transport", () => {
     });
     await expect(unavailable.servers(new AbortController().signal)).rejects.toThrow("Cannot reach");
     expect(
-      await unavailable.ready(new AbortController().signal).catch((error) => String(error)),
+      await unavailable.servers(new AbortController().signal).catch((error) => String(error)),
     ).not.toContain("private-token");
   });
   it("rejects oversized uploads without invoking fetch and preserves caller cancellation", async () => {

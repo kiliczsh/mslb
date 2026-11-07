@@ -5,16 +5,22 @@ export const demoRecipes = [
     id: "balanced",
     title: "Balanced arrivals",
     description: "A few arrivals at each tick. Follow assignments and completions.",
+    preview:
+      "Requests arrive in groups of three across successive ticks. Follow how they are assigned and how capacity becomes available as work finishes.",
   },
   {
     id: "sharing",
     title: "CPU sharing",
     description: "A simultaneous burst. Inspect how active work shares available CPU.",
+    preview:
+      "All requests arrive together at tick 0. Watch active requests share each server’s CPU and see how contention affects completion times.",
   },
   {
     id: "memory",
     title: "Memory squeeze",
     description: "Large reservations. Watch eligibility, waiting and memory release.",
+    preview:
+      "All requests arrive at tick 0, each reserving as much memory as the largest server can hold. Watch which servers can admit them and how waiting requests advance when memory is released.",
   },
 ] as const;
 export type DemoKind = (typeof demoRecipes)[number]["id"];
@@ -29,6 +35,16 @@ export const strategyLabels: Record<Settings["strategy"], string> = {
   round_robin: "Round Robin",
   least_connections: "Least Connections",
   most_available_memory: "Most Available Memory",
+};
+export const strategyDescriptions: Record<Settings["strategy"], string> = {
+  first_fit:
+    "Selects the first eligible server by ID. Later servers can stay idle while earlier servers have room.",
+  round_robin:
+    "Takes turns across eligible servers in ID order, wrapping around after the last server.",
+  least_connections:
+    "Selects the eligible server with the fewest active requests, breaking ties by server ID.",
+  most_available_memory:
+    "Selects the eligible server with the most unreserved memory, breaking ties by server ID.",
 };
 
 export type DemoSession = {
