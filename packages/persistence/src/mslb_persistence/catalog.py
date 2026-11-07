@@ -7,7 +7,7 @@ from typing import Literal
 from uuid import UUID, uuid4
 
 from mslb_contracts.capacity_profiles import request_limit
-from mslb_contracts.catalog import DatasetRegistration, ServerView
+from mslb_contracts.catalog import DatasetRegistration, ServerConfiguration, ServerView
 from mslb_contracts.inputs import ServerInput
 from mslb_contracts.runs import RunSnapshot, stored_request_limit, verify_snapshot_identity
 from sqlalchemy import delete, func, select, tuple_
@@ -80,6 +80,55 @@ class Catalog:
                 statement=select(ManagedServer).order_by(ManagedServer.id).limit(limit=64)
             )
             return tuple(server_view(server=row) for row in rows)
+
+        return await self.database.transaction(operation=operation)
+
+    async def replace_servers(
+        self, *, configuration: ServerConfiguration
+    ) -> tuple[ServerView, ...]:
+        """Commit all reviewed cluster edits together, preserving immutable history."""
+
+        async def operation(session: AsyncSession) -> tuple[ServerView, ...]:
+            await _installation(session=session)
+            rows = list(
+                await session.scalars(statement=select(ManagedServer).order_by(ManagedServer.id))
+            )
+            if {row.id: row.version for row in rows} != {
+                server.id: server.version for server in configuration.expected
+            }:
+                raise StoreError(
+                    code="CONFLICT", message="Servers changed. Refresh and review the preset again."
+                )
+            desired = {server.id: server for server in configuration.servers}
+            current = {row.id: row for row in rows}
+            for row in rows:
+                target = desired.get(row.id)
+                if target is None:
+                    row.version += 1
+                    session.add(instance=_history(row=row, deleted=True))
+                    await session.delete(instance=row)
+                elif server_view(server=row).model_dump(exclude={"version"}) != target.model_dump():
+                    row.version += 1
+                    row.cpu_units_per_tick = target.cpu_units_per_tick
+                    row.mem_mb = target.mem_mb
+                    row.rate_limit_per_sec = target.rate_limit_per_sec
+                    session.add(instance=_history(row=row))
+            for target in configuration.servers:
+                if target.id in current:
+                    continue
+                previous = await session.scalar(
+                    statement=select(func.max(ServerHistory.version)).where(
+                        ServerHistory.server_id == target.id
+                    )
+                )
+                row = ManagedServer(**target.model_dump(), version=(previous or 0) + 1)
+                session.add(instance=row)
+                session.add(instance=_history(row=row))
+            await session.flush()
+            saved = await session.scalars(
+                statement=select(ManagedServer).order_by(ManagedServer.id)
+            )
+            return tuple(server_view(server=row) for row in saved)
 
         return await self.database.transaction(operation=operation)
 

@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from mslb_contracts.catalog import ServerView
+from mslb_contracts.catalog import ServerConfiguration, ServerView
 from mslb_contracts.http import (
     RunDetail,
     ServerPatch,
@@ -74,6 +74,12 @@ class Services:
             if value.id == normalized:
                 return value
         raise OperationError(code="NOT_FOUND", message="Server does not exist")
+
+    async def replace_servers(self, *, body: ServerConfiguration) -> Page[ServerView]:
+        """Apply one reviewed cluster without exposing intermediate server states."""
+        return Page[ServerView](
+            items=await self.catalog.replace_servers(configuration=body), next_cursor=None
+        )
 
     async def create_server(self, body: ServerInput) -> ServerView:
         return await self.catalog.create_server(server=body)

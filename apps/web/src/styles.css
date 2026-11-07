@@ -1791,3 +1791,61 @@ main {
     gap: 6px;
   }
 }
+
+.server-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.server-toolbar .actions {
+  margin-top: 0;
+}
+.server-toolbar-label {
+  margin: 0;
+}
+.server-presets {
+  padding: 14px;
+  border: 1px solid var(--line);
+  background: #f8faff;
+}
+.preset-controls {
+  display: grid;
+  grid-template-columns: minmax(110px, 150px) minmax(180px, 300px) auto;
+  gap: 12px;
+  align-items: end;
+}
+.preset-description {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+  font-size: 0.83rem;
+}
+.preset-controls > :where(button) {
+  justify-self: start;
+}
+.preset-review {
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.preset-review :where(th, td) {
+  padding: 6px 12px;
+}
+.servers-workspace .capacity-summary {
+  margin-block: 14px;
+  padding-block: 12px;
+}
+@media (max-width: 760px) {
+  .preset-controls {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .preset-controls > :where(button) {
+    grid-column: 1 / -1;
+  }
+  .preset-description {
+    align-items: start;
+  }
+}

@@ -15,6 +15,23 @@ class ServerView(ServerInput):
     version: Annotated[int, Field(ge=1)]
 
 
+class ServerConfiguration(BaseModel):
+    """Replace a small cluster only if the complete reviewed catalog still matches."""
+
+    model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
+    expected: Annotated[list[ServerView], Field(max_length=64)]
+    servers: Annotated[list[ServerInput], Field(min_length=3, max_length=5)]
+
+    @model_validator(mode="after")
+    def unique_servers(self) -> Self:
+        """Reject duplicate identities in either catalog before any mutation."""
+        if len({server.id for server in self.expected}) != len(self.expected) or len(
+            {server.id for server in self.servers}
+        ) != len(self.servers):
+            raise ValueError("Server IDs must be unique")
+        return self
+
+
 class DatasetRegistration(BaseModel):
     """Register validated normalized input with exact byte and source provenance."""
 

@@ -6,7 +6,7 @@ from http import HTTPStatus
 from fastapi import APIRouter, Request
 from mslb_application.errors import OperationError
 from mslb_application.services import Services
-from mslb_contracts.catalog import ServerView
+from mslb_contracts.catalog import ServerConfiguration, ServerView
 from mslb_contracts.http import (
     ServerPatch,
 )
@@ -37,6 +37,11 @@ def register_servers(*, router: APIRouter, services: Services) -> None:
     async def servers(limit: Limit = 100, cursor: Cursor = None) -> Response:
         """List versioned servers with bounded signed-cursor pagination."""
         return json_response(model=await services.list_servers(limit=limit, cursor=cursor))
+
+    @router.put(path="/servers", response_model=Page[ServerView])
+    async def replace_servers(*, body: ServerConfiguration) -> Response:
+        """Atomically apply a reviewed three-to-five-server configuration."""
+        return json_response(model=await services.replace_servers(body=body))
 
     @router.post(path="/servers", status_code=HTTPStatus.CREATED.value, response_model=ServerView)
     async def create_server(body: ServerInput) -> Response:

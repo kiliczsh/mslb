@@ -85,7 +85,7 @@ class Guard:
                     response.headers["Access-Control-Allow-Origin"] = origin
                     response.headers["Vary"] = "Origin"
                     response.headers["Access-Control-Allow-Methods"] = (
-                        "GET,POST,PATCH,DELETE,OPTIONS"
+                        "GET,POST,PUT,PATCH,DELETE,OPTIONS"
                     )
                     response.headers["Access-Control-Allow-Headers"] = (
                         "Authorization,Content-Type,If-Match,Idempotency-Key,Last-Event-ID,"

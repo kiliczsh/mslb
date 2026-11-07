@@ -13,7 +13,7 @@ import {
   TrashIcon,
   XIcon,
 } from "../../shared/ui/Icons.js";
-import { Ribbon } from "../../shared/ui/Ribbon.js";
+import { ServerPresets } from "./ServerPresets.js";
 
 type SaveRequest = {
   body: ServerInput;
@@ -27,6 +27,7 @@ export function ServerManager({ api }: { api: Api }) {
   const storage = useDraftStorage();
   const [editing, setEditing] = useDraftState({ storage, name: "editingServer" });
   const [draft, setDraft] = useDraftState({ storage, name: "serverDraft" });
+  const [presetBusy, setPresetBusy] = useState(false);
   const [deleting, setDeleting] = useState<Server | null>(null);
   const keepServer = useRef<HTMLButtonElement>(null);
   const deleteTrigger = useRef<HTMLButtonElement | null>(null);
@@ -76,15 +77,16 @@ export function ServerManager({ api }: { api: Api }) {
     save.reset();
   }
   return (
-    <section aria-labelledby="servers-heading">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Capacity / Configuration</p>
-          <h2 id="servers-heading">Server configuration</h2>
-          <p>Manage capacity for future simulations.</p>
-        </div>
+    <section aria-label="Servers" className="servers-workspace">
+      <div className="server-toolbar">
+        <p className="eyebrow server-toolbar-label">Servers</p>
         <div className="actions">
-          <button type="button" className="primary" onClick={() => edit(null)}>
+          <button
+            type="button"
+            className="primary"
+            disabled={presetBusy}
+            onClick={() => edit(null)}
+          >
             <PlusIcon size={18} aria-hidden="true" />
             Add server
           </button>
@@ -100,6 +102,16 @@ export function ServerManager({ api }: { api: Api }) {
           </button>
         </div>
       </div>
+      <ServerPresets
+        api={api}
+        servers={servers.data?.items}
+        disabled={save.isPending || remove.isPending}
+        onBusyChange={setPresetBusy}
+        onApplied={() => {
+          edit(null);
+          setDeleting(null);
+        }}
+      />
       {servers.data && (
         <dl className="capacity-summary">
           <div>
@@ -163,13 +175,13 @@ export function ServerManager({ api }: { api: Api }) {
                         <td>{server.rate_limit_per_sec}</td>
                         <td>{server.version}</td>
                         <td className="actions">
-                          <button type="button" onClick={() => edit(server)}>
+                          <button type="button" disabled={presetBusy} onClick={() => edit(server)}>
                             <PencilSimpleIcon size={16} aria-hidden="true" />
                             Edit {server.id}
                           </button>
                           <button
                             type="button"
-                            disabled={remove.isPending}
+                            disabled={remove.isPending || presetBusy}
                             onClick={(event) => {
                               deleteTrigger.current = event.currentTarget;
                               remove.reset();
@@ -187,11 +199,11 @@ export function ServerManager({ api }: { api: Api }) {
               </section>
             </>
           )}
-          <Ribbon />
           <p className="muted">Capacity is captured when a run is queued.</p>
         </div>
         <form
           className="server-editor"
+          inert={presetBusy}
           onSubmit={(event) => {
             event.preventDefault();
             const parsed = serverInputSchema.safeParse(draft);
@@ -298,7 +310,7 @@ export function ServerManager({ api }: { api: Api }) {
           <div className="actions">
             <button
               type="button"
-              disabled={remove.isPending}
+              disabled={remove.isPending || presetBusy}
               onClick={() => remove.mutate(deleting)}
             >
               Confirm deletion
@@ -306,7 +318,7 @@ export function ServerManager({ api }: { api: Api }) {
             <button
               type="button"
               ref={keepServer}
-              disabled={remove.isPending}
+              disabled={remove.isPending || presetBusy}
               onClick={() => {
                 setDeleting(null);
                 deleteTrigger.current?.focus();
