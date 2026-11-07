@@ -13,6 +13,7 @@ from mslb_application.queries import Download, Queries
 from mslb_application.snapshots import make_snapshot
 from mslb_application.submissions import Submissions
 from mslb_application.worker import Worker
+from mslb_contracts.history import HistoryFilters
 from mslb_contracts.queries import ComparisonView, JsonValue
 from mslb_contracts.runs import LegacyRunSettings, RunSettings, ScalingSettings, TemplateSettings
 from mslb_engine.models import SimulationError
@@ -561,5 +562,70 @@ def test_comparison_checks_real_frozen_input_changes_and_allows_scaling_dimensio
                 ) as failure:
                     await queries.compare(run_ids=(runs[0], second.id))
                 assert failure.value.code == "CONFLICT"
+
+    asyncio.run(main=scenario())
+
+
+def test_browser_history_filters_before_descending_pagination(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with scratch() as database:
+            outputs, _, runs = await prepare(
+                database=database,
+                root=tmp_path,
+                settings=(
+                    RunSettings(),
+                    RunSettings(strategy="round_robin", mode="concurrent"),
+                    RunSettings(),
+                    RunSettings(),
+                    RunSettings(),
+                ),
+            )
+            query = Queries(
+                database=database, outputs=outputs, cursor_secret=b"history-filter-test-secret" * 2
+            )
+            async with database.sessions.begin() as session:
+                first = await session.get(entity=Run, ident=runs[0])
+                assert first is not None
+                await session.execute(
+                    statement=update(table=Run).values(created_at=first.created_at)
+                )
+            found: list[UUID] = []
+            cursor = None
+            first_cursor = None
+            while True:
+                page = await query.history(
+                    kind="logical", filters=HistoryFilters(), limit=2, cursor=cursor
+                )
+                found.extend(row.id for row in page.items)
+                first_cursor = first_cursor or page.next_cursor
+                if page.next_cursor is None:
+                    break
+                cursor = page.next_cursor
+            assert found == sorted(runs, reverse=True)
+            exact_page = await query.history(kind="logical", filters=HistoryFilters(), limit=5)
+            assert len(exact_page.items) == 5
+            assert exact_page.next_cursor is None
+            selected = await query.history(
+                kind="logical",
+                filters=HistoryFilters(
+                    search="requests.csv", strategy="round_robin", mode="concurrent"
+                ),
+            )
+            assert len(selected.items) == 1
+            assert selected.items[0].id == runs[1]
+            assert selected.items[0].source_filename == "requests.csv"
+            assert selected.items[0].request_count == 4
+            active = await query.history(kind="logical", filters=HistoryFilters(status="active"))
+            assert len(active.items) == 5
+            failed = await query.history(kind="logical", filters=HistoryFilters(status="failed"))
+            assert failed.items == ()
+            literal = await query.history(kind="logical", filters=HistoryFilters(search="%"))
+            assert literal.items == ()
+            docker = await query.history(kind="docker", filters=HistoryFilters())
+            assert docker.items == ()
+            with pytest.raises(OperationError, match="cursor"):
+                await query.history(
+                    kind="logical", filters=HistoryFilters(search="changed"), cursor=first_cursor
+                )
 
     asyncio.run(main=scenario())

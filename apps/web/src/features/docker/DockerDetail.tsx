@@ -5,6 +5,7 @@ import { terminal } from "../../shared/api/contracts.js";
 import type { DockerDetail as Detail } from "../../shared/api/dockerContracts.js";
 import { Feedback } from "../../shared/ui/Feedback.js";
 import { StatusIcon } from "../../shared/ui/StatusIcon.js";
+import { failureMessage } from "../history/historyContracts.js";
 import { RunDownloads } from "../results/RunDownloads.js";
 import { DockerMeasurements } from "./DockerMeasurements.js";
 import { ScrollTable } from "./ScrollableTable.js";
@@ -24,11 +25,13 @@ function Events({ api, id }: { api: Api; id: string }) {
           <caption>At most 100 saved observations per page. Times are elapsed seconds.</caption>
           <thead>
             <tr>
-              {["Sequence", "Seconds", "Request", "Outcome", "Backend", "Reason"].map((label) => (
-                <th key={label} scope="col">
-                  {label}
-                </th>
-              ))}
+              {["Sequence", "Seconds", "Request", "Outcome", "Backend", "Work (ms)", "Reason"].map(
+                (label) => (
+                  <th key={label} scope="col">
+                    {label}
+                  </th>
+                ),
+              )}
             </tr>
           </thead>
           <tbody>
@@ -39,6 +42,7 @@ function Events({ api, id }: { api: Api; id: string }) {
                 <td>{event.request_id}</td>
                 <td>{event.kind}</td>
                 <td>{event.backend_id ?? "—"}</td>
+                <td>{event.result?.duration_ms.toFixed(1) ?? "—"}</td>
                 <td>{event.reason ?? "—"}</td>
               </tr>
             ))}
@@ -60,74 +64,103 @@ function Events({ api, id }: { api: Api; id: string }) {
     </section>
   );
 }
-function Result({ api, value }: { api: Api; value: Detail }) {
+function Overview({ value }: { value: Detail }) {
   const summary = value.summary;
+  const progress = value.progress;
+  const stats = summary
+    ? [
+        ["Completed", summary.completed],
+        ["Failed", summary.failed],
+        ["Dropped", summary.dropped],
+        ["Unexecuted", summary.unexecuted],
+        ["Elapsed", `${summary.elapsed_seconds.toFixed(1)}s`],
+        [
+          "Throughput",
+          summary.elapsed_seconds > 0
+            ? `${(summary.completed / summary.elapsed_seconds).toFixed(1)} req/s`
+            : "—",
+        ],
+      ]
+    : [
+        ["Active HTTP", progress?.inflight ?? "—"],
+        ["Pending queue", progress?.pending ?? "—"],
+        [
+          "Ready replicas",
+          progress ? progress.backends.filter((sample) => sample.health.ready).length : "—",
+        ],
+        ["Elapsed", progress ? `${progress.elapsed_seconds.toFixed(1)}s` : "—"],
+      ];
   return (
-    <>
-      {summary && (
-        <section aria-label="Real HTTP results">
-          <h3>Real HTTP results</h3>
-          <dl className="metric-grid">
-            {(
-              [
-                ["Total requests", summary.total],
-                ["Completed HTTP requests", summary.completed],
-                ["Failed HTTP requests", summary.failed],
-                ["Dropped requests", summary.dropped],
-                ["Unexecuted requests", summary.unexecuted],
-                ["Elapsed seconds", summary.elapsed_seconds.toFixed(3)],
-                ["Peak pending requests", summary.peak_pending],
-                ["Peak HTTP reservations", summary.peak_inflight],
-              ] as const
-            ).map(([label, number]) => (
-              <div key={label}>
-                <dt>{label}</dt>
-                <dd>{number}</dd>
-              </div>
-            ))}
-          </dl>
-          <p>
-            Completion rate:{" "}
-            {summary.elapsed_seconds > 0
-              ? (summary.completed / summary.elapsed_seconds).toFixed(3)
-              : "unavailable"}{" "}
-            requests/second. These operational outcomes are independently checked against the
-            matching HTTP and lifecycle files.
-          </p>
-          <DockerMeasurements value={value} active={false} />
-          <RunDownloads api={api} runId={value.run.id} mode="docker" />
-          <Events api={api} id={value.run.id} />
-        </section>
+    <section aria-label="HTTP overview">
+      <dl className="docker-overview-metrics">
+        {stats.map(([label, count]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{count}</dd>
+          </div>
+        ))}
+      </dl>
+      {summary ? (
+        <p className="muted">
+          {summary.total.toLocaleString()} input requests · peak queue {summary.peak_pending} · peak
+          HTTP reservations {summary.peak_inflight}. Per-request backend work durations are
+          available in HTTP events.
+        </p>
+      ) : (
+        <p className="muted">
+          Live values reflect the latest saved observation. Final completed, failed and dropped
+          counts appear after verification.
+        </p>
       )}
-      <section aria-label="Owned backend lifecycle">
-        <h3>Backend lifecycle</h3>
-        <ScrollTable label="Backend lifecycle table">
-          <table>
-            <caption>Durable owned resources · at most 64 lifecycle identities</caption>
-            <thead>
-              <tr>
-                <th scope="col">Backend</th>
-                <th scope="col">Kind</th>
-                <th scope="col">State</th>
+      {!summary && progress && (
+        <p className="muted">
+          Last observation:{" "}
+          <time dateTime={progress.observed_at}>
+            {new Date(progress.observed_at).toLocaleTimeString()}
+          </time>
+        </p>
+      )}
+      {!summary && !progress && <p role="status">Waiting for the first HTTP observation…</p>}
+      {value.cleanup_pending &&
+        (terminal(value.run.status) || value.run.status === "cancel_requested") && (
+          <p className="notice" role="status">
+            Traffic has ended or is stopping. Owned resources are still being cleaned up.
+          </p>
+        )}
+    </section>
+  );
+}
+function Resources({ value }: { value: Detail }) {
+  return (
+    <section aria-label="Replica resources">
+      <DockerMeasurements value={value} active={!terminal(value.run.status)} />
+      <h3>Backend lifecycle</h3>
+      <ScrollTable label="Backend lifecycle table">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Backend</th>
+              <th scope="col">Kind</th>
+              <th scope="col">State</th>
+            </tr>
+          </thead>
+          <tbody>
+            {value.resources.map((resource) => (
+              <tr key={resource.id}>
+                <th scope="row">{resource.name}</th>
+                <td>{resource.kind}</td>
+                <td>{resource.state}</td>
               </tr>
-            </thead>
-            <tbody>
-              {value.resources.map((resource) => (
-                <tr key={resource.id}>
-                  <th scope="row">{resource.name}</th>
-                  <td>{resource.kind}</td>
-                  <td>{resource.state}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </ScrollTable>
-        {value.resources.length === 0 && <p>No backend resources reserved yet.</p>}
-      </section>
-    </>
+            ))}
+          </tbody>
+        </table>
+      </ScrollTable>
+      {value.resources.length === 0 && <p>No backend resources reserved yet.</p>}
+    </section>
   );
 }
 export function DockerDetail({ api, id }: { api: Api; id: string }) {
+  const [tab, setTab] = useState("overview");
   const client = useQueryClient();
   const detail = useQuery({
     queryKey: ["docker-run", id],
@@ -141,50 +174,86 @@ export function DockerDetail({ api, id }: { api: Api; id: string }) {
     mutationFn: () => api.dockerCancel({ id }),
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: ["docker-run", id] });
-      await client.invalidateQueries({ queryKey: ["docker-runs"] });
+      await client.invalidateQueries({ queryKey: ["browser-history", "docker"] });
     },
   });
   const value = detail.data;
   return (
-    <section aria-label="Selected Docker run">
-      <h2>Docker run</h2>
-      <p className="digest">{id}</p>
+    <section className="docker-detail" aria-label="Selected Docker run">
+      <h2>Traffic run</h2>
       <Feedback error={detail.error ?? cancel.error} />
+      {detail.isPending && <p role="status">Loading traffic run…</p>}
       {value && (
         <>
-          <p role="status">
-            <StatusIcon status={value.run.status} /> Docker status: {value.run.status}
-            {value.cleanup_pending ? " · cleanup pending" : ""}
-          </p>
-          {value.run.error_code && <p role="alert">Run diagnostic: {value.run.error_code}</p>}
-          {!terminal(value.run.status) && (
-            <button
-              type="button"
-              disabled={cancel.isPending || value.run.status === "cancel_requested"}
-              onClick={() => cancel.mutate()}
-            >
-              Cancel Docker run
-            </button>
-          )}
-          <p>
-            Snapshot: <span className="digest">{value.run.snapshot_digest}</span>
-          </p>
-          {value.admission && (
-            <p>
-              Growth admission when this run was last read:{" "}
-              {value.admission.admit ? "allowed" : `held · ${value.admission.reason}`}.
-              {value.admission.stop_running
-                ? " Current resource evidence requires running work to stop."
-                : ""}
+          <div className="docker-run-status">
+            <span className="icon-label" role="status">
+              <StatusIcon status={value.run.status} />
+              {value.cleanup_pending && terminal(value.run.status)
+                ? "Cleaning up resources"
+                : value.run.status.replaceAll("_", " ")}
+            </span>
+            <span className="mono" title={id}>
+              {id.slice(0, 8)}
+            </span>
+            <span>{value.run.configuration.strategy.replaceAll("_", " ")}</span>
+            {!terminal(value.run.status) && (
+              <button
+                type="button"
+                disabled={cancel.isPending || value.run.status === "cancel_requested"}
+                onClick={() => cancel.mutate()}
+              >
+                {cancel.isPending || value.run.status === "cancel_requested"
+                  ? "Stopping…"
+                  : "Stop traffic"}
+              </button>
+            )}
+          </div>
+          {value.run.error_code && (
+            <p className="notice error" role="alert">
+              {failureMessage(value.run.error_code)} <small>{value.run.error_code}</small>
             </p>
           )}
-          {!terminal(value.run.status) && <DockerMeasurements value={value} active />}
-          {!value.summary && (
-            <p>
-              Verified result files become available after successful completion and owned cleanup.
-            </p>
+          <nav className="view-tabs" aria-label="Traffic result views">
+            {["overview", "resources", "events", "downloads"].map((name) => (
+              <button
+                key={name}
+                type="button"
+                aria-pressed={tab === name}
+                disabled={(name === "events" || name === "downloads") && !value.summary}
+                onClick={() => setTab(name)}
+              >
+                {
+                  (
+                    {
+                      overview: "Overview",
+                      resources: "CPU / Memory / Replicas",
+                      events: "HTTP events",
+                      downloads: "Downloads",
+                    } as Record<string, string>
+                  )[name]
+                }
+              </button>
+            ))}
+          </nav>
+          {tab === "overview" && <Overview value={value} />}
+          {tab === "resources" && <Resources value={value} />}
+          {tab === "events" && value.summary && <Events api={api} id={id} />}
+          {tab === "downloads" && value.summary && (
+            <RunDownloads api={api} runId={id} mode="docker" />
           )}
-          <Result key={id} api={api} value={value} />
+          <details className="docker-saved-settings">
+            <summary>Saved settings and diagnostics</summary>
+            <p className="mono">Run: {id}</p>
+            <p className="mono">Snapshot: {value.run.snapshot_digest}</p>
+            <pre>{JSON.stringify(value.run.configuration, null, 2)}</pre>
+            {value.admission && (
+              <p>
+                Resource admission:{" "}
+                {value.admission.admit ? "allowed" : `held · ${value.admission.reason}`}
+                {value.admission.stop_running ? " · running work must stop" : ""}.
+              </p>
+            )}
+          </details>
         </>
       )}
     </section>

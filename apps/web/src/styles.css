@@ -202,13 +202,6 @@ footer,
   font-size: 2rem;
   white-space: nowrap;
 }
-.brand-description {
-  font-family: Arial, Helvetica, sans-serif;
-  font-size: 0.8rem;
-  color: var(--muted);
-  border-left: 1px solid var(--line);
-  padding-left: 14px;
-}
 .workspace-nav {
   display: flex;
   align-self: stretch;
@@ -836,9 +829,6 @@ footer {
   footer,
   .app-header {
     width: calc(100% - 48px);
-  }
-  .brand-description {
-    display: none;
   }
   .server-layout,
   .setup-layout {
@@ -1848,11 +1838,6 @@ nav[aria-label="Result views"] {
 main {
   scroll-margin-top: 76px;
 }
-@media (max-width: 1180px) {
-  .app-header .brand-description {
-    display: none;
-  }
-}
 @media (max-width: 1100px) {
   .app-header {
     grid-template-columns: minmax(0, 1fr) auto auto;
@@ -2162,8 +2147,8 @@ main {
 }
 .animated-playback :where(.flow-lanes) {
   margin-block: 4px;
-  max-height: 300px;
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
 }
 .animated-playback :where(.flow-lane) {
   margin-block: 6px;
@@ -2187,4 +2172,198 @@ main {
 .playback-inspection {
   margin-block: 10px;
   font-size: 0.85rem;
+}
+.history-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.history-heading > :where(h2),
+.docker-compact :where(h2) {
+  font:
+    500 1.3rem Arial,
+    Helvetica,
+    sans-serif;
+  letter-spacing: 0;
+  margin: 0;
+}
+.history-heading > :where(span) {
+  font-size: 0.8rem;
+  margin-left: auto;
+}
+.history-heading > :where(button) {
+  padding-inline: 10px;
+}
+.history-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+  margin-block: 12px;
+}
+.history-search {
+  flex: 1 1 240px;
+}
+.history-search > :where(input) {
+  margin-top: 0;
+}
+.history-more-filters {
+  margin: 0;
+  font-size: 0.85rem;
+}
+.history-more-filters[open] {
+  flex-basis: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 240px));
+  gap: 8px 12px;
+}
+.history-more-filters > :where(summary) {
+  grid-column: 1 / -1;
+  padding-block: 10px;
+}
+.history-table :where(th, td) {
+  padding: 10px;
+  font-size: 0.82rem;
+  vertical-align: middle;
+}
+.history-table :where(th) {
+  font-weight: 500;
+}
+.history-meta {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.74rem;
+}
+.history-table :where(tbody th) {
+  overflow-wrap: anywhere;
+  max-width: 300px;
+}
+.history-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.history-row-actions > :where(button) {
+  min-height: 36px;
+  padding: 6px 10px;
+}
+.history-error {
+  display: block;
+  margin-top: 4px;
+  color: #7a2721;
+  max-width: 230px;
+}
+.history-active {
+  padding: 12px;
+  background: var(--wash);
+}
+.history-active-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 0.85rem;
+}
+.history-active-row > :where(span) {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.docker-workspace.docker-compact :where(h3) {
+  font:
+    500 1rem Arial,
+    Helvetica,
+    sans-serif;
+  letter-spacing: 0;
+  margin-block: 10px;
+}
+.docker-workspace.docker-compact :where(p) {
+  font-size: 0.85rem;
+}
+.docker-setup {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(260px, 1fr);
+  align-items: start;
+  gap: 24px;
+  margin-top: 14px;
+}
+.docker-setup :where(.configuration-fields) {
+  margin: 0;
+}
+.docker-setup :where(.form-grid) {
+  gap: 12px;
+  margin-block: 12px;
+}
+.docker-workspace .docker-setup :where(details) {
+  margin-block: 12px;
+}
+.docker-compatible {
+  color: #326344;
+  margin-block: 8px;
+}
+.docker-summary-values {
+  margin-block: 8px;
+}
+.docker-summary-values > :where(div) {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-block: 10px;
+  font-size: 0.85rem;
+}
+.docker-summary-values :where(dd) {
+  margin: 0;
+  text-align: right;
+}
+.docker-run-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 20px;
+  padding-block: 12px;
+  font-size: 0.85rem;
+}
+.docker-overview-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-block: 14px;
+}
+.docker-overview-metrics > :where(div) {
+  padding: 12px;
+  background: var(--wash);
+}
+.docker-overview-metrics :where(dt) {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.docker-overview-metrics :where(dd) {
+  margin: 6px 0 0;
+  font-size: 1.6rem;
+}
+.docker-saved-settings {
+  margin-top: 14px;
+  font-size: 0.85rem;
+}
+@media (min-width: 1000px) {
+  .docker-basic-fields {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .docker-setup {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+  .history-filters > :where(label) {
+    flex: 1 1 160px;
+  }
+  .history-more-filters[open] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .history-table :where(table) {
+    min-width: 660px;
+  }
 }

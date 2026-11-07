@@ -47,6 +47,28 @@ function workspace({ configuration }: { configuration?: Settings } = {}) {
   };
   const api = new Api("", async (input) => {
     const path = String(input);
+    if (path.includes("/history/"))
+      return Response.json({
+        items:
+          configuration && !path.includes("status=active")
+            ? [
+                {
+                  id: run.id,
+                  dataset_id: dataset.id,
+                  source_filename: dataset.source_filename,
+                  request_count: dataset.request_count,
+                  strategy: "first_fit",
+                  execution_mode: "sequential",
+                  status: "failed",
+                  created_at: run.created_at,
+                  completed_at: run.completed_at,
+                  error_code: null,
+                  progress: null,
+                },
+              ]
+            : [],
+        next_cursor: null,
+      });
     if (path.includes("/servers?")) return Response.json({ items: [server], next_cursor: null });
     if (path.endsWith(run.id))
       return Response.json({
@@ -198,7 +220,10 @@ it("copies saved policies into named controls and preserves nullable defaults on
   };
   const { api, submit, client } = workspace({ configuration });
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: /first fit.*failed/ }));
+  await user.click(screen.getByRole("button", { name: "Run history" }));
+  await user.click(
+    await screen.findByRole("button", { name: "View 00000000-0000-4000-8000-000000000002" }),
+  );
   await user.click(await screen.findByText("Validation and saved configuration"));
   await user.click(await screen.findByRole("button", { name: "Copy settings for a new run" }));
   await user.click(screen.getByText("Advanced settings"));

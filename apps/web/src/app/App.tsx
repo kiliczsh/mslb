@@ -97,7 +97,6 @@ function Workspace({ api, connect }: { api: Api; connect: (token: string) => voi
         >
           <Ribbon compact />
           <span>mslb</span>
-          <span className="brand-description">Load Balancer</span>
         </button>
         <button
           type="button"
@@ -129,7 +128,7 @@ function Workspace({ api, connect }: { api: Api; connect: (token: string) => voi
             { id: "servers", label: "Servers", Icon: HardDrivesIcon },
             { id: "datasets", label: "Datasets", Icon: DatabaseIcon },
             { id: "runs", label: "Simulations", Icon: FlaskIcon },
-            { id: "docker", label: "Docker traffic", Icon: CubeIcon },
+            { id: "docker", label: "Live Traffic", Icon: CubeIcon },
           ].map(({ id, label, Icon }) => (
             <button
               key={id}
@@ -213,10 +212,16 @@ function Workspace({ api, connect }: { api: Api; connect: (token: string) => voi
             api={api}
             dataset={dataset}
             onChooseDataset={() => navigate("datasets")}
+            onSelectDataset={setDataset}
           />
         )}
         {tab === "runs" && (
-          <RunWorkspace api={api} dataset={dataset} onChooseDataset={() => navigate("datasets")} />
+          <RunWorkspace
+            api={api}
+            dataset={dataset}
+            onChooseDataset={() => navigate("datasets")}
+            onSelectDataset={setDataset}
+          />
         )}
       </main>
       <footer>

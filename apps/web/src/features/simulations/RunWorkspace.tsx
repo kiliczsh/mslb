@@ -4,6 +4,7 @@ import { useDraftState, useDraftStorage } from "../../app/workspaceDrafts.js";
 import { type Api, idempotencyKey } from "../../shared/api/api.js";
 import {
   type Dataset,
+  datasetSchema,
   type Settings,
   settingsSchema,
   terminal,
@@ -22,6 +23,8 @@ import {
   SlidersHorizontalIcon,
 } from "../../shared/ui/Icons.js";
 import { StatusIcon } from "../../shared/ui/StatusIcon.js";
+import { failureMessage } from "../history/historyContracts.js";
+import { RunHistory } from "../history/RunHistory.js";
 import { AutoscalingControls } from "./AutoscalingControls.js";
 import { LiveRun } from "./LiveRun.js";
 import { scalingPolicyError } from "./scalingPolicy.js";
@@ -34,14 +37,16 @@ export function RunWorkspace({
   api,
   dataset,
   onChooseDataset,
+  onSelectDataset,
 }: {
   api: Api;
   dataset: Dataset | null;
   onChooseDataset?: () => void;
+  onSelectDataset?: (dataset: Dataset) => void;
 }) {
   const client = useQueryClient();
   const storage = useDraftStorage();
-  const [cursor, setCursor] = useDraftState({ storage, name: "runCursor" });
+  const [, setCursor] = useDraftState({ storage, name: "runCursor" });
   const [selected, setSelected] = useDraftState({ storage, name: "selectedRun" });
   const [autoPlaybackRun, setAutoPlaybackRun] = useDraftState({ storage, name: "autoPlaybackRun" });
   const [view, setView] = useState<"configure" | "history" | "results">(
@@ -60,12 +65,6 @@ export function RunWorkspace({
   });
   const currentReviewKey = JSON.stringify({ dataset, servers: servers.data?.items, settings });
   const reviewed = reviewKey === currentReviewKey;
-  const history = useQuery({
-    enabled: view === "history",
-    queryKey: ["runs", cursor],
-    queryFn: ({ signal }) => api.runs(cursor, signal),
-    refetchInterval: 3000,
-  });
   const detail = useQuery({
     queryKey: ["run", selected],
     queryFn: ({ signal }) => api.run(selected ?? "", signal),
@@ -126,7 +125,7 @@ export function RunWorkspace({
     return null;
   }
   return (
-    <section aria-labelledby="runs-heading" className="simulation-workspace">
+    <section aria-label="Simulations" className="simulation-workspace">
       <nav className="view-tabs" aria-label="Simulation views">
         <button
           type="button"
@@ -510,53 +509,29 @@ export function RunWorkspace({
         </>
       )}
       {view === "history" && (
-        <div>
-          <h2 id="runs-heading">Run history</h2>
-          <p className="muted">Inspect a saved experiment or copy its settings.</p>
-          <Feedback error={history.error} />
-          {history.isPending && <p role="status">Loading run history…</p>}
-          {history.data?.items.length === 0 && <p>No simulations yet.</p>}
-          <ul className="history compact-history">
-            {history.data?.items
-              .slice()
-              .reverse()
-              .map((run) => (
-                <li key={run.id}>
-                  <button
-                    type="button"
-                    className="compact-history-button"
-                    aria-pressed={run.id === selected}
-                    onClick={() => {
-                      setSelected(run.id);
-                      setAutoPlaybackRun(null);
-                      setView("results");
-                      cancel.reset();
-                    }}
-                  >
-                    <strong>{run.configuration.strategy.replaceAll("_", " ")}</strong>
-                    <span className="icon-label">
-                      <StatusIcon status={run.status} />
-                      {run.status.replaceAll("_", " ")}
-                    </span>
-                    <small title={run.id}>{run.id.slice(0, 8)}</small>
-                    <small>{new Date(run.created_at).toLocaleString()}</small>
-                  </button>
-                </li>
-              ))}
-          </ul>
-          <div className="actions">
-            <button type="button" disabled={cursor === null} onClick={() => setCursor(null)}>
-              First runs
-            </button>
-            <button
-              type="button"
-              disabled={!history.data?.next_cursor}
-              onClick={() => setCursor(history.data?.next_cursor ?? null)}
-            >
-              Next runs
-            </button>
-          </div>
-        </div>
+        <RunHistory
+          api={api}
+          kind="logical"
+          onOpen={({ id, playback }) => {
+            setSelected(id);
+            setAutoPlaybackRun(playback ? id : null);
+            setView("results");
+            cancel.reset();
+          }}
+          onRepeat={async (entry) => {
+            if (registering)
+              throw new Error("Wait for the current registration before preparing another run.");
+            const [saved, input] = await Promise.all([
+              api.run(entry.id, new AbortController().signal),
+              api.request(`datasets/${encodeURIComponent(entry.dataset_id)}`, datasetSchema),
+            ]);
+            onSelectDataset?.(input);
+            change(structuredClone(saved.configuration));
+            setAutoPlaybackRun(null);
+            setView("configure");
+            setReviewKey(null);
+          }}
+        />
       )}
       {view === "results" && (
         <div className="simulation-results" aria-live="polite">
@@ -581,7 +556,16 @@ export function RunWorkspace({
                 </p>
               )}
               {detail.data.error_code && (
-                <p role="alert">Run ended with {detail.data.error_code}.</p>
+                <div className="notice error" role="alert">
+                  <strong>{failureMessage(detail.data.error_code)}</strong>
+                  {detail.data.error_code === "STORAGE_LIMIT_EXCEEDED" && (
+                    <p>
+                      Large pending queues can create large playback files. This failed run has no
+                      completed result bundle.
+                    </p>
+                  )}
+                  <small>Diagnostic: {detail.data.error_code}</small>
+                </div>
               )}
               {!terminal(detail.data.status) && (
                 <button

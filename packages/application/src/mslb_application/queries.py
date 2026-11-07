@@ -11,6 +11,7 @@ from ijson.common import JSONError
 from mslb_contracts.canonical import canonical_bytes
 from mslb_contracts.capacity_profiles import STRESS_REQUESTS
 from mslb_contracts.durability import PersistedEvent
+from mslb_contracts.history import HistoryEntry, HistoryFilters, HistoryKind
 from mslb_contracts.playback import PlaybackView
 from mslb_contracts.queries import (
     ChartView,
@@ -27,6 +28,7 @@ from mslb_contracts.runs import BundleManifest
 from mslb_engine.metrics import chart_buckets
 from mslb_persistence.database import Database
 from mslb_persistence.durability import Durability
+from mslb_persistence.history_reads import HistoryReads
 from mslb_persistence.reads import Reads, check_limit
 from pydantic import BaseModel
 
@@ -148,6 +150,35 @@ class Queries:
             context="runs",
             position=lambda row: Position(created_at=row.created_at, id=row.id),
         )
+
+    async def history(
+        self,
+        *,
+        kind: HistoryKind,
+        filters: HistoryFilters,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> Page[HistoryEntry]:
+        """Bind complete filters and newest-first ordering into continuation identity."""
+        check_limit(limit=limit)
+        context = {
+            "collection": "browser-history-v1",
+            "kind": kind,
+            "filters": filters.model_dump(mode="json"),
+        }
+        point = self.cursors.decode(context=context, token=cursor)
+        rows = await HistoryReads(database=self.reads.database).page(
+            kind=kind, filters=filters, before=self._history_position(point=point), limit=limit
+        )
+        page = self._page(
+            rows=rows[:limit],
+            limit=limit,
+            context=context,
+            position=lambda row: Position(created_at=row.created_at, id=row.id),
+        )
+        if len(rows) <= limit and len(page.items) == len(rows):
+            return page.model_copy(update={"next_cursor": None})
+        return page
 
     async def datasets(self, limit: int = 100, cursor: str | None = None) -> Page[DatasetView]:
         check_limit(limit=limit)

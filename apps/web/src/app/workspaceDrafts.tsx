@@ -10,6 +10,7 @@ import {
 } from "react";
 import { createDemoDraft } from "../features/demo/demoState.js";
 import { createDockerDraft } from "../features/docker/dockerDraft.js";
+import { createHistoryDraft } from "../features/history/historyDraft.js";
 import { defaultSettings, type Server, type ServerInput } from "../shared/api/contracts.js";
 
 export const emptyServer: ServerInput = {
@@ -27,6 +28,8 @@ function createDrafts() {
     settings: structuredClone(defaultSettings),
     selectedRun: null as string | null,
     autoPlaybackRun: null as string | null,
+    logicalHistory: createHistoryDraft(),
+    dockerHistory: createHistoryDraft(),
     runCursor: null as string | null,
     retry: null as { body: string; key: string } | null,
     demo: createDemoDraft(),

@@ -167,27 +167,27 @@ it("retains a frozen Docker registration across navigation and clears it with th
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "Datasets" }));
   await user.click(await screen.findByRole("button", { name: "Select requests.csv" }));
-  await user.click(screen.getByRole("button", { name: "Docker traffic" }));
-  fireEvent.change(screen.getByLabelText("Initial routing backends"), { target: { value: "3" } });
-  await user.click(screen.getByRole("button", { name: "Review Docker snapshot" }));
-  await user.click(screen.getByRole("button", { name: "Queue Docker run" }));
+  await user.click(screen.getByRole("button", { name: "Live Traffic" }));
+  fireEvent.change(screen.getByLabelText("Starting replicas"), { target: { value: "3" } });
+  await user.click(screen.getByRole("button", { name: "Review traffic run" }));
+  await user.click(screen.getByRole("button", { name: "Start traffic run" }));
   await screen.findByRole("alert");
   await vi.waitFor(() => expect(keys).toHaveLength(1));
   await user.click(screen.getByRole("button", { name: "Home" }));
-  await user.click(screen.getByRole("button", { name: "Docker traffic" }));
-  expect(screen.getByLabelText("Initial routing backends")).toHaveProperty("value", "3");
-  expect(screen.getByLabelText("Initial routing backends").closest("fieldset")).toHaveProperty(
+  await user.click(screen.getByRole("button", { name: "Live Traffic" }));
+  expect(screen.getByLabelText("Starting replicas")).toHaveProperty("value", "3");
+  expect(screen.getByLabelText("Starting replicas").closest("fieldset")).toHaveProperty(
     "disabled",
     true,
   );
-  await user.click(screen.getByRole("button", { name: "Retry Docker registration" }));
+  await user.click(screen.getByRole("button", { name: "Recover registration" }));
   await vi.waitFor(() => expect(keys).toHaveLength(2));
   expect(keys[0]).toBe(keys[1]);
   await user.click(screen.getByText("Connection", { exact: true }));
   await user.click(screen.getByRole("button", { name: "Clear session" }));
-  await user.click(screen.getByRole("button", { name: "Docker traffic" }));
-  expect(screen.getByLabelText("Initial routing backends")).toHaveProperty("value", "2");
-  expect(screen.queryByRole("button", { name: "Retry Docker registration" })).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Live Traffic" }));
+  expect(screen.getByLabelText("Starting replicas")).toHaveProperty("value", "2");
+  expect(screen.queryByRole("button", { name: "Recover registration" })).toBeNull();
 });
 
 it("allows correction after a definitive Docker validation refusal", async () => {
@@ -195,15 +195,15 @@ it("allows correction after a definitive Docker validation refusal", async () =>
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "Datasets" }));
   await user.click(await screen.findByRole("button", { name: "Select requests.csv" }));
-  await user.click(screen.getByRole("button", { name: "Docker traffic" }));
-  await user.click(screen.getByRole("button", { name: "Review Docker snapshot" }));
-  await user.click(screen.getByRole("button", { name: "Queue Docker run" }));
+  await user.click(screen.getByRole("button", { name: "Live Traffic" }));
+  await user.click(screen.getByRole("button", { name: "Review traffic run" }));
+  await user.click(screen.getByRole("button", { name: "Start traffic run" }));
   await screen.findByRole("alert");
   await vi.waitFor(() =>
-    expect(screen.getByLabelText("Initial routing backends").closest("fieldset")).toHaveProperty(
+    expect(screen.getByLabelText("Starting replicas").closest("fieldset")).toHaveProperty(
       "disabled",
       false,
     ),
   );
-  expect(screen.queryByRole("button", { name: "Retry Docker registration" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Recover registration" })).toBeNull();
 });
