@@ -105,8 +105,9 @@ test("authentication headers, visible denial and session reset without persisten
     }
   });
   await page.goto("/");
+  await page.getByRole("button", { name: "Servers", exact: true }).click();
   await expect(page.getByRole("alert").first()).toContainText("Authentication required");
-  await page.getByText("Connection", { exact: true }).click();
+  await page.getByLabel("Connection", { exact: true }).click();
   await page.getByLabel("Bearer token (authenticated mode)").fill(token);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await page.getByRole("button", { name: "Servers", exact: true }).click();
@@ -115,8 +116,9 @@ test("authentication headers, visible denial and session reset without persisten
   expect(
     await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length })),
   ).toEqual({ local: 0, session: 0 });
-  await page.getByText("Connection", { exact: true }).click();
+  await page.getByLabel("Connection", { exact: true }).click();
   await page.getByRole("button", { name: "Clear session", exact: true }).click();
+  await page.getByRole("button", { name: "Servers", exact: true }).click();
   await expect(page.getByRole("alert").first()).toContainText("Authentication required");
 });
 
@@ -225,12 +227,12 @@ test("real gateway CRUD, CSV, queued worker completion and narrow-screen session
     await expect(page.getByRole("alert").first()).toContainText("UNAUTHORIZED");
     await expect.poll(() => denials.length).toBe(1);
     checkingDenial = false;
-    await page.getByText("Connection", { exact: true }).click();
+    await page.getByLabel("Connection", { exact: true }).click();
     await page.getByLabel("Bearer token (authenticated mode)").fill(process.env.AUTH_TOKEN ?? "");
     await page.getByRole("button", { name: "Connect", exact: true }).click();
   }
   await page.getByRole("button", { name: "Servers", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Server configuration" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Servers", exact: true })).toBeVisible();
   const workspaceBounds = await page.getByRole("main").boundingBox();
   expect(workspaceBounds?.x).toBeGreaterThan(0);
   const name = `browser-${crypto.randomUUID().slice(0, 8)}`;
@@ -275,23 +277,26 @@ test("real gateway CRUD, CSV, queued worker completion and narrow-screen session
   expect(firstResponse.request().postDataJSON().mode).toBe("sequential");
   const creation = z.object({ dataset_id: z.uuid() }).parse(firstResponse.request().postDataJSON());
   expect(await page.getByRole("alert").allTextContents()).toEqual([]);
-  await expect(page.getByText("Independent replay: passed.", { exact: false })).toBeVisible({
+  await expect(page.getByRole("region", { name: "Persisted results explorer" })).toBeVisible({
     timeout: completionTimeout,
   });
+  await page.getByText("Validation and saved configuration", { exact: true }).click();
+  await expect(page.getByText("Independent replay: passed.", { exact: false })).toBeVisible();
   await expect(page.getByRole("button", { name: "Copy settings for a new run" })).toBeVisible();
-  await page.getByText("Reproducibility and saved configuration", { exact: true }).click();
   await expect(page.getByText(/^Snapshot: [a-f0-9]{64}$/)).toBeVisible();
+  await page.getByRole("button", { name: "Metrics", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Exact completed metrics" })).toBeVisible();
   await page.getByRole("button", { name: "Inspect exact chart buckets" }).click();
   await expect(page.getByRole("table", { name: /^Exact chart buckets/ })).toContainText("2/15");
   await page.getByRole("button", { name: "Playback", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Playback from saved intervals" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Simulation playback" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Saved request flow" })).toBeVisible();
   await page.getByRole("button", { name: "Select s1", exact: true }).click();
   await expect(page.getByRole("complementary", { name: "Selected playback server" })).toContainText(
     "10 units/tick",
   );
   await expect(page.getByRole("button", { name: "Select s1", exact: true })).toBeFocused();
+  await page.getByText("Inspect requests, resources and events", { exact: true }).click();
   await expect(page.getByText("Saved resource interval [0, 1)", { exact: false })).toBeVisible();
   await page.getByRole("button", { name: "Inspect active on s1", exact: true }).click();
   await expect(page.getByRole("list", { name: "Requests at selected interval" })).toContainText(
@@ -337,10 +342,12 @@ test("real gateway CRUD, CSV, queued worker completion and narrow-screen session
     "round_robin",
   );
   await expect(page.getByText(`Baseline: ${firstRun.run_id}`, { exact: true })).toBeVisible();
+  await page.getByText("Events and recovery details", { exact: true }).click();
   await expect(page.getByText("Event connection: complete", { exact: false })).toBeVisible();
   await expect(page.getByRole("list", { name: "Recent persisted events" })).toContainText(
     "FINISHED",
   );
+  await page.getByRole("button", { name: "Downloads", exact: true }).click();
   const fileReady = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download saved artifact", exact: true }).click();
   const file = await fileReady;
@@ -370,7 +377,9 @@ test("real gateway CRUD, CSV, queued worker completion and narrow-screen session
   expect(zip.toString("latin1")).toContain("manifest.json");
   expect(await page.evaluate(async () => await caches.keys())).toEqual([]);
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByRole("heading", { name: "A new simulation.", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Simulation results", exact: true }),
+  ).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({
     path: process.env.UI_SCREENSHOT_PATH ?? "/app/test-results/workspace-narrow.png",
@@ -380,8 +389,9 @@ test("real gateway CRUD, CSV, queued worker completion and narrow-screen session
     await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length })),
   ).toEqual({ local: 0, session: 0 });
   checkingDenial = authenticated;
-  await page.getByText("Connection", { exact: true }).click();
+  await page.getByLabel("Connection", { exact: true }).click();
   await page.getByRole("button", { name: "Clear session", exact: true }).click();
+  await page.getByRole("button", { name: "Menu", exact: true }).click();
   await page.getByRole("button", { name: "Servers", exact: true }).click();
   if (authenticated) {
     await expect(page.getByRole("alert").first()).toContainText("UNAUTHORIZED");
@@ -408,7 +418,7 @@ test("guided demo queues real work, reads saved playback and compares four strat
   ).toBeVisible();
   await page.screenshot({ path: `${directory}/home-desktop.png`, fullPage: true });
   if (process.env.AUTH_ENABLED === "true") {
-    await page.getByText("Connection", { exact: true }).click();
+    await page.getByLabel("Connection", { exact: true }).click();
     await page.getByLabel("Bearer token (authenticated mode)").fill(process.env.AUTH_TOKEN ?? "");
     await page.getByRole("button", { name: "Connect", exact: true }).click();
   }
@@ -433,8 +443,10 @@ test("guided demo queues real work, reads saved playback and compares four strat
   await expect(page.getByText("Saved runs: 1 / 1 completed.")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("region", { name: "Saved request flow" })).toBeVisible();
   await expect(page.locator(".topology-map")).toHaveAttribute("data-playing", "false");
-  const compareButton = page.getByRole("button", { name: "4 · Compare all four strategies" });
+  const compareButton = page.getByRole("button", { name: "Compare all strategies", exact: true });
   await page.screenshot({ path: `${directory}/demo-desktop.png`, fullPage: true });
+  await compareButton.focus();
+  await expect(compareButton).toBeFocused();
   const bounds = await compareButton.boundingBox();
   expect(bounds).not.toBeNull();
   expect((bounds?.y ?? 900) + (bounds?.height ?? 1)).toBeLessThanOrEqual(900);
@@ -475,9 +487,7 @@ test("guided demo queues real work, reads saved playback and compares four strat
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
-    await expect(
-      page.getByRole("button", { name: "Open full results and downloads" }),
-    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Full results", exact: true })).toBeVisible();
   }
   await page.screenshot({ path: `${directory}/demo-text-200.png`, fullPage: true });
   await page.evaluate(() => {
@@ -485,8 +495,8 @@ test("guided demo queues real work, reads saved playback and compares four strat
   });
   const after = await request.get("/api/v1/servers", { headers: fixtureHeaders });
   expect(await after.json()).toEqual(originalServers);
-  await page.getByRole("button", { name: "Open full results and downloads" }).click();
-  await expect(page.getByRole("heading", { name: "Explore persisted results" })).toBeVisible();
+  await page.getByRole("button", { name: "Full results", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Persisted results explorer" })).toBeVisible();
   await expect(page.getByText(first.run_id, { exact: false }).first()).toBeVisible();
   expect(errors).toEqual([]);
   expect(

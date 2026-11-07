@@ -16,7 +16,7 @@ const headers =
 async function prepare({ page, work, count }: { page: Page; work: number; count: number }) {
   await page.goto("/");
   if (process.env.AUTH_ENABLED === "true") {
-    await page.getByText("Connection", { exact: true }).click();
+    await page.getByLabel("Connection", { exact: true }).click();
     await page.getByLabel("Bearer token (authenticated mode)").fill(process.env.AUTH_TOKEN ?? "");
     await page.getByRole("button", { name: "Connect", exact: true }).click();
   }
@@ -35,18 +35,21 @@ async function prepare({ page, work, count }: { page: Page; work: number; count:
     .setInputFiles({ name: "docker-browser.csv", mimeType: "text/csv", buffer: Buffer.from(csv) });
   await page.getByRole("button", { name: "Upload dataset", exact: true }).click();
   await expect(page.getByText("Dataset registered and selected.")).toBeVisible();
-  await page.getByRole("button", { name: "Docker traffic", exact: true }).click();
-  await page.getByLabel("Initial routing backends").fill("3");
+  await page.getByRole("button", { name: "Live Traffic", exact: true }).click();
+  await page.getByLabel("Starting replicas", { exact: true }).fill("3");
+  await page.getByText("Advanced settings", { exact: true }).click();
   await page.getByLabel("Per-backend HTTP inflight limit").fill("1");
-  await page.getByLabel("Global HTTP inflight limit").fill("2");
+  await page.getByLabel("Simultaneous requests", { exact: true }).fill("2");
   await page.getByLabel("Pending timeout (seconds)").fill("120");
   if (work >= 1000) await page.getByLabel("Starts per backend per second").fill("1");
-  await page.getByLabel("Docker scheduling strategy").selectOption("round_robin");
-  await page.getByRole("button", { name: "Review Docker snapshot", exact: true }).click();
+  const strategy = page.getByRole("combobox", { name: "Scheduling strategy", exact: true });
+  await strategy.selectOption("round_robin");
+  await expect(strategy).toHaveValue("round_robin");
+  await page.getByRole("button", { name: "Review traffic run", exact: true }).click();
   const response = page.waitForResponse(
     (r) => r.url().endsWith("/api/v1/docker/simulations") && r.request().method() === "POST",
   );
-  const queue = page.getByRole("button", { name: "Queue Docker run", exact: true });
+  const queue = page.getByRole("button", { name: "Start traffic run", exact: true });
   await expect(queue).toBeEnabled();
   await queue.focus();
   await page.keyboard.press("Enter");
@@ -63,9 +66,9 @@ test("operational Docker browser completes actual HTTP, matching downloads and n
   page.on("pageerror", (error) => errors.push(error.message));
   await page.setViewportSize({ width: 1440, height: 900 });
   const id = await prepare({ page, work: 2, count: 9 });
-  await expect(
-    page.getByRole("status").filter({ hasText: "Docker status: completed" }),
-  ).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("status").filter({ hasText: /^completed$/ })).toBeVisible({
+    timeout: 30_000,
+  });
   const response = await request.get(`/api/v1/docker/simulations/${id}`, { headers });
   expect(response.status()).toBe(200);
   const saved = dockerDetailSchema.parse(await response.json());
@@ -77,14 +80,18 @@ test("operational Docker browser completes actual HTTP, matching downloads and n
     expect(window.sampled_peak_cgroup_memory_bytes).toBeGreaterThan(0);
     expect(window.cpu_delta_usec).not.toBeNull();
   }
+  await page.getByRole("button", { name: "CPU / Memory / Replicas", exact: true }).click();
   await expect(
     page.getByRole("region", { name: "Measured Docker runtime", exact: true }),
   ).toContainText("CPU/throttling");
   expect(saved.cleanup_pending).toBe(false);
   expect(saved.resources.some((r) => r.kind === "dynamic" && r.state === "removed")).toBe(true);
-  await expect(page.getByRole("region", { name: "Real HTTP results" })).toContainText("9");
+  await page.getByRole("button", { name: "Overview", exact: true }).click();
+  await expect(page.getByRole("region", { name: "HTTP overview" })).toContainText("9");
+  await page.getByRole("button", { name: "HTTP events", exact: true }).click();
   const table = page.getByRole("table", { name: /At most 100 saved observations/ });
   await expect(table.locator("tbody tr")).toHaveCount(27);
+  await page.getByRole("button", { name: "Downloads", exact: true }).click();
   const ready = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download saved artifact", exact: true }).click();
   const download = await ready;
@@ -128,6 +135,7 @@ test("operational Docker browser completes actual HTTP, matching downloads and n
   const directory = process.env.UI_SCREENSHOT_DIRECTORY ?? "/app/test-results";
   await mkdir(directory, { recursive: true });
   await page.screenshot({ path: `${directory}/docker-desktop.png`, fullPage: true });
+  await page.getByRole("button", { name: "HTTP events", exact: true }).click();
   await page.setViewportSize({ width: 320, height: 900 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.getByRole("button", { name: "Scroll HTTP event table right", exact: true }).focus();
@@ -172,15 +180,16 @@ test("operational Docker browser cancels running owned work and retains selectio
       );
     })
     .toBe(true);
+  await page.getByRole("button", { name: "CPU / Memory / Replicas", exact: true }).click();
   await expect(
     page.getByRole("region", { name: "Measured Docker runtime", exact: true }),
   ).toContainText("controller HTTP reservations");
-  await page.getByRole("button", { name: "Cancel Docker run", exact: true }).click();
+  await page.getByRole("button", { name: "Stop traffic", exact: true }).click();
   await page.getByRole("button", { name: "Home", exact: true }).click();
-  await page.getByRole("button", { name: "Docker traffic", exact: true }).click();
-  await expect(
-    page.getByRole("status").filter({ hasText: "Docker status: cancelled" }),
-  ).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Live Traffic", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: /^cancelled$/ })).toBeVisible({
+    timeout: 30_000,
+  });
   await expect
     .poll(async () => {
       const r = await request.get(`/api/v1/docker/simulations/${id}`, { headers });

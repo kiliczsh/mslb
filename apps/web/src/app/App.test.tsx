@@ -99,7 +99,7 @@ it("retains the guided workload, registered dataset and uncertain run key across
   expect(keys).toHaveLength(1);
   expect(keys[0]).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Servers" }));
-  await user.click(screen.getByRole("button", { name: "Guided demo" }));
+  await user.click(screen.getByRole("button", { name: "Demo" }));
   expect(screen.getByRole("radio", { name: /Balanced arrivals/ })).toHaveProperty("checked", true);
   expect(screen.getByRole("radio", { name: /Memory squeeze/ }).closest("fieldset")).toHaveProperty(
     "disabled",
