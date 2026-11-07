@@ -1,0 +1,12 @@
+{
+  "bundle_digest": "44e517c36644eab90d0cb47d7ce11714961acba4efa550a410db84b08868d3ed",
+  "case": "15_finish_arrive_collision",
+  "elapsed_seconds": 0.349,
+  "events": 18,
+  "fixture_expectations": "passed",
+  "independent_replay": "passed",
+  "original_validator": "not_applicable",
+  "requests": 6,
+  "run_id": "a2a44432-097c-4dd3-9d7f-d7f3084aaf27",
+  "trace_sha256": "91f5fab1abfd22b72eb086c8e601eb8b5f1c232a558a2a79fbc943d6fe84a92a"
+}

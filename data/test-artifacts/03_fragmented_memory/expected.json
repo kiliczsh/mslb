@@ -1,0 +1,26 @@
+{
+  "basis": "documented_contract_and_manual_checkpoints_not_a_production_run",
+  "terminal_counts": {
+    "arrived": 4,
+    "completed": 4,
+    "dropped": 0
+  },
+  "exact_lifecycle": {
+    "c-large": {
+      "start": 4,
+      "finish": 5,
+      "server": "frag-b"
+    },
+    "d-small": {
+      "start": 1,
+      "finish": 2,
+      "server": "frag-a"
+    }
+  },
+  "checks": [
+    "c-large cannot start at t=1.",
+    "The smaller d-small request can start while c-large remains pending.",
+    "A request's memory must not be split across servers."
+  ],
+  "relation": null
+}

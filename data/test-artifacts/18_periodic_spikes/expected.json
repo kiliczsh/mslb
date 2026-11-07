@@ -1,0 +1,14 @@
+{
+  "basis": "documented_contract_and_manual_checkpoints_not_a_production_run",
+  "terminal_counts": {
+    "arrived": 660,
+    "completed": 660,
+    "dropped": 0
+  },
+  "exact_lifecycle": {},
+  "checks": [
+    "There must be 81 arrivals at each of ticks 0,30,60,90,120,150.",
+    "Measure backlog and recovery between the six waves."
+  ],
+  "relation": null
+}

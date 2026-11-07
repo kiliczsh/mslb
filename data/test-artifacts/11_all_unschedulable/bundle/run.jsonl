@@ -1,0 +1,16 @@
+{"t":0,"event":"REQUEST_ARRIVED","request_id":"nofit-0"}
+{"t":0,"event":"REQUEST_ARRIVED","request_id":"nofit-1"}
+{"t":0,"event":"REQUEST_DROPPED","request_id":"nofit-0"}
+{"t":0,"event":"REQUEST_DROPPED","request_id":"nofit-1"}
+{"t":1,"event":"REQUEST_ARRIVED","request_id":"nofit-2"}
+{"t":1,"event":"REQUEST_ARRIVED","request_id":"nofit-3"}
+{"t":1,"event":"REQUEST_DROPPED","request_id":"nofit-2"}
+{"t":1,"event":"REQUEST_DROPPED","request_id":"nofit-3"}
+{"t":2,"event":"REQUEST_ARRIVED","request_id":"nofit-4"}
+{"t":2,"event":"REQUEST_ARRIVED","request_id":"nofit-5"}
+{"t":2,"event":"REQUEST_DROPPED","request_id":"nofit-4"}
+{"t":2,"event":"REQUEST_DROPPED","request_id":"nofit-5"}
+{"t":3,"event":"REQUEST_ARRIVED","request_id":"nofit-6"}
+{"t":3,"event":"REQUEST_ARRIVED","request_id":"nofit-7"}
+{"t":3,"event":"REQUEST_DROPPED","request_id":"nofit-6"}
+{"t":3,"event":"REQUEST_DROPPED","request_id":"nofit-7"}

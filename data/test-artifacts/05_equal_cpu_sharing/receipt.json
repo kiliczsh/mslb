@@ -1,0 +1,12 @@
+{
+  "bundle_digest": "e8295de45a2a19377b8d3bbd9152efe7fee78455587084f578f0855ea461ee8c",
+  "case": "05_equal_cpu_sharing",
+  "elapsed_seconds": 0.533,
+  "events": 9,
+  "fixture_expectations": "passed",
+  "independent_replay": "passed",
+  "original_validator": "not_applicable",
+  "requests": 3,
+  "run_id": "85abc98d-b3ee-449f-929e-c1c73e68a835",
+  "trace_sha256": "049a12f270ef6964edb5b635cf1c3a0508bf8c61e8871a41aa108192dcf9d246"
+}

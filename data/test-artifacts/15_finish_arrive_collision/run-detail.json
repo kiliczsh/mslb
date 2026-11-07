@@ -1,0 +1,103 @@
+{
+  "attempts": 1,
+  "completed_at": "2026-11-07T14:55:17.778238Z",
+  "configuration": {
+    "autoscaling": {
+      "cooldown_ticks": 3,
+      "enabled": false,
+      "max_servers": 6,
+      "min_servers": 3,
+      "scale_in_cpu_threshold": {
+        "denominator": "5",
+        "numerator": "1"
+      },
+      "scale_in_step": 1,
+      "scale_out_cpu_threshold": {
+        "denominator": "5",
+        "numerator": "4"
+      },
+      "scale_out_drop_rate_threshold": {
+        "denominator": "10",
+        "numerator": "1"
+      },
+      "scale_out_queue_threshold": 1,
+      "scale_out_step": 1,
+      "server_template": null,
+      "window_ticks": 5
+    },
+    "capacity_profile": "stress",
+    "max_fraction_bits": 4096,
+    "max_metric_series": 10000,
+    "max_queue_size": null,
+    "max_requests": 50000,
+    "max_samples": 1000000,
+    "max_simulation_ticks": 100000,
+    "mode": "concurrent",
+    "queue_timeout_ticks": null,
+    "strategy": "first_fit"
+  },
+  "created_at": "2026-11-07T14:55:17.593971Z",
+  "dataset_digest": "0b12cd2b2f9d3d55e95987544cb8d91c8455d03eb855ca5e277f9e4abe743a7a",
+  "dataset_id": "74621122-6be7-40e0-bfb7-a99634713f12",
+  "engine_version": "0.2.0",
+  "error_code": null,
+  "id": "a2a44432-097c-4dd3-9d7f-d7f3084aaf27",
+  "mode": "concurrent",
+  "progress": {
+    "committed_events": 18,
+    "executed_intervals": 3,
+    "kind": "terminal",
+    "next_tick": 3,
+    "revision": 1
+  },
+  "server_snapshot_digest": "baf67ad9517b59de6b3196cfb172b5faaecd7858c08280bf0d45bfcf38ed8320",
+  "snapshot_digest": "c2391ad1d0889b30bba5ede1f504b3cc38108b8155108b268e7b22915e7fc653",
+  "status": "completed",
+  "strategy": "first_fit",
+  "validation": {
+    "artifacts": {
+      "autoscaling_decisions.jsonl": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size_bytes": 0
+      },
+      "drop_reasons.jsonl": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size_bytes": 0
+      },
+      "metrics.json": {
+        "sha256": "2eb80e35b5403d28e5a4f3565d1f06b375f00f6ae61fa4dedf36857e50e48763",
+        "size_bytes": 2492
+      },
+      "requests.csv": {
+        "sha256": "dc5636878d932ff6c268feba70bb7b518e58e135afe8d57a556a2303d0385aea",
+        "size_bytes": 129
+      },
+      "run.jsonl": {
+        "sha256": "91f5fab1abfd22b72eb086c8e601eb8b5f1c232a558a2a79fbc943d6fe84a92a",
+        "size_bytes": 1299
+      },
+      "servers.json": {
+        "sha256": "c012f059c0bcf00cea582ec989509c6448f16a77dbd10fe38f62653642078d3e",
+        "size_bytes": 264
+      },
+      "snapshot.json": {
+        "sha256": "7154313127d8c3461faf4559995d05d1cd8fbf7bc236a41b2d52e4a9b42b9c78",
+        "size_bytes": 1565
+      },
+      "timeline.jsonl": {
+        "sha256": "15d6679ee5bbcc9f83617d9c690d5668e6c34cfa47a6ca8e19b7df3495df705e",
+        "size_bytes": 2676
+      }
+    },
+    "bundle_digest": "44e517c36644eab90d0cb47d7ce11714961acba4efa550a410db84b08868d3ed",
+    "decision_count": 0,
+    "engine_version": "0.2.0",
+    "event_count": 18,
+    "independent_replay": "passed",
+    "original_validator": "not_applicable",
+    "original_validator_digest": "a1476898f041bdf5823d2c4158717d173369269914001d3b129a33c3b2d2ab34",
+    "schema_version": 1,
+    "snapshot_digest": "c2391ad1d0889b30bba5ede1f504b3cc38108b8155108b268e7b22915e7fc653",
+    "terminal_tick": 3
+  }
+}

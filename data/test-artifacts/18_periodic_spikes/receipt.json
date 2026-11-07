@@ -1,0 +1,12 @@
+{
+  "bundle_digest": "b8da13e203ed518bf286cb2e54af4e233caf851645f54180f4b4685b53b262a0",
+  "case": "18_periodic_spikes",
+  "elapsed_seconds": 0.817,
+  "events": 1980,
+  "fixture_expectations": "passed",
+  "independent_replay": "passed",
+  "original_validator": "not_applicable",
+  "requests": 660,
+  "run_id": "5e3e124f-73e3-4930-9661-3153611c0818",
+  "trace_sha256": "3a4b0e84e45926da54e45a7e83f62a7949aa90893388e6f801ca6322a0ce63ba"
+}

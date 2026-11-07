@@ -1,0 +1,12 @@
+{
+  "bundle_digest": "31f208105c29bb52a400646bf5c7b12867f5e2ba41c21a1eb82868e43f0071fd",
+  "case": "22_overload_recovery",
+  "elapsed_seconds": 1.83,
+  "events": 5100,
+  "fixture_expectations": "passed",
+  "independent_replay": "passed",
+  "original_validator": "not_applicable",
+  "requests": 1700,
+  "run_id": "60d986d8-e79b-4805-b02b-bebe400a5769",
+  "trace_sha256": "76038d99f1abd1030d406422a935f39662ae28e147ced8a64df6d669e626daf9"
+}

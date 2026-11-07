@@ -1,0 +1,5 @@
+t,request_id,work_units,mem_mb
+0,mode-0,8,128
+0,mode-1,8,128
+0,mode-2,8,128
+0,mode-3,8,128

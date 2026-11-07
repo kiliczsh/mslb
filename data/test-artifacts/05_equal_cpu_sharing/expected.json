@@ -1,0 +1,27 @@
+{
+  "basis": "documented_contract_and_manual_checkpoints_not_a_production_run",
+  "terminal_counts": {
+    "arrived": 3,
+    "completed": 3,
+    "dropped": 0
+  },
+  "exact_lifecycle": {
+    "share-a": {
+      "start": 0,
+      "finish": 1
+    },
+    "share-b": {
+      "start": 0,
+      "finish": 2
+    },
+    "share-c": {
+      "start": 0,
+      "finish": 3
+    }
+  },
+  "checks": [
+    "Completion ticks must be 1, 2, and 3 respectively.",
+    "Released CPU capacity must be shared among the remaining requests on the next tick."
+  ],
+  "relation": null
+}

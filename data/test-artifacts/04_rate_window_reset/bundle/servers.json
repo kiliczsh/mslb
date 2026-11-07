@@ -1,0 +1,1 @@
+{"servers":[{"cpu_units_per_tick":120,"id":"rate-a","mem_mb":4096,"rate_limit_per_sec":3}],"tick_seconds":1}

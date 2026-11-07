@@ -1,0 +1,9 @@
+{
+  "autoscaling": {
+    "enabled": false
+  },
+  "dataset_id": "bd2fcc89-18c6-4146-b10c-cd4f16151b66",
+  "mode": "concurrent",
+  "queue_timeout_ticks": null,
+  "strategy": "first_fit"
+}

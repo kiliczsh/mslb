@@ -1,0 +1,13 @@
+{"t":0,"event":"REQUEST_ARRIVED","request_id":"a-running"}
+{"t":0,"event":"REQUEST_ARRIVED","request_id":"b-expire"}
+{"t":0,"event":"REQUEST_STARTED","request_id":"a-running","server_id":"timeout-a"}
+{"t":1,"event":"REQUEST_ARRIVED","request_id":"c-exact"}
+{"t":2,"event":"REQUEST_ARRIVED","request_id":"d-survive"}
+{"t":3,"event":"REQUEST_DROPPED","request_id":"b-expire"}
+{"t":4,"event":"REQUEST_FINISHED","request_id":"a-running","server_id":"timeout-a"}
+{"t":4,"event":"REQUEST_DROPPED","request_id":"c-exact"}
+{"t":4,"event":"REQUEST_STARTED","request_id":"d-survive","server_id":"timeout-a"}
+{"t":5,"event":"REQUEST_FINISHED","request_id":"d-survive","server_id":"timeout-a"}
+{"t":7,"event":"REQUEST_ARRIVED","request_id":"e-recover"}
+{"t":7,"event":"REQUEST_STARTED","request_id":"e-recover","server_id":"timeout-a"}
+{"t":8,"event":"REQUEST_FINISHED","request_id":"e-recover","server_id":"timeout-a"}

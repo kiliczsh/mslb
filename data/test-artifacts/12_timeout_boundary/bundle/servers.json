@@ -1,0 +1,1 @@
+{"servers":[{"cpu_units_per_tick":8,"id":"timeout-a","mem_mb":128,"rate_limit_per_sec":1}],"tick_seconds":1}

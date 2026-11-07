@@ -1,0 +1,12 @@
+{
+  "bundle_digest": "9a3a26bc4b0d174bff7477c14344ba698639fe87820da1caf34173fe46a77a5a",
+  "case": "03_fragmented_memory",
+  "elapsed_seconds": 0.541,
+  "events": 12,
+  "fixture_expectations": "passed",
+  "independent_replay": "passed",
+  "original_validator": "not_applicable",
+  "requests": 4,
+  "run_id": "99ee5391-a170-4675-8a30-2fdaffcf204d",
+  "trace_sha256": "3cad6c8e84a6b2d65c99c2a1ed49a1b731c1aa55b1c71ac252b4bba3b0224f51"
+}

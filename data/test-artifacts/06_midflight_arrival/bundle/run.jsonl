@@ -1,0 +1,6 @@
+{"t":0,"event":"REQUEST_ARRIVED","request_id":"long"}
+{"t":0,"event":"REQUEST_STARTED","request_id":"long","server_id":"join-a"}
+{"t":1,"event":"REQUEST_ARRIVED","request_id":"short"}
+{"t":1,"event":"REQUEST_STARTED","request_id":"short","server_id":"join-a"}
+{"t":2,"event":"REQUEST_FINISHED","request_id":"short","server_id":"join-a"}
+{"t":3,"event":"REQUEST_FINISHED","request_id":"long","server_id":"join-a"}

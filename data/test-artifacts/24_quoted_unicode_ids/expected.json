@@ -1,0 +1,39 @@
+{
+  "basis": "documented_contract_and_manual_checkpoints_not_a_production_run",
+  "terminal_counts": {
+    "arrived": 6,
+    "completed": 6,
+    "dropped": 0
+  },
+  "exact_lifecycle": {
+    "0007": {
+      "start": 0,
+      "finish": 1
+    },
+    "request,comma": {
+      "start": 2,
+      "finish": 3
+    },
+    "request-\"quoted\"": {
+      "start": 4,
+      "finish": 5
+    },
+    "request-☃": {
+      "start": 6,
+      "finish": 7
+    },
+    "request-★": {
+      "start": 8,
+      "finish": 9
+    },
+    "req-α": {
+      "start": 10,
+      "finish": 11
+    }
+  },
+  "checks": [
+    "Read CSV with a standard parser rather than splitting lines on commas.",
+    "Preserve identifiers without numeric conversion or character loss."
+  ],
+  "relation": null
+}

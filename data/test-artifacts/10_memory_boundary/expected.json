@@ -1,0 +1,23 @@
+{
+  "basis": "documented_contract_and_manual_checkpoints_not_a_production_run",
+  "terminal_counts": {
+    "arrived": 7,
+    "completed": 5,
+    "dropped": 2
+  },
+  "exact_lifecycle": {
+    "bound-2": {
+      "drop": 6,
+      "reason": "no_server_can_fit"
+    },
+    "bound-5": {
+      "drop": 15,
+      "reason": "no_server_can_fit"
+    }
+  },
+  "checks": [
+    "Only bound-2 and bound-5 must be dropped with no_server_can_fit.",
+    "A request matching the capacity exactly must not be rejected."
+  ],
+  "relation": null
+}

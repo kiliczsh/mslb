@@ -1,0 +1,11 @@
+{
+  "tick_seconds": 1,
+  "servers": [
+    {
+      "id": "encoding-a",
+      "cpu_units_per_tick": 16,
+      "mem_mb": 512,
+      "rate_limit_per_sec": 8
+    }
+  ]
+}

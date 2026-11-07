@@ -1,0 +1,12 @@
+{
+  "bundle_digest": "a578bda55a5d7f1068124e4aeaebec989c057941aa788ed263a36c546a8e27ac",
+  "case": "19_long_tail_mix",
+  "elapsed_seconds": 1.507,
+  "events": 4500,
+  "fixture_expectations": "passed",
+  "independent_replay": "passed",
+  "original_validator": "not_applicable",
+  "requests": 1500,
+  "run_id": "ea135265-916f-42fd-a5d9-05478537cb31",
+  "trace_sha256": "be30fe522fce0302c34b47f327eb7b4173412d050b743b5628c19b22ea58ddb9"
+}

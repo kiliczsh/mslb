@@ -1,0 +1,12 @@
+{
+  "bundle_digest": "55a1fa1a86e37c5be4c5b1536d2dc368ad8cba3d76afdaa092129820a8c5b9b1",
+  "case": "16_execution_modes",
+  "elapsed_seconds": 0.54,
+  "events": 12,
+  "fixture_expectations": "passed",
+  "independent_replay": "passed",
+  "original_validator": "not_applicable",
+  "requests": 4,
+  "run_id": "5af2201d-6e78-48fc-b98d-988389dd4b2a",
+  "trace_sha256": "e95dd4adc577dd6f5c9376bcd01a2ce1fd9fd9496aff2204899d7e071c1599a9"
+}

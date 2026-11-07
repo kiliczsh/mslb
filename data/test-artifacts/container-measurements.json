@@ -1,0 +1,134 @@
+{
+  "standard": [
+    {
+      "image": "sha256:206c44a660f3fdb03a8fc6f0ec3b91ebbaf891944639f3cdb17e2c423f57968a",
+      "memory_events": [
+        "low 0",
+        "high 0",
+        "max 0",
+        "oom 0",
+        "oom_kill 0",
+        "oom_group_kill 0"
+      ],
+      "memory_limit_bytes": 402653184,
+      "memory_peak_bytes": 108810240,
+      "oom_killed": false,
+      "restart_count": 0,
+      "service": "api"
+    },
+    {
+      "image": "sha256:e465ba5db0dd296bbef6ffa1596adb221bb6d20c454c7cd33778cdc826ef1a1b",
+      "memory_events": [
+        "low 0",
+        "high 0",
+        "max 0",
+        "oom 0",
+        "oom_kill 0",
+        "oom_group_kill 0"
+      ],
+      "memory_limit_bytes": 805306368,
+      "memory_peak_bytes": 84869120,
+      "oom_killed": false,
+      "restart_count": 0,
+      "service": "postgres"
+    },
+    {
+      "image": "sha256:d9436322172a5b482c187bf1f363d3c4fea086fcca6b9c8a94de8f0f39ed3193",
+      "memory_events": [
+        "low 0",
+        "high 0",
+        "max 0",
+        "oom 0",
+        "oom_kill 0",
+        "oom_group_kill 0"
+      ],
+      "memory_limit_bytes": 201326592,
+      "memory_peak_bytes": 10436608,
+      "oom_killed": false,
+      "restart_count": 0,
+      "service": "redis"
+    },
+    {
+      "image": "sha256:206c44a660f3fdb03a8fc6f0ec3b91ebbaf891944639f3cdb17e2c423f57968a",
+      "memory_events": [
+        "low 0",
+        "high 0",
+        "max 0",
+        "oom 0",
+        "oom_kill 0",
+        "oom_group_kill 0"
+      ],
+      "memory_limit_bytes": 1073741824,
+      "memory_peak_bytes": 83103744,
+      "oom_killed": false,
+      "restart_count": 0,
+      "service": "worker"
+    }
+  ],
+  "stress": [
+    {
+      "image": "sha256:206c44a660f3fdb03a8fc6f0ec3b91ebbaf891944639f3cdb17e2c423f57968a",
+      "memory_events": [
+        "low 0",
+        "high 0",
+        "max 0",
+        "oom 0",
+        "oom_kill 0",
+        "oom_group_kill 0"
+      ],
+      "memory_limit_bytes": 402653184,
+      "memory_peak_bytes": 162455552,
+      "oom_killed": false,
+      "restart_count": 0,
+      "service": "api"
+    },
+    {
+      "image": "sha256:e465ba5db0dd296bbef6ffa1596adb221bb6d20c454c7cd33778cdc826ef1a1b",
+      "memory_events": [
+        "low 0",
+        "high 0",
+        "max 0",
+        "oom 0",
+        "oom_kill 0",
+        "oom_group_kill 0"
+      ],
+      "memory_limit_bytes": 805306368,
+      "memory_peak_bytes": 499015680,
+      "oom_killed": false,
+      "restart_count": 0,
+      "service": "postgres"
+    },
+    {
+      "image": "sha256:d9436322172a5b482c187bf1f363d3c4fea086fcca6b9c8a94de8f0f39ed3193",
+      "memory_events": [
+        "low 0",
+        "high 0",
+        "max 0",
+        "oom 0",
+        "oom_kill 0",
+        "oom_group_kill 0"
+      ],
+      "memory_limit_bytes": 201326592,
+      "memory_peak_bytes": 13086720,
+      "oom_killed": false,
+      "restart_count": 0,
+      "service": "redis"
+    },
+    {
+      "image": "sha256:206c44a660f3fdb03a8fc6f0ec3b91ebbaf891944639f3cdb17e2c423f57968a",
+      "memory_events": [
+        "low 0",
+        "high 0",
+        "max 0",
+        "oom 0",
+        "oom_kill 0",
+        "oom_group_kill 0"
+      ],
+      "memory_limit_bytes": 1073741824,
+      "memory_peak_bytes": 497610752,
+      "oom_killed": false,
+      "restart_count": 0,
+      "service": "worker"
+    }
+  ]
+}

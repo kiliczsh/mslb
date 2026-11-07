@@ -1,0 +1,12 @@
+{
+  "bundle_digest": "678f4339823ecf7f792d3631ce7fd7923d78926f42d8f3e20e8d32acbf55ad67",
+  "case": "08_shuffled_input",
+  "elapsed_seconds": 0.345,
+  "events": 36,
+  "fixture_expectations": "passed",
+  "independent_replay": "passed",
+  "original_validator": "not_applicable",
+  "requests": 12,
+  "run_id": "aefaad5f-0688-4092-af9e-bc20540ae2d8",
+  "trace_sha256": "2ce2071a3f72aa1bfd5947a1265896991191c2204431b4ed0243dc2f93012188"
+}

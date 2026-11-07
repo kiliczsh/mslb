@@ -1,0 +1,12 @@
+{"t":0,"event":"REQUEST_ARRIVED","request_id":"a-anchor"}
+{"t":0,"event":"REQUEST_ARRIVED","request_id":"b-anchor"}
+{"t":0,"event":"REQUEST_STARTED","request_id":"a-anchor","server_id":"frag-a"}
+{"t":0,"event":"REQUEST_STARTED","request_id":"b-anchor","server_id":"frag-b"}
+{"t":1,"event":"REQUEST_ARRIVED","request_id":"c-large"}
+{"t":1,"event":"REQUEST_ARRIVED","request_id":"d-small"}
+{"t":1,"event":"REQUEST_STARTED","request_id":"d-small","server_id":"frag-a"}
+{"t":2,"event":"REQUEST_FINISHED","request_id":"d-small","server_id":"frag-a"}
+{"t":4,"event":"REQUEST_FINISHED","request_id":"b-anchor","server_id":"frag-b"}
+{"t":4,"event":"REQUEST_STARTED","request_id":"c-large","server_id":"frag-b"}
+{"t":5,"event":"REQUEST_FINISHED","request_id":"a-anchor","server_id":"frag-a"}
+{"t":5,"event":"REQUEST_FINISHED","request_id":"c-large","server_id":"frag-b"}

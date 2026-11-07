@@ -1,0 +1,12 @@
+{
+  "bundle_digest": "8e894f07b7c6432566bf230adddd5f8ad85484e1e6028e8105dfb73bbc59a725",
+  "case": "04_rate_window_reset",
+  "elapsed_seconds": 0.542,
+  "events": 36,
+  "fixture_expectations": "passed",
+  "independent_replay": "passed",
+  "original_validator": "not_applicable",
+  "requests": 12,
+  "run_id": "5e6b7613-d89e-452c-bc84-a0a7e3f24ea4",
+  "trace_sha256": "cf1b6fccf4aab8c6077d57d911bd0604276f091bcf07a2466d0c6d4a40d050e9"
+}

@@ -1,0 +1,101 @@
+{
+  "tick_seconds": 1,
+  "servers": [
+    {
+      "id": "stress-00",
+      "cpu_units_per_tick": 128,
+      "mem_mb": 8192,
+      "rate_limit_per_sec": 16
+    },
+    {
+      "id": "stress-01",
+      "cpu_units_per_tick": 128,
+      "mem_mb": 8192,
+      "rate_limit_per_sec": 16
+    },
+    {
+      "id": "stress-02",
+      "cpu_units_per_tick": 128,
+      "mem_mb": 8192,
+      "rate_limit_per_sec": 16
+    },
+    {
+      "id": "stress-03",
+      "cpu_units_per_tick": 128,
+      "mem_mb": 8192,
+      "rate_limit_per_sec": 16
+    },
+    {
+      "id": "stress-04",
+      "cpu_units_per_tick": 128,
+      "mem_mb": 8192,
+      "rate_limit_per_sec": 16
+    },
+    {
+      "id": "stress-05",
+      "cpu_units_per_tick": 128,
+      "mem_mb": 8192,
+      "rate_limit_per_sec": 16
+    },
+    {
+      "id": "stress-06",
+      "cpu_units_per_tick": 128,
+      "mem_mb": 8192,
+      "rate_limit_per_sec": 16
+    },
+    {
+      "id": "stress-07",
+      "cpu_units_per_tick": 128,
+      "mem_mb": 8192,
+      "rate_limit_per_sec": 16
+    },
+    {
+      "id": "stress-08",
+      "cpu_units_per_tick": 128,
+      "mem_mb": 8192,
+      "rate_limit_per_sec": 16
+    },
+    {
+      "id": "stress-09",
+      "cpu_units_per_tick": 128,
+      "mem_mb": 8192,
+      "rate_limit_per_sec": 16
+    },
+    {
+      "id": "stress-10",
+      "cpu_units_per_tick": 128,
+      "mem_mb": 8192,
+      "rate_limit_per_sec": 16
+    },
+    {
+      "id": "stress-11",
+      "cpu_units_per_tick": 128,
+      "mem_mb": 8192,
+      "rate_limit_per_sec": 16
+    },
+    {
+      "id": "stress-12",
+      "cpu_units_per_tick": 128,
+      "mem_mb": 8192,
+      "rate_limit_per_sec": 16
+    },
+    {
+      "id": "stress-13",
+      "cpu_units_per_tick": 128,
+      "mem_mb": 8192,
+      "rate_limit_per_sec": 16
+    },
+    {
+      "id": "stress-14",
+      "cpu_units_per_tick": 128,
+      "mem_mb": 8192,
+      "rate_limit_per_sec": 16
+    },
+    {
+      "id": "stress-15",
+      "cpu_units_per_tick": 128,
+      "mem_mb": 8192,
+      "rate_limit_per_sec": 16
+    }
+  ]
+}

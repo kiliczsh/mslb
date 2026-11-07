@@ -1,0 +1,11 @@
+{
+  "tick_seconds": 1,
+  "servers": [
+    {
+      "id": "join-a",
+      "cpu_units_per_tick": 12,
+      "mem_mb": 256,
+      "rate_limit_per_sec": 4
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "basis": "documented_contract_and_manual_checkpoints_not_a_production_run",
+  "terminal_counts": {
+    "arrived": 12000,
+    "completed": 12000,
+    "dropped": 0
+  },
+  "exact_lifecycle": {},
+  "checks": [
+    "Expect 12,000 unique requests and 36,000 lifecycle events.",
+    "The active request set and pending queue must be empty at the end of the run."
+  ],
+  "relation": null
+}

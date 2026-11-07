@@ -1,0 +1,14 @@
+{
+  "basis": "documented_contract_and_manual_checkpoints_not_a_production_run",
+  "terminal_counts": {
+    "arrived": 1200,
+    "completed": 1200,
+    "dropped": 0
+  },
+  "exact_lifecycle": {},
+  "checks": [
+    "Arrival counts for the five phases must be 60,240,600,240,60.",
+    "All requests must complete with queue timeout disabled."
+  ],
+  "relation": null
+}

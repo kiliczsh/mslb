@@ -1,0 +1,1 @@
+{"servers":[{"cpu_units_per_tick":8,"id":"finish-a","mem_mb":128,"rate_limit_per_sec":2},{"cpu_units_per_tick":12,"id":"finish-b","mem_mb":128,"rate_limit_per_sec":2},{"cpu_units_per_tick":16,"id":"finish-c","mem_mb":128,"rate_limit_per_sec":2}],"tick_seconds":1}

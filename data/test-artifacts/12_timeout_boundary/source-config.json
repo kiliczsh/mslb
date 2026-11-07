@@ -1,0 +1,7 @@
+{
+  "scheduling_strategy": "first_fit",
+  "execution_mode": "concurrent",
+  "queue_timeout_ticks": 3,
+  "real_time_ticks": false,
+  "autoscale_enabled": false
+}

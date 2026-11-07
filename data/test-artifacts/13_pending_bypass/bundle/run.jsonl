@@ -1,0 +1,12 @@
+{"t":0,"event":"REQUEST_ARRIVED","request_id":"a-anchor"}
+{"t":0,"event":"REQUEST_STARTED","request_id":"a-anchor","server_id":"bypass-a"}
+{"t":1,"event":"REQUEST_ARRIVED","request_id":"b-large"}
+{"t":1,"event":"REQUEST_ARRIVED","request_id":"c-small"}
+{"t":1,"event":"REQUEST_STARTED","request_id":"c-small","server_id":"bypass-a"}
+{"t":2,"event":"REQUEST_FINISHED","request_id":"c-small","server_id":"bypass-a"}
+{"t":2,"event":"REQUEST_ARRIVED","request_id":"d-small"}
+{"t":2,"event":"REQUEST_STARTED","request_id":"d-small","server_id":"bypass-a"}
+{"t":3,"event":"REQUEST_FINISHED","request_id":"d-small","server_id":"bypass-a"}
+{"t":5,"event":"REQUEST_FINISHED","request_id":"a-anchor","server_id":"bypass-a"}
+{"t":5,"event":"REQUEST_STARTED","request_id":"b-large","server_id":"bypass-a"}
+{"t":6,"event":"REQUEST_FINISHED","request_id":"b-large","server_id":"bypass-a"}

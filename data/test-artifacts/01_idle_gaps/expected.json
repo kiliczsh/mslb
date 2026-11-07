@@ -1,0 +1,56 @@
+{
+  "basis": "documented_contract_and_manual_checkpoints_not_a_production_run",
+  "terminal_counts": {
+    "arrived": 8,
+    "completed": 8,
+    "dropped": 0
+  },
+  "exact_lifecycle": {
+    "idle-01": {
+      "start": 5,
+      "finish": 6,
+      "server": "idle-a"
+    },
+    "idle-02": {
+      "start": 6,
+      "finish": 7,
+      "server": "idle-a"
+    },
+    "idle-03": {
+      "start": 25,
+      "finish": 26,
+      "server": "idle-a"
+    },
+    "idle-04": {
+      "start": 26,
+      "finish": 27,
+      "server": "idle-a"
+    },
+    "idle-05": {
+      "start": 90,
+      "finish": 91,
+      "server": "idle-a"
+    },
+    "idle-06": {
+      "start": 91,
+      "finish": 92,
+      "server": "idle-a"
+    },
+    "idle-07": {
+      "start": 250,
+      "finish": 251,
+      "server": "idle-a"
+    },
+    "idle-08": {
+      "start": 251,
+      "finish": 252,
+      "server": "idle-a"
+    }
+  },
+  "checks": [
+    "The first event must occur at t=5.",
+    "The final request must finish at t=252.",
+    "An empty queue must not cancel future arrivals."
+  ],
+  "relation": null
+}

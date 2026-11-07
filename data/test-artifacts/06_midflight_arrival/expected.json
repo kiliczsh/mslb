@@ -1,0 +1,23 @@
+{
+  "basis": "documented_contract_and_manual_checkpoints_not_a_production_run",
+  "terminal_counts": {
+    "arrived": 2,
+    "completed": 2,
+    "dropped": 0
+  },
+  "exact_lifecycle": {
+    "long": {
+      "start": 0,
+      "finish": 3
+    },
+    "short": {
+      "start": 1,
+      "finish": 2
+    }
+  },
+  "checks": [
+    "short must finish at t=2 and long at t=3.",
+    "The long request's completion time must not be fixed at its start."
+  ],
+  "relation": null
+}

@@ -1,0 +1,1 @@
+{"servers":[{"cpu_units_per_tick":16,"id":"node-1","mem_mb":256,"rate_limit_per_sec":2},{"cpu_units_per_tick":16,"id":"node-10","mem_mb":256,"rate_limit_per_sec":2},{"cpu_units_per_tick":16,"id":"node-2","mem_mb":256,"rate_limit_per_sec":2}],"tick_seconds":1}

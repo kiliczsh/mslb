@@ -1,0 +1,12 @@
+{
+  "bundle_digest": "282ba697eba9c3ef5c157587e3db9e268406e48a3a1ec507b3c76bbe9e480c36",
+  "case": "10_memory_boundary",
+  "elapsed_seconds": 0.549,
+  "events": 19,
+  "fixture_expectations": "passed",
+  "independent_replay": "passed",
+  "original_validator": "not_applicable",
+  "requests": 7,
+  "run_id": "fa944243-5189-44ec-ae4a-34f5cb1e0e37",
+  "trace_sha256": "eefb3442411703e0d83a18369d3b6547d8f0e693743b2684e3c17a6f534f9279"
+}

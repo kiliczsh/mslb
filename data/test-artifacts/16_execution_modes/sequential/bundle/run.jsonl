@@ -1,0 +1,12 @@
+{"t":0,"event":"REQUEST_ARRIVED","request_id":"mode-0"}
+{"t":0,"event":"REQUEST_ARRIVED","request_id":"mode-1"}
+{"t":0,"event":"REQUEST_ARRIVED","request_id":"mode-2"}
+{"t":0,"event":"REQUEST_ARRIVED","request_id":"mode-3"}
+{"t":0,"event":"REQUEST_STARTED","request_id":"mode-0","server_id":"mode-a"}
+{"t":1,"event":"REQUEST_FINISHED","request_id":"mode-0","server_id":"mode-a"}
+{"t":1,"event":"REQUEST_STARTED","request_id":"mode-1","server_id":"mode-a"}
+{"t":2,"event":"REQUEST_FINISHED","request_id":"mode-1","server_id":"mode-a"}
+{"t":2,"event":"REQUEST_STARTED","request_id":"mode-2","server_id":"mode-a"}
+{"t":3,"event":"REQUEST_FINISHED","request_id":"mode-2","server_id":"mode-a"}
+{"t":3,"event":"REQUEST_STARTED","request_id":"mode-3","server_id":"mode-a"}
+{"t":4,"event":"REQUEST_FINISHED","request_id":"mode-3","server_id":"mode-a"}

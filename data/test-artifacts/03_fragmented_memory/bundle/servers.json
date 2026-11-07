@@ -1,0 +1,1 @@
+{"servers":[{"cpu_units_per_tick":8,"id":"frag-a","mem_mb":512,"rate_limit_per_sec":4},{"cpu_units_per_tick":8,"id":"frag-b","mem_mb":512,"rate_limit_per_sec":4}],"tick_seconds":1}

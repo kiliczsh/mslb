@@ -1,0 +1,501 @@
+[
+  {
+    "case": "01_missing_memory_column",
+    "response": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "details": [
+          {
+            "field": "header",
+            "reason": "missing_or_duplicate_columns"
+          }
+        ],
+        "message": "Input validation failed"
+      },
+      "request_id": "76a7d3f3-33c8-4089-a9bc-824ce1953ed0"
+    },
+    "sha256": "61394c0bd4048ff2be82df0ab661b81cb2ab6cb5c96e2f659772644cce72eb64",
+    "surface": "HTTP dataset upload"
+  },
+  {
+    "case": "02_wrong_delimiter",
+    "response": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "details": [
+          {
+            "field": "header",
+            "reason": "missing_or_duplicate_columns"
+          }
+        ],
+        "message": "Input validation failed"
+      },
+      "request_id": "0a4807ef-c2df-480c-809e-9d0704c6dbbc"
+    },
+    "sha256": "fca278fef428396d841d5650f348c21a12dd2c82ed5faddca34f337ff5980245",
+    "surface": "HTTP dataset upload"
+  },
+  {
+    "case": "03_header_only",
+    "response": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "details": [
+          {
+            "field": "csv",
+            "reason": "empty_workload"
+          }
+        ],
+        "message": "Input validation failed"
+      },
+      "request_id": "a9dda16d-8162-4e8a-9254-b054d1acb1ce"
+    },
+    "sha256": "bb70720330542d09ee9cbf82262e9afc94880045ab5b2bbecf5dbae45c65bbcd",
+    "surface": "HTTP dataset upload"
+  },
+  {
+    "case": "04_empty_file",
+    "response": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "details": [
+          {
+            "field": "header",
+            "reason": "missing_or_duplicate_columns"
+          }
+        ],
+        "message": "Input validation failed"
+      },
+      "request_id": "e5489ab7-b907-49b4-894f-261cde944ecb"
+    },
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "surface": "HTTP dataset upload"
+  },
+  {
+    "case": "05_non_numeric_tick",
+    "response": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "details": [
+          {
+            "field": "rows[2].t",
+            "reason": "expected_bounded_integer"
+          }
+        ],
+        "message": "Input validation failed"
+      },
+      "request_id": "8581180c-5c79-4b6d-a072-38df2c283a67"
+    },
+    "sha256": "539855e244ee07b4baac18eea318835a39ab2daa6839e2a4ea6e3363a0b68fca",
+    "surface": "HTTP dataset upload"
+  },
+  {
+    "case": "06_fractional_tick",
+    "response": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "details": [
+          {
+            "field": "rows[2].t",
+            "reason": "expected_bounded_integer"
+          }
+        ],
+        "message": "Input validation failed"
+      },
+      "request_id": "5c68d2b1-b214-4b03-ab4d-3c23c0a41d5b"
+    },
+    "sha256": "cbf907f323824bac1ef8ce2fe41d027f70a945805f15bdf7381fb523083957c4",
+    "surface": "HTTP dataset upload"
+  },
+  {
+    "case": "07_negative_tick",
+    "response": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "details": [
+          {
+            "field": "rows[2].t",
+            "reason": "expected_bounded_integer"
+          }
+        ],
+        "message": "Input validation failed"
+      },
+      "request_id": "2d4dcb48-724e-4d46-b2fc-fc553606ef7c"
+    },
+    "sha256": "0a867378e443aa3ab2286eb92bec6b1c56d84284975cdbf76f86c32d5914e0b8",
+    "surface": "HTTP dataset upload"
+  },
+  {
+    "case": "08_negative_work",
+    "response": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "details": [
+          {
+            "field": "rows[2].work_units",
+            "reason": "expected_bounded_integer"
+          }
+        ],
+        "message": "Input validation failed"
+      },
+      "request_id": "4980973a-4451-468b-bd14-e4d7b5ad8b64"
+    },
+    "sha256": "911f485d673493b1fb75b227517ed3743bad6121240d6bd6b4b155d5f1e2aaa7",
+    "surface": "HTTP dataset upload"
+  },
+  {
+    "case": "09_zero_work",
+    "response": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "details": [
+          {
+            "field": "rows[2].work_units",
+            "reason": "greater_than_equal"
+          }
+        ],
+        "message": "Input validation failed"
+      },
+      "request_id": "58452da7-4070-4c9f-b7dc-f3dd5f4af945"
+    },
+    "sha256": "f8d1a00b125a299f4ae28e6a2d5b8ae3ab2724336ababbd675042d9d28a1fe98",
+    "surface": "HTTP dataset upload"
+  },
+  {
+    "case": "10_negative_memory",
+    "response": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "details": [
+          {
+            "field": "rows[2].mem_mb",
+            "reason": "expected_bounded_integer"
+          }
+        ],
+        "message": "Input validation failed"
+      },
+      "request_id": "74c58a99-a6c5-49ee-8423-7653c64dd2a1"
+    },
+    "sha256": "72bbf0379bbcb1ccfdda8b41a62ea68dc3516045c3b9918fcbf7a9bbc71e83af",
+    "surface": "HTTP dataset upload"
+  },
+  {
+    "case": "11_zero_memory",
+    "response": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "details": [
+          {
+            "field": "rows[2].mem_mb",
+            "reason": "greater_than_equal"
+          }
+        ],
+        "message": "Input validation failed"
+      },
+      "request_id": "fef3706d-e6aa-42a0-8cd0-6fc7ec12b67b"
+    },
+    "sha256": "b6e5de72fe47631decb3e7ab4a82b48c8013a0b207301675da59ed5effb88726",
+    "surface": "HTTP dataset upload"
+  },
+  {
+    "case": "12_nan_work",
+    "response": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "details": [
+          {
+            "field": "rows[2].work_units",
+            "reason": "expected_bounded_integer"
+          }
+        ],
+        "message": "Input validation failed"
+      },
+      "request_id": "c245c5a1-22f4-4079-aabb-08439ef9d5a4"
+    },
+    "sha256": "a5f636d2b5221a516a42367162fc22445c7d1974ee958f73a87ffadec202d7b0",
+    "surface": "HTTP dataset upload"
+  },
+  {
+    "case": "13_infinite_work",
+    "response": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "details": [
+          {
+            "field": "rows[2].work_units",
+            "reason": "expected_bounded_integer"
+          }
+        ],
+        "message": "Input validation failed"
+      },
+      "request_id": "24487c46-8877-4870-a6b0-d167b52bad7a"
+    },
+    "sha256": "f63564353787f35dde4e1a677b52d6228820a7ac2d0534e7ed5aa826dffedda0",
+    "surface": "HTTP dataset upload"
+  },
+  {
+    "case": "14_nan_memory",
+    "response": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "details": [
+          {
+            "field": "rows[2].mem_mb",
+            "reason": "expected_bounded_integer"
+          }
+        ],
+        "message": "Input validation failed"
+      },
+      "request_id": "135da7d4-92f6-471d-83ba-926cdb771d8b"
+    },
+    "sha256": "8064cce5e3b7112e142a85652b66d73ebc61bc27c86725dfb8cd63f1c355df8c",
+    "surface": "HTTP dataset upload"
+  },
+  {
+    "case": "15_infinite_memory",
+    "response": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "details": [
+          {
+            "field": "rows[2].mem_mb",
+            "reason": "expected_bounded_integer"
+          }
+        ],
+        "message": "Input validation failed"
+      },
+      "request_id": "cf4d9c6a-2385-4fc0-b1db-36e957a88fce"
+    },
+    "sha256": "dcf1e41b79f88056b2606c37b482cb2db8ed21e2e00913b1eae25e8c4d291426",
+    "surface": "HTTP dataset upload"
+  },
+  {
+    "case": "16_duplicate_id",
+    "response": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "details": [
+          {
+            "field": "rows[3].request_id",
+            "reason": "duplicate_normalized_identifier"
+          }
+        ],
+        "message": "Input validation failed"
+      },
+      "request_id": "336f5ffb-c249-4e63-8a1d-e186f0b60668"
+    },
+    "sha256": "090fae2734cc23b6f71057736d3f19628d21ce0db381a5cfae82b7d882c643a4",
+    "surface": "HTTP dataset upload"
+  },
+  {
+    "case": "17_duplicate_after_trim",
+    "response": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "details": [
+          {
+            "field": "rows[3].request_id",
+            "reason": "duplicate_normalized_identifier"
+          }
+        ],
+        "message": "Input validation failed"
+      },
+      "request_id": "512d49b9-e870-47c6-92fd-d4bac254ecb4"
+    },
+    "sha256": "9e9b1966f3d2fe2add1eeb9de178fd8ff425e0129219530ef8b5c97c184c21fb",
+    "surface": "HTTP dataset upload"
+  },
+  {
+    "case": "18_blank_id",
+    "response": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "details": [
+          {
+            "field": "rows[2].request_id",
+            "reason": "value_error"
+          }
+        ],
+        "message": "Input validation failed"
+      },
+      "request_id": "cf760466-6050-469c-a819-937a85214340"
+    },
+    "sha256": "20944575eee91a15027e46bc60a93787b4d3cd2d736ac795fbacb55e2180a92a",
+    "surface": "HTTP dataset upload"
+  },
+  {
+    "case": "19_whitespace_id",
+    "response": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "details": [
+          {
+            "field": "rows[2].request_id",
+            "reason": "value_error"
+          }
+        ],
+        "message": "Input validation failed"
+      },
+      "request_id": "56abb644-83f3-4001-963b-0769d48b3ff7"
+    },
+    "sha256": "0268128881d86c086638d4d253908e117832920f7a3246e0af98b3502f90a578",
+    "surface": "HTTP dataset upload"
+  },
+  {
+    "case": "20_missing_numeric_value",
+    "response": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "details": [
+          {
+            "field": "rows[2].work_units",
+            "reason": "expected_bounded_integer"
+          }
+        ],
+        "message": "Input validation failed"
+      },
+      "request_id": "d3ca4c23-ce0f-473f-b6c7-e3068db6f070"
+    },
+    "sha256": "286fed64df28f488babcd1fd0916cb167d59d6e94767cce3cdee3bec365e8052",
+    "surface": "HTTP dataset upload"
+  },
+  {
+    "case": "21_short_row",
+    "response": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "details": [
+          {
+            "field": "rows[2]",
+            "reason": "row_width"
+          }
+        ],
+        "message": "Input validation failed"
+      },
+      "request_id": "e2cafdf6-9547-446d-9fe9-b69069b98048"
+    },
+    "sha256": "0464b2eedfb458f1865e017ae5bf676b1a82a8b2f09a699eed13955f3509dce7",
+    "surface": "HTTP dataset upload"
+  },
+  {
+    "case": "22_extra_field",
+    "response": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "details": [
+          {
+            "field": "rows[2]",
+            "reason": "row_width"
+          }
+        ],
+        "message": "Input validation failed"
+      },
+      "request_id": "89290b3c-14e7-4498-8045-1f32e88696f8"
+    },
+    "sha256": "b6647899404ec9a03c6082a234b1be00f447d0bb555b2b8f7a276f5079ff1e8b",
+    "surface": "HTTP dataset upload"
+  },
+  {
+    "case": "23_duplicate_header",
+    "response": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "details": [
+          {
+            "field": "header",
+            "reason": "missing_or_duplicate_columns"
+          }
+        ],
+        "message": "Input validation failed"
+      },
+      "request_id": "0c00742c-db1f-462e-8447-92fc9ea64b26"
+    },
+    "sha256": "1e9399456722afbe3c4a2a48dd4b95fa40270b9d3ca53863aa4b2b8672417173",
+    "surface": "HTTP dataset upload"
+  },
+  {
+    "case": "24_fractional_work",
+    "response": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "details": [
+          {
+            "field": "rows[2].work_units",
+            "reason": "expected_bounded_integer"
+          }
+        ],
+        "message": "Input validation failed"
+      },
+      "request_id": "b5c4ec36-fce9-436f-b208-ee1fb63c616a"
+    },
+    "sha256": "a06b236229bf9a832770d59574817d6008cd94d712e9a04a16518ab800afca8f",
+    "surface": "HTTP dataset upload"
+  },
+  {
+    "case": "25_empty_cluster",
+    "field": "servers",
+    "http_contract": "Whole server documents are parsed outside per-server CRUD",
+    "reason": "too_short",
+    "sha256": "02e50d8798c5be80aa678da42ded08e2386d927e09c3f2bf617b255edec48b63",
+    "surface": "server document parser"
+  },
+  {
+    "case": "26_duplicate_server_id",
+    "field": "servers",
+    "http_statuses": [
+      201,
+      409
+    ],
+    "reason": "value_error",
+    "sha256": "897192931d625bcb8c5aa17f7fec1504c051977b75274138461750bc4aa920f6",
+    "surface": "server document parser"
+  },
+  {
+    "case": "27_zero_cpu",
+    "field": "servers.0.cpu_units_per_tick",
+    "http_status": 422,
+    "reason": "greater_than_equal",
+    "sha256": "cb2dbe60621bdd6d98fcd5981cb60f888844924b5c19201584296ce6f22ce3f6",
+    "surface": "server document parser"
+  },
+  {
+    "case": "28_negative_memory",
+    "field": "servers.0.mem_mb",
+    "http_status": 422,
+    "reason": "greater_than_equal",
+    "sha256": "a15bc0c96178ddd92cc2e72fb96986049867f8f4d0c2548de41aaba786c9085e",
+    "surface": "server document parser"
+  },
+  {
+    "case": "29_zero_rate",
+    "field": "servers.0.rate_limit_per_sec",
+    "http_status": 422,
+    "reason": "greater_than_equal",
+    "sha256": "696b86a5e6474e48718c7dafd5b174661de08f94e76f5af156a22726077769ee",
+    "surface": "server document parser"
+  },
+  {
+    "case": "30_fractional_rate",
+    "field": "servers.0.rate_limit_per_sec",
+    "http_status": 422,
+    "reason": "int_type",
+    "sha256": "4b56ce810202905afd2d98cc60685468b1a9a3aa3fa2bb21eea8819812ca1326",
+    "surface": "server document parser"
+  },
+  {
+    "case": "31_unsupported_tick",
+    "field": "tick_seconds",
+    "http_contract": "Whole server documents are parsed outside per-server CRUD",
+    "reason": "less_than_equal",
+    "sha256": "fc23db3f40f6ff38401b8aa9bca7622c63021d37a7569831fa8a7cbed5d65323",
+    "surface": "server document parser"
+  },
+  {
+    "case": "32_blank_server_id",
+    "field": "servers.0.id",
+    "http_status": 422,
+    "reason": "value_error",
+    "sha256": "d6c830ca14aa70860e00a3a2579caaf96b76936736d9b9823de44cb8dfb0096f",
+    "surface": "server document parser"
+  }
+]

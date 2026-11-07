@@ -1,0 +1,9 @@
+{"t":0,"event":"REQUEST_ARRIVED","request_id":"share-a"}
+{"t":0,"event":"REQUEST_ARRIVED","request_id":"share-b"}
+{"t":0,"event":"REQUEST_ARRIVED","request_id":"share-c"}
+{"t":0,"event":"REQUEST_STARTED","request_id":"share-a","server_id":"share-a"}
+{"t":0,"event":"REQUEST_STARTED","request_id":"share-b","server_id":"share-a"}
+{"t":0,"event":"REQUEST_STARTED","request_id":"share-c","server_id":"share-a"}
+{"t":1,"event":"REQUEST_FINISHED","request_id":"share-a","server_id":"share-a"}
+{"t":2,"event":"REQUEST_FINISHED","request_id":"share-b","server_id":"share-a"}
+{"t":3,"event":"REQUEST_FINISHED","request_id":"share-c","server_id":"share-a"}

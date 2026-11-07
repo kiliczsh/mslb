@@ -1,0 +1,15 @@
+{
+  "basis": "documented_contract_and_manual_checkpoints_not_a_production_run",
+  "terminal_counts": {
+    "arrived": 50000,
+    "completed": 50000,
+    "dropped": 0
+  },
+  "exact_lifecycle": {},
+  "checks": [
+    "Expect 50,000 unique requests and 150,000 lifecycle events.",
+    "Use real_time_ticks=false when measuring performance.",
+    "Wall-clock performance depends on the machine; no fixed runtime is claimed."
+  ],
+  "relation": null
+}

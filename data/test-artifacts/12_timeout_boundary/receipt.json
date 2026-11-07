@@ -1,0 +1,12 @@
+{
+  "bundle_digest": "a8ef2fdbba50ec9c5e89ac7006bf8020305a47b18b1e302a673b2550410095ba",
+  "case": "12_timeout_boundary",
+  "elapsed_seconds": 0.549,
+  "events": 13,
+  "fixture_expectations": "passed",
+  "independent_replay": "passed",
+  "original_validator": "not_applicable",
+  "requests": 5,
+  "run_id": "5c54d7b2-3f14-4e6a-9a6e-97667efad86e",
+  "trace_sha256": "65386c0a438c2db2351fab4349984fe1bdd978f90f5c8e42acc67ab83034b3e8"
+}

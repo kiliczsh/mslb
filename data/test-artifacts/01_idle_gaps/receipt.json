@@ -1,0 +1,12 @@
+{
+  "bundle_digest": "ecae83ed10d35b799699887b8e390bf42f75df90a5c234655608fb2387fde0ab",
+  "case": "01_idle_gaps",
+  "elapsed_seconds": 0.578,
+  "events": 24,
+  "fixture_expectations": "passed",
+  "independent_replay": "passed",
+  "original_validator": "not_applicable",
+  "requests": 8,
+  "run_id": "5ed38cc7-1f84-4c56-b044-668838602d8e",
+  "trace_sha256": "a680f648d8b5583095de111de4fd714d0d8ebc9db86545cc11f550a8e8a32976"
+}

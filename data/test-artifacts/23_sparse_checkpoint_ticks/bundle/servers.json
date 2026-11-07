@@ -1,0 +1,1 @@
+{"servers":[{"cpu_units_per_tick":8,"id":"sparse-a","mem_mb":256,"rate_limit_per_sec":4}],"tick_seconds":1}

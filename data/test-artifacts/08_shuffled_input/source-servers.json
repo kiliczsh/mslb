@@ -1,0 +1,23 @@
+{
+  "tick_seconds": 1,
+  "servers": [
+    {
+      "id": "node-1",
+      "cpu_units_per_tick": 16,
+      "mem_mb": 256,
+      "rate_limit_per_sec": 2
+    },
+    {
+      "id": "node-10",
+      "cpu_units_per_tick": 16,
+      "mem_mb": 256,
+      "rate_limit_per_sec": 2
+    },
+    {
+      "id": "node-2",
+      "cpu_units_per_tick": 16,
+      "mem_mb": 256,
+      "rate_limit_per_sec": 2
+    }
+  ]
+}

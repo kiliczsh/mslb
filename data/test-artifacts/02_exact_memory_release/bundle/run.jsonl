@@ -1,0 +1,12 @@
+{"t":0,"event":"REQUEST_ARRIVED","request_id":"a-half"}
+{"t":0,"event":"REQUEST_ARRIVED","request_id":"b-half"}
+{"t":0,"event":"REQUEST_STARTED","request_id":"a-half","server_id":"memory-a"}
+{"t":0,"event":"REQUEST_STARTED","request_id":"b-half","server_id":"memory-a"}
+{"t":1,"event":"REQUEST_ARRIVED","request_id":"c-full"}
+{"t":2,"event":"REQUEST_FINISHED","request_id":"a-half","server_id":"memory-a"}
+{"t":2,"event":"REQUEST_FINISHED","request_id":"b-half","server_id":"memory-a"}
+{"t":2,"event":"REQUEST_ARRIVED","request_id":"d-small"}
+{"t":2,"event":"REQUEST_STARTED","request_id":"c-full","server_id":"memory-a"}
+{"t":3,"event":"REQUEST_FINISHED","request_id":"c-full","server_id":"memory-a"}
+{"t":3,"event":"REQUEST_STARTED","request_id":"d-small","server_id":"memory-a"}
+{"t":4,"event":"REQUEST_FINISHED","request_id":"d-small","server_id":"memory-a"}

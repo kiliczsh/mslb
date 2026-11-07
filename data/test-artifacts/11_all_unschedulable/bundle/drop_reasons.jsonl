@@ -1,0 +1,8 @@
+{"reason":"UNSCHEDULABLE_MEMORY","request_id":"nofit-0","t":0}
+{"reason":"UNSCHEDULABLE_MEMORY","request_id":"nofit-1","t":0}
+{"reason":"UNSCHEDULABLE_MEMORY","request_id":"nofit-2","t":1}
+{"reason":"UNSCHEDULABLE_MEMORY","request_id":"nofit-3","t":1}
+{"reason":"UNSCHEDULABLE_MEMORY","request_id":"nofit-4","t":2}
+{"reason":"UNSCHEDULABLE_MEMORY","request_id":"nofit-5","t":2}
+{"reason":"UNSCHEDULABLE_MEMORY","request_id":"nofit-6","t":3}
+{"reason":"UNSCHEDULABLE_MEMORY","request_id":"nofit-7","t":3}

@@ -1,0 +1,12 @@
+{
+  "bundle_digest": "e582ee3776d3047e32297bf20a5195ef56970cc7701f727449bc6554897ccb6d",
+  "case": "09_heterogeneous_eligibility",
+  "elapsed_seconds": 0.56,
+  "events": 108,
+  "fixture_expectations": "passed",
+  "independent_replay": "passed",
+  "original_validator": "not_applicable",
+  "requests": 36,
+  "run_id": "01883d15-9d49-4a98-bfb7-6c946199bb41",
+  "trace_sha256": "b15f3bacde7077420a7654886a8e795c61acddc031694b7783358940dcba9b18"
+}

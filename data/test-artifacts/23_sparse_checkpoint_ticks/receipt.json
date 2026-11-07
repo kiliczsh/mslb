@@ -1,0 +1,12 @@
+{
+  "bundle_digest": "9eb160e1776d026fa5795a00a5a3dfe0d88f963609e33ad3e0dc5290eeb706bb",
+  "case": "23_sparse_checkpoint_ticks",
+  "elapsed_seconds": 0.561,
+  "events": 30,
+  "fixture_expectations": "passed",
+  "independent_replay": "passed",
+  "original_validator": "not_applicable",
+  "requests": 10,
+  "run_id": "dbc6b60a-f1ae-462e-b146-263f087de110",
+  "trace_sha256": "01bde0d512dda5d18fa9f698da139984cd358adc0868b33be5da66a2a918d8d4"
+}

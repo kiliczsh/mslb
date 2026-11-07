@@ -1,0 +1,12 @@
+{
+  "bundle_digest": "e0ff5526a2057d6446e676ef96be18298c916e52017887a69d5927f1d391be38",
+  "case": "02_exact_memory_release",
+  "elapsed_seconds": 0.541,
+  "events": 12,
+  "fixture_expectations": "passed",
+  "independent_replay": "passed",
+  "original_validator": "not_applicable",
+  "requests": 4,
+  "run_id": "4a17eea4-dd2c-488e-ad2b-65ac9183175a",
+  "trace_sha256": "5e77b4506aedb48530d499b8837eea066ba69a6971335f081a609a1ca9c6cfcb"
+}

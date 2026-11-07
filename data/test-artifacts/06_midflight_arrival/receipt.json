@@ -1,0 +1,12 @@
+{
+  "bundle_digest": "488ced3647979e5c00004c4ffdf595a2c6e2963a3575bb6b51222e96e2fba7c5",
+  "case": "06_midflight_arrival",
+  "elapsed_seconds": 0.53,
+  "events": 6,
+  "fixture_expectations": "passed",
+  "independent_replay": "passed",
+  "original_validator": "not_applicable",
+  "requests": 2,
+  "run_id": "ec3f4cfd-a922-4076-9ff2-403a36d361a1",
+  "trace_sha256": "d9df2992aec49df85992c5b15f3a6d751ad9b33b1883bfdda19c6551d063524e"
+}

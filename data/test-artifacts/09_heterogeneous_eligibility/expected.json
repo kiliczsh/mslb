@@ -1,0 +1,15 @@
+{
+  "basis": "documented_contract_and_manual_checkpoints_not_a_production_run",
+  "terminal_counts": {
+    "arrived": 36,
+    "completed": 36,
+    "dropped": 0
+  },
+  "exact_lifecycle": {},
+  "checks": [
+    "Requests larger than 512 MB can only be assigned to the memory server.",
+    "A request of exactly 4096 MB must be accepted.",
+    "Compare both completion time and queue time when evaluating strategies."
+  ],
+  "relation": null
+}
