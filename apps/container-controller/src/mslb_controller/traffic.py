@@ -19,6 +19,7 @@ from mslb_controller.routing_models import BackendSpec, Reservation
 from mslb_controller.traffic_clock import MonotonicClock as MonotonicClock
 from mslb_controller.traffic_protocols import Clock as Clock
 from mslb_controller.traffic_protocols import EventSink as EventSink
+from mslb_controller.traffic_protocols import Membership
 
 
 @dataclass(slots=True, kw_only=True)
@@ -31,6 +32,7 @@ class TrafficDriver:
     sink: EventSink
     clock: Clock = field(default_factory=MonotonicClock)
     stop: Callable[[], StopReason | None] = lambda: None
+    membership: Membership | None = None
     router: Router = field(init=False)
     used: bool = field(default=False, init=False)
     started: float = field(default=0, init=False)
@@ -49,8 +51,8 @@ class TrafficDriver:
     def __post_init__(self) -> None:
         """Reject inconsistent traffic policy before owning tasks or reservations."""
         settings = self.configuration
-        if settings.physical_scaling.enabled:
-            raise ValueError("The fixed-inventory driver does not yet support physical scaling")
+        if settings.physical_scaling.enabled and self.membership is None:
+            raise ValueError("Physical scaling requires a durable membership owner")
         if (
             self.http.request_seconds != settings.request_timeout_ms / 1000
             or self.http.health_seconds != settings.health_timeout_ms / 1000
@@ -238,6 +240,7 @@ class TrafficDriver:
         self.router.started = self.started
         cursor, next_health = 0, 1.0
         refresh: asyncio.Task[None] | None = None
+        membership: asyncio.Task[None] | None = None
         stopped: StopReason | None = None
         try:
             while cursor < len(requests) or self.pending or self.inflight:
@@ -279,9 +282,16 @@ class TrafficDriver:
                 if refresh is not None and refresh.done():
                     refresh.result()
                     refresh = None
+                if membership is not None and membership.done():
+                    membership.result()
+                    membership = None
                 if self.elapsed() >= next_health and refresh is None:
                     refresh = asyncio.create_task(coro=self.router.refresh())
                     next_health = self.elapsed() + 1
+                    if self.membership is not None and membership is None:
+                        membership = asyncio.create_task(
+                            coro=self.membership(router=self.router, pending=len(self.pending))
+                        )
                 if cursor < len(requests) or self.pending or self.inflight:
                     await self.clock.pause(seconds=0.02)
             if stopped is not None:
@@ -301,6 +311,9 @@ class TrafficDriver:
             if self.inflight:
                 await self.cancel_calls(reason="DRAIN_TIMEOUT")
         finally:
+            if membership is not None:
+                membership.cancel()
+                await asyncio.gather(membership, return_exceptions=True)
             if refresh is not None:
                 refresh.cancel()
                 await asyncio.gather(refresh, return_exceptions=True)

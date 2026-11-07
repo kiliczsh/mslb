@@ -22,10 +22,18 @@ class Database:
     """Own bounded PostgreSQL connections and repeatable-read transaction retries."""
 
     def __init__(
-        self, url: str, schema: str = "public", *, capacity_profile: CapacityProfile = "standard"
+        self,
+        url: str,
+        schema: str = "public",
+        *,
+        capacity_profile: CapacityProfile = "standard",
+        enforce_resource_guard: bool = False,
     ) -> None:
         request_limit(profile=capacity_profile)
         self.capacity_profile: CapacityProfile = capacity_profile
+        if type(enforce_resource_guard) is not bool:
+            raise StoreError(code="VALIDATION_ERROR", message="Invalid resource guard setting")
+        self.enforce_resource_guard = enforce_resource_guard
         if not re.fullmatch(pattern=r"[a-z][a-z0-9_]{0,62}", string=schema):
             raise StoreError(code="VALIDATION_ERROR", message="Invalid database schema")
         parsed = make_url(name_or_url=url)

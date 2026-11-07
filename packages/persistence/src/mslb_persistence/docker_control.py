@@ -21,6 +21,12 @@ from mslb_persistence.errors import StoreError
 from mslb_persistence.job_models import Attempt, Job, Run
 from mslb_persistence.jobs import Jobs, _clock, _end_attempt
 from mslb_persistence.records import JobRecord
+from mslb_persistence.resource_admission import (
+    admission_allowed,
+    require_admission,
+    require_no_stop,
+    stop_required,
+)
 
 RESOLVED = ("removed", "abandoned", "released")
 TERMINAL = ("completed", "failed", "cancelled")
@@ -171,6 +177,8 @@ class DockerControl:
                 )
                 if job is None:
                     return None
+                if not await admission_allowed(database=self.database, session=session):
+                    return None
                 slot.run_id, slot.phase, slot.cleanup_attempts = job.run_id, "running", 0
                 job.status, job.attempts, job.error_code = "running", 1, None
             slot.fence += 1
@@ -186,6 +194,8 @@ class DockerControl:
                     instance=Attempt(run_id=job.run_id, number=1, fence=slot.fence, owner=owner)
                 )
             await session.flush()
+            if slot.phase == "running":
+                await require_admission(database=self.database, session=session)
             expires_at = slot.lease_expires_at
             if (
                 slot.run_id is None
@@ -340,6 +350,14 @@ class DockerControl:
                 raise StoreError(
                     code="INVALID_STATE", message="Docker outcome has not been selected"
                 )
+            if status == "completed" and await stop_required(
+                database=self.database, session=session
+            ):
+                status, state.desired_status, state.desired_error = (
+                    "failed",
+                    "failed",
+                    "RESOURCE_PRESSURE",
+                )
             if status == "completed":
                 run = await session.get(entity=Run, ident=lease.run_id)
                 snapshot = DockerSnapshot.model_validate_json(
@@ -371,6 +389,8 @@ class DockerControl:
                 job.fence, job.owner, job.lease_expires_at = job.fence + 1, None, None
                 await _end_attempt(session=session, job=job, outcome=status, now=now)
             await guard(session=session, lease=lease, release=True)
+            if status == "completed":
+                await require_no_stop(database=self.database, session=session)
             return JobRecord.from_model(row=job)
 
         return await self.database.transaction(operation=operation)

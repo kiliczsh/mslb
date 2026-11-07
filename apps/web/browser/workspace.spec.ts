@@ -436,6 +436,7 @@ test("guided demo queues real work, reads saved playback and compares four strat
   await recipe.focus();
   await page.keyboard.press("Space");
   await expect(recipe).toBeChecked();
+  await expect(page.getByRole("button", { name: "2 · Run demo" })).toBeEnabled();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "2 · Run demo" })).toBeFocused();
   const accepted = page.waitForResponse(

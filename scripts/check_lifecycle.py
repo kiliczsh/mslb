@@ -22,6 +22,7 @@ from mslb_persistence.docker_control import DockerControl
 from mslb_persistence.docker_records import ControlLease
 from mslb_persistence.docker_resources import DockerResources
 
+from scripts.check_controller import check_controller
 from scripts.check_docker_outputs import check_outputs
 from scripts.check_resource_probe import check_resource_probe
 from tests.integration.helpers import scratch
@@ -312,6 +313,7 @@ async def main() -> None:
                 await check_outputs(
                     database=database, client=client, backend=backend, engine=engine
                 )
+                await check_controller(database=database)
                 final = await Lifecycle(database=database, engine=engine, http=backend).enroll()
                 require(
                     value=final.definition == deployment.definition,

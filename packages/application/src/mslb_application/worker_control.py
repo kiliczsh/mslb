@@ -17,10 +17,14 @@ class _Control:
 
     def stop(self, reason: str) -> None:
         """Preserve cancellation and fence loss over less urgent stop reasons."""
-        if not self.stopped.is_set() or reason in {"cancel", "lease_lost"}:
+        if (
+            not self.stopped.is_set()
+            or reason in {"cancel", "lease_lost"}
+            or (reason == "resource_pressure" and self.reason == "shutdown")
+        ):
             self.reason = reason
             self.stopped.set()
 
     def check(self) -> None:
-        if self.reason in {"cancel", "lease_lost"}:
+        if self.reason in {"cancel", "lease_lost", "resource_pressure"}:
             raise ExecutionStopped(self.reason)

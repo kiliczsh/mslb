@@ -18,6 +18,7 @@ from mslb_persistence.errors import StoreError
 from mslb_persistence.job_models import IdempotencyRecord, Job, Outbox, Run
 from mslb_persistence.jobs import _clock
 from mslb_persistence.records import RunRecord
+from mslb_persistence.resource_admission import require_admission
 
 
 async def _prune_deployments(
@@ -217,6 +218,7 @@ class DockerCatalog:
             )
             if queued is not None and queued >= 20:
                 raise StoreError(code="RATE_LIMITED", message="Durable queue limit reached")
+            await require_admission(database=self.database, session=session)
             run = Run(
                 id=uuid4(),
                 dataset_id=dataset.id,
@@ -251,6 +253,7 @@ class DockerCatalog:
                     )
                 )
             await session.flush()
+            await require_admission(database=self.database, session=session)
             return RunRecord.from_model(row=run)
 
         return await self.database.transaction(operation=operation)

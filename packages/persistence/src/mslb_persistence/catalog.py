@@ -18,6 +18,7 @@ from mslb_persistence.database import Database
 from mslb_persistence.errors import StoreError
 from mslb_persistence.job_models import IdempotencyRecord, Job, Outbox, Run
 from mslb_persistence.records import DatasetRecord, RunRecord, server_input, server_view
+from mslb_persistence.resource_admission import require_admission
 
 
 async def _installation(session: AsyncSession) -> Installation:
@@ -182,11 +183,13 @@ class Catalog:
                     row.source_size_bytes = data.source_size_bytes
                     await session.flush()
                 return DatasetRecord.from_model(row=row)
+            await require_admission(database=self.database, session=session)
             row = Dataset(
                 id=uuid4(), storage_key=f"datasets/{data.digest}.csv", **data.model_dump()
             )
             session.add(instance=row)
             await session.flush()
+            await require_admission(database=self.database, session=session)
             return DatasetRecord.from_model(row=row)
 
         return await self.database.transaction(operation=operation)
@@ -343,6 +346,7 @@ class Catalog:
             )
             if queued is not None and queued >= 20:
                 raise StoreError(code="RATE_LIMITED", message="Durable queue limit reached")
+            await require_admission(database=self.database, session=session)
             run = Run(
                 id=uuid4(),
                 dataset_id=dataset.id,
@@ -370,6 +374,7 @@ class Catalog:
                     )
                 )
             await session.flush()
+            await require_admission(database=self.database, session=session)
             return RunRecord.from_model(row=run)
 
         return await self.database.transaction(operation=operation)

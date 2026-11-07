@@ -20,6 +20,7 @@ from mslb_persistence.database import Database, StoreError
 from mslb_persistence.durability import Durability
 from mslb_persistence.jobs import Jobs
 from mslb_persistence.records import Lease
+from mslb_persistence.resource_evidence import ResourceEvidenceStore
 from pydantic import ValidationError
 from sqlalchemy.exc import DBAPIError
 
@@ -53,6 +54,7 @@ class Worker:
                 code="VALIDATION_ERROR", message="Invalid worker lease/renewal policy"
             )
         self.database, self.inputs, self.outputs = database, inputs, outputs
+        self.resource_evidence = ResourceEvidenceStore(database=database)
         self.jobs, self.catalog, self.durable = (
             Jobs(database=database),
             Catalog(database=database),
@@ -187,6 +189,7 @@ class Worker:
     ) -> None:
         """Renew ownership and observe cancellation independently of CPU execution."""
         next_renewal = claim_started + self.renewal_seconds
+        next_resource_check = claim_started
         deadline = claim_started + self.lease_seconds - min(1, self.lease_seconds / 4)
         control.deadline = deadline
         while not done.is_set():
@@ -219,6 +222,13 @@ class Worker:
                 elif state.status not in {"running", "completed"}:
                     control.stop(reason="lease_lost")
                     return
+                if self.database.enforce_resource_guard and started >= next_resource_check:
+                    evidence = await asyncio.wait_for(
+                        fut=self.resource_evidence.read(), timeout=timeout
+                    )
+                    next_resource_check = started + 1
+                    if evidence.decision.stop_running:
+                        control.stop(reason="resource_pressure")
             except (StoreError, DBAPIError, TimeoutError, OSError):
                 control.stop(reason="lease_lost")
                 return
@@ -284,10 +294,14 @@ class Worker:
                     self.notify(phase="ownership_unavailable", lease=lease)
             elif reason == "shutdown":
                 await self._failure(lease=lease, code="INFRASTRUCTURE_FAILURE", retryable=True)
+            elif reason == "resource_pressure":
+                await self._failure(lease=lease, code="RESOURCE_PRESSURE")
             self.notify(phase="stopped_" + reason, lease=lease)
         except StoreError as error:
             if error.code == "INTERRUPTED":
                 await self._failure(lease=lease, code="INTERNAL_ERROR")
+            elif error.code == "RESOURCE_PRESSURE":
+                await self._failure(lease=lease, code="RESOURCE_PRESSURE")
             elif error.code != "FENCE_LOST":
                 await self._failure(lease=lease, code="VALIDATION_FAILED")
             self.notify(phase="stopped_" + error.code.lower(), lease=lease)

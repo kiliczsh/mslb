@@ -18,8 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from mslb_persistence.database import Database
 from mslb_persistence.errors import StoreError
-from mslb_persistence.jobs import _clock
 from mslb_persistence.resource_models import ResourceEvidence
+from mslb_persistence.transaction_clock import database_now as _clock
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

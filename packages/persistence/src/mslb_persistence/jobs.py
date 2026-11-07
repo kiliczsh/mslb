@@ -12,6 +12,8 @@ from mslb_persistence.database import Database
 from mslb_persistence.errors import StoreError
 from mslb_persistence.job_models import Attempt, ExecutionSlot, Job, Outbox
 from mslb_persistence.records import JobRecord, Lease
+from mslb_persistence.resource_admission import admission_allowed, require_admission
+from mslb_persistence.transaction_clock import database_now as _clock
 
 
 def ownership_predicate(lease: Lease) -> ColumnElement[bool]:
@@ -24,13 +26,6 @@ def ownership_predicate(lease: Lease) -> ColumnElement[bool]:
         Job.status.in_(other=("running", "cancel_requested")),
         Job.lease_expires_at > func.clock_timestamp(),
     )
-
-
-async def _clock(session: AsyncSession) -> datetime:
-    now = await session.scalar(statement=select(func.clock_timestamp()))
-    if not isinstance(now, datetime):
-        raise StoreError(code="NOT_READY", message="Database clock unavailable")
-    return now
 
 
 async def _slot(session: AsyncSession, skip_locked: bool = False) -> ExecutionSlot | None:
@@ -136,6 +131,8 @@ class Jobs:
             )
             if job is None:
                 return None
+            if not await admission_allowed(database=self.database, session=session):
+                return None
             now = await _clock(session=session)
             job.status, job.attempts, job.fence = "running", job.attempts + 1, job.fence + 1
             job.owner, job.lease_expires_at, job.error_code = (
@@ -150,6 +147,7 @@ class Jobs:
                 )
             )
             await session.flush()
+            await require_admission(database=self.database, session=session)
             expires = job.lease_expires_at
             if expires is None:
                 raise StoreError(code="NOT_READY", message="Claim did not establish a lease")

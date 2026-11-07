@@ -9,6 +9,7 @@ from mslb_contracts.docker_runs import DockerSettings, DockerSnapshot
 from mslb_persistence.catalog import Catalog
 from mslb_persistence.docker_catalog import DockerCatalog
 from mslb_persistence.records import RunRecord
+from mslb_persistence.resource_evidence import ResourceEvidenceStore
 
 from mslb_application.admission import MaterializationAdmission
 from mslb_application.docker_snapshots import MAX_SNAPSHOT_BYTES as MAX_SNAPSHOT_BYTES
@@ -69,6 +70,12 @@ class DockerSubmissions:
         scope: str,
     ) -> RunRecord:
         """Freeze trusted operational inputs and enqueue only a matching dataset."""
+        if self.catalog.database.enforce_resource_guard:
+            evidence = await ResourceEvidenceStore(database=self.catalog.database).read()
+            if not evidence.decision.admit:
+                raise OperationError(
+                    code="RESOURCE_PRESSURE", message="Fresh safe resource evidence is required"
+                )
         dataset = await self.catalog.get_dataset(dataset_id=dataset_id)
         # The adapter supplies a server-enrolled deployment, never caller daemon definitions.
         deployment = await self.docker.deployment(deployment_id=deployment_id)

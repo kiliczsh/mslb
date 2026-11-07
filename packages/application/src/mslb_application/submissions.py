@@ -10,6 +10,7 @@ from mslb_contracts.inputs import ServerInput
 from mslb_contracts.runs import RunSettings, settings_for_profile
 from mslb_persistence.catalog import Catalog
 from mslb_persistence.records import DatasetRecord, RunRecord
+from mslb_persistence.resource_evidence import ResourceEvidenceStore
 
 from mslb_application.admission import MaterializationAdmission, settle
 from mslb_application.errors import OperationError
@@ -38,8 +39,18 @@ class Submissions:
         )
 
     async def _upload(self, source: BinaryIO, filename: str) -> DatasetRecord:
+        await self._admit()
         data = await asyncio.to_thread(self.files.ingest, source=source, filename=filename)
         return await self.catalog.register_dataset(data=data)
+
+    async def _admit(self) -> None:
+        """Check predictable materialization before allocation; SQL rechecks before enqueue."""
+        if self.catalog.database.enforce_resource_guard:
+            evidence = await ResourceEvidenceStore(database=self.catalog.database).read()
+            if not evidence.decision.admit:
+                raise OperationError(
+                    code="RESOURCE_PRESSURE", message="Fresh safe resource evidence is required"
+                )
 
     async def submit(
         self, dataset_id: UUID, settings: RunSettings, key: str | None = None, scope: str = "local"
@@ -106,6 +117,7 @@ class Submissions:
         self, dataset_id: UUID, settings: RunSettings, key: str | None, scope: str, digest: str
     ) -> RunRecord:
         """Load validated input, freeze current server versions and enqueue immutable work."""
+        await self._admit()
         dataset = await self.catalog.get_dataset(dataset_id=dataset_id)
         requests = await asyncio.to_thread(
             self.files.load_requests, digest=dataset.digest, size_bytes=dataset.size_bytes

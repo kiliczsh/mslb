@@ -20,6 +20,7 @@ from mslb_persistence.docker_control import RESOLVED, current, execution, guard
 from mslb_persistence.docker_models import DockerDeployment, DockerResource, DockerRunState
 from mslb_persistence.docker_records import ControlLease, ResourceRecord, resource_record
 from mslb_persistence.errors import StoreError
+from mslb_persistence.resource_admission import require_admission
 
 
 async def _population(session: AsyncSession, run_id: UUID) -> tuple[DockerResource, ...]:
@@ -139,6 +140,7 @@ class DockerResources:
                         raise StoreError(code="INVALID_STATE", message="Static backend is draining")
                     return resource_record(row=existing)
             ordinal, index, _snapshot = _capacity(rows=rows, state=state)
+            await require_admission(database=self.database, session=session)
             resource_id = uuid4()
             reserved = StaticReservation(
                 deployment_id=deployment.id,
@@ -161,6 +163,7 @@ class DockerResources:
             )
             session.add(instance=row)
             await guard(session=session, lease=lease)
+            await require_admission(database=self.database, session=session)
             return resource_record(row=row)
 
         return await self.database.transaction(operation=operation)
@@ -188,6 +191,7 @@ class DockerResources:
                     code="RATE_LIMITED", message="Aggregate physical backend budget reached"
                 )
             ordinal, index, snapshot = _capacity(rows=rows, state=state)
+            await require_admission(database=self.database, session=session)
             deployment = await session.get(entity=DockerDeployment, ident=state.deployment_id)
             if deployment is None:
                 raise StoreError(code="NOT_READY", message="Deployment is missing")
@@ -226,6 +230,7 @@ class DockerResources:
             )
             session.add(instance=row)
             await guard(session=session, lease=lease)
+            await require_admission(database=self.database, session=session)
             return resource_record(row=row)
 
         return await self.database.transaction(operation=operation)
@@ -247,8 +252,10 @@ class DockerResources:
                     code="INVALID_STATE",
                     message="Creation was already authorized or is not dynamic",
                 )
+            await require_admission(database=self.database, session=session)
             row.state = "creating"
             await guard(session=session, lease=lease)
+            await require_admission(database=self.database, session=session)
             return record.definition
 
         return await self.database.transaction(operation=operation)
@@ -303,6 +310,7 @@ class DockerResources:
                 row.state = "unresolved"
             elif action == "authorize_start" and row.kind == "dynamic" and row.state == "observed":
                 execution(lease=lease, job=job)
+                await require_admission(database=self.database, session=session)
                 row.state = "starting"
             elif action == "started" and row.kind == "dynamic" and row.state == "starting":
                 execution(lease=lease, job=job)
@@ -326,6 +334,8 @@ class DockerResources:
                     message="Lifecycle transition requires current owned state",
                 )
             await guard(session=session, lease=lease)
+            if action == "authorize_start":
+                await require_admission(database=self.database, session=session)
             return resource_record(row=row)
 
         return await self.database.transaction(operation=operation)

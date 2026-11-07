@@ -5,7 +5,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from mslb_contracts.traffic import WorkCompleted, WorkRequest
+from mslb_contracts.traffic import BackendHealth, WorkCompleted, WorkRequest
 
 from mslb_controller.backend_http import BackendHttp
 from mslb_controller.errors import TrafficError
@@ -58,13 +58,36 @@ class Router:
 
     async def refresh(self) -> None:
         """Bounded serial health probing; callers must not overlap refresh loops."""
-        for state in self.states.values():
+        for state in tuple(self.states.values()):
             try:
                 state.observed = await self.http.health(spec=state.spec)
                 state.healthy = state.observed.ready
             except TrafficError:
                 state.observed = None
                 state.healthy = False
+
+    def add(self, *, spec: BackendSpec, observed: BackendHealth) -> None:
+        """Add inspected healthy membership while preserving existing reservation objects."""
+        if (
+            len(self.states) >= 4
+            or spec.id in self.states
+            or observed.backend_id != spec.id
+            or not observed.ready
+            or observed.logical_admission_mem_mb != spec.logical_admission_mem_mb
+            or observed.max_inflight != spec.max_inflight
+        ):
+            raise ValueError("New backend membership is inconsistent")
+        self.states[spec.id] = BackendState(spec=spec, healthy=True, observed=observed)
+        self.states = dict(sorted(self.states.items()))
+        self.specs = tuple(state.spec for state in self.states.values())
+
+    def remove(self, *, backend_id: str) -> None:
+        """Forget only a drained member after its external owned cleanup completed."""
+        state = self.states[backend_id]
+        if len(self.states) <= 1 or not state.draining or state.inflight != 0:
+            raise ValueError("Backend must be drained before removal")
+        del self.states[backend_id]
+        self.specs = tuple(member.spec for member in self.states.values())
 
     def reserve(self, request: WorkRequest) -> Reservation:
         """Choose an eligible backend and reserve memory, starts and inflight atomically."""

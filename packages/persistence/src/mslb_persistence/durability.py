@@ -30,6 +30,7 @@ from mslb_persistence.output_models import (
     SavedCheckpoint,
 )
 from mslb_persistence.records import JobRecord, Lease
+from mslb_persistence.resource_admission import require_no_stop
 
 NAMES: tuple[PrefixName, ...] = (
     "run.jsonl",
@@ -569,6 +570,7 @@ class Durability:
                 message="Candidate manifest byte identity mismatch",
             )
             await _verify_index(session=session, run_id=lease.run_id, prefixes=prefixes)
+            await require_no_stop(database=self.database, session=session)
             session.add(
                 instance=PublishedArtifact(
                     run_id=lease.run_id,
@@ -597,6 +599,7 @@ class Durability:
                 raise StoreError(
                     code="FENCE_LOST", message="Worker lost ownership before completion commit"
                 )
+            await require_no_stop(database=self.database, session=session)
             return JobRecord.from_model(row=updated)
 
         return await self.database.transaction(operation=operation)

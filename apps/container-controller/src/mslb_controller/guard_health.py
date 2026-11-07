@@ -11,10 +11,11 @@ from pathlib import Path
 HEALTH = Path("/run/mslb-tmp/guard-health.json")
 
 
-def write_health() -> None:
+def write_health(*, path: Path | None = None) -> None:
     if sys.platform != "linux":
         raise RuntimeError("Guard heartbeat storage requires Linux containers")
-    temporary = HEALTH.with_suffix(suffix=".tmp")
+    destination = HEALTH if path is None else path
+    temporary = destination.with_suffix(suffix=".tmp")
     descriptor = os.open(
         path=temporary,
         flags=os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
@@ -22,15 +23,17 @@ def write_health() -> None:
     )
     with os.fdopen(fd=descriptor, mode="w") as stream:
         stream.write(json.dumps(obj={"updated": time.monotonic()}))
-    temporary.replace(target=HEALTH)
+    temporary.replace(target=destination)
 
 
-def healthy() -> bool:
+def healthy(*, path: Path | None = None) -> bool:
     """Fail closed unless bounded private publisher heartbeat/evidence is current."""
     if sys.platform != "linux":
         return False
     try:
-        descriptor = os.open(path=HEALTH, flags=os.O_RDONLY | os.O_NOFOLLOW)
+        descriptor = os.open(
+            path=HEALTH if path is None else path, flags=os.O_RDONLY | os.O_NOFOLLOW
+        )
         with os.fdopen(fd=descriptor, mode="rb") as stream:
             metadata = os.fstat(fd=stream.fileno())
             if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid():
