@@ -3,7 +3,12 @@
 from http import HTTPStatus
 from uuid import UUID
 
-from mslb_contracts.docker_ownership import ContainerObservation, CreationIntent, StaticReservation
+from mslb_contracts.docker_ownership import (
+    ContainerObservation,
+    CreationIntent,
+    StaticReservation,
+    StoppedStatic,
+)
 from mslb_persistence.database import Database
 from mslb_persistence.docker_catalog import DockerCatalog
 from mslb_persistence.docker_records import ControlLease, DeploymentRecord, ResourceRecord
@@ -47,7 +52,9 @@ class Lifecycle:
         if isinstance(definition, CreationIntent):
             inspection.dynamic(info=info, image=image, net=net, intent=definition)
         else:
-            backend = inspection.static(info=info, image=image, net=net, name=record.name)
+            backend = inspection.static(
+                info=info, image=image, net=net, name=record.name, require_running=False
+            )
             inspection.require(
                 condition=backend == definition.backend and backend in approved.static
             )
@@ -159,6 +166,24 @@ class Lifecycle:
                 lease=lease, resource_id=identifier, action="drain"
             )
         if isinstance(record.definition, StaticReservation):
+            if info.State.get("Running") is False:
+                definition = record.definition
+                record, stopped = await self.observe(lease=lease, identifier=identifier)
+                inspection.require(
+                    condition=stopped.Id == info.Id
+                    and record.definition == definition
+                    and stopped.State.get("Running") is False
+                    and stopped.State.get("Status") in ("exited", "dead")
+                )
+                return await self.resources.release_stopped_static(
+                    lease=lease,
+                    resource_id=identifier,
+                    observed=StoppedStatic(
+                        container_id=stopped.Id,
+                        definition=definition,
+                        status="exited" if stopped.State.get("Status") == "exited" else "dead",
+                    ),
+                )
             health = await self.http.health(spec=BackendSpec(id=record.name))
             # Reinspect immutable identity after the HTTP observation; never stop a static backend.
             await self.observe(lease=lease, identifier=identifier)

@@ -1,9 +1,9 @@
 """Frozen daemon creation intents and inspected ownership receipts."""
 
-from typing import Annotated
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from mslb_contracts.docker_base import DockerId, DockerModel, ImageId
 from mslb_contracts.docker_inventory import StaticBackend
@@ -96,3 +96,17 @@ class StaticReservation(DockerModel):
     resource_id: UUID
     slot: Annotated[int, Field(ge=0, le=3)]
     backend: StaticBackend
+
+
+class StoppedStatic(DockerModel):
+    """Trusted repeated daemon inspection; no fabricated idle HTTP observation."""
+
+    container_id: DockerId
+    status: Literal["exited", "dead"]
+    definition: StaticReservation
+
+    @model_validator(mode="after")
+    def identity(self) -> Self:
+        if self.container_id != self.definition.backend.container_id:
+            raise ValueError("Stopped receipt changes immutable static identity")
+        return self

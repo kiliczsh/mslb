@@ -4,6 +4,7 @@ from http import HTTPStatus
 from uuid import UUID, uuid4
 
 from mslb_contracts.canonical import canonical_bytes
+from mslb_contracts.docker_ownership import StoppedStatic
 from mslb_contracts.docker_runs import (
     ContainerObservation,
     CreationIntent,
@@ -360,6 +361,34 @@ class DockerResources:
             ):
                 raise StoreError(
                     code="INVALID_STATE", message="Static backend is not observed idle"
+                )
+            row.state = "released"
+            await guard(session=session, lease=lease)
+            return resource_record(row=row)
+
+        return await self.database.transaction(operation=operation)
+
+    async def release_stopped_static(
+        self, *, lease: ControlLease, resource_id: UUID, observed: StoppedStatic
+    ) -> ResourceRecord:
+        """Release only the current draining identity after trusted stopped-state inspection."""
+        observed = StoppedStatic.model_validate_json(
+            json_data=canonical_bytes(value=observed.model_dump(mode="json"))
+        )
+
+        async def operation(session: AsyncSession) -> ResourceRecord:
+            await current(session=session, lease=lease)
+            row = await _row(session=session, lease=lease, resource_id=resource_id)
+            actual = resource_record(row=row)
+            if (
+                row.kind != "static"
+                or row.state != "draining"
+                or row.container_id != observed.container_id
+                or actual.definition != observed.definition
+            ):
+                raise StoreError(
+                    code="INVALID_STATE",
+                    message="Stopped static release requires its exact draining reservation",
                 )
             row.state = "released"
             await guard(session=session, lease=lease)

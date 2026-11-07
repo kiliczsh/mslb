@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import pytest
 from mslb_contracts.canonical import canonical_bytes
+from mslb_contracts.docker_ownership import StaticReservation, StoppedStatic
 from mslb_contracts.docker_runs import (
     ContainerObservation,
     CreationIntent,
@@ -680,5 +681,39 @@ def test_operator_retry_requires_expired_exhausted_cleanup_and_preserves_fencing
             )
             finished = await data.control.finish_cleanup(lease=recovered)
             assert finished.status == "failed" and finished.error_code == "INTERRUPTED"
+
+    asyncio.run(main=scenario())
+
+
+def test_stopped_static_receipt_requires_draining_exact_owned_identity() -> None:
+    async def scenario() -> None:
+        async with scratch() as database:
+            data = await prepared(database=database)
+            await data.enqueue()
+            lease = await claim(data=data)
+            record = await data.resources.reserve_static(lease=lease, name="backend-a")
+            assert (
+                isinstance(record.definition, StaticReservation) and record.container_id is not None
+            )
+            stopped = StoppedStatic(
+                container_id=record.container_id, status="exited", definition=record.definition
+            )
+            with pytest.raises(expected_exception=StoreError):
+                await data.resources.release_stopped_static(
+                    lease=lease, resource_id=record.id, observed=stopped
+                )
+            await data.resources.transition(lease=lease, resource_id=record.id, action="drain")
+            with pytest.raises(expected_exception=StoreError):
+                await data.resources.release_stopped_static(
+                    lease=lease, resource_id=uuid4(), observed=stopped
+                )
+            assert (
+                await data.resources.get(lease=lease, resource_id=record.id)
+            ).state == "draining"
+            assert (
+                await data.resources.release_stopped_static(
+                    lease=lease, resource_id=record.id, observed=stopped
+                )
+            ).state == "released"
 
     asyncio.run(main=scenario())

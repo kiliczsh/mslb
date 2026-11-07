@@ -276,6 +276,19 @@ services:
       api: {condition: service_healthy}
       worker: {condition: service_healthy}
     networks: [internal]
+  output-maintenance:
+    <<: *tool
+    image: mslb-python-runtime:local
+    command: [python, -m, mslb_controller.maintenance]
+    mem_limit: 384m
+    memswap_limit: 384m
+    pids_limit: 32
+    environment:
+      DATABASE_URL: postgresql://mslb:local-demo-only@postgres/mslb
+    volumes: [outputs:/data/outputs]
+    networks: [control-data]
+    depends_on:
+      postgres: {condition: service_healthy}
   docker-recovery:
     <<: *tool
     image: mslb-python-runtime:local

@@ -190,7 +190,14 @@ def _common(
     )
 
 
-def static(info: ContainerInfo, image: ImageInfo, net: NetworkInfo, name: str) -> StaticBackend:
+def static(
+    *,
+    info: ContainerInfo,
+    image: ImageInfo,
+    net: NetworkInfo,
+    name: str,
+    require_running: bool = True,
+) -> StaticBackend:
     """Bind an inspected static backend to trusted deployment image/network/configuration."""
     require(condition=name in {"backend-a", "backend-b"})
     _common(
@@ -228,7 +235,14 @@ def static(info: ContainerInfo, image: ImageInfo, net: NetworkInfo, name: str) -
             for key in actual
         )
     )
-    require(condition=info.State.get("Running") is True)
+    require(
+        condition=info.State.get("Running") is True
+        or (
+            not require_running
+            and info.State.get("Running") is False
+            and info.State.get("Status") in ("exited", "dead")
+        )
+    )
     endpoint = mapping(value=mapping(value=info.NetworkSettings["Networks"])[net.Name])
     require(condition=set(strings(value=endpoint.get("Aliases"))) == {f"{PROJECT}-{name}-1", name})
     require(condition=config.get("StopTimeout") == 5)
