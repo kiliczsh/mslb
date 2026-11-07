@@ -10,6 +10,8 @@ from typing import Annotated, BinaryIO, override
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from mslb_contracts.capacity_profiles import validate_request_limit
+
 MAX_REQUESTS = 10_000
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_ROW_BYTES = 2048
@@ -148,8 +150,11 @@ def _integer(value: str, field: str) -> int:
     return int(value)
 
 
-def read_requests(stream: BinaryIO) -> tuple[RequestInput, ...]:
+def read_requests(
+    stream: BinaryIO, *, max_requests: int = MAX_REQUESTS
+) -> tuple[RequestInput, ...]:
     """Parse CSV incrementally, bounding physical and quoted logical rows."""
+    validate_request_limit(value=max_requests)
     lines = _BoundedLines(stream=stream)
     reader = csv.reader(lines, strict=True)
     try:
@@ -168,7 +173,7 @@ def read_requests(stream: BinaryIO) -> tuple[RequestInput, ...]:
             if row is None:
                 break
             field = f"rows[{len(requests) + 2}]"
-            if len(requests) >= MAX_REQUESTS:
+            if len(requests) >= max_requests:
                 raise InputError(field=field, reason="request_count_exceeded")
             if len(row) != len(header):
                 raise InputError(field=field, reason="row_width")

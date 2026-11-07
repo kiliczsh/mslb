@@ -10,7 +10,9 @@ from contextlib import ExitStack
 from threading import Event
 from uuid import uuid4
 
+from mslb_contracts.capacity_profiles import request_limit
 from mslb_contracts.inputs import InputError
+from mslb_contracts.runs import stored_request_limit
 from mslb_engine.models import SimulationError
 from mslb_engine.replay import ReplayError
 from mslb_persistence.catalog import Catalog
@@ -79,6 +81,12 @@ class Worker:
         snapshot = self.inputs.load_snapshot(
             key=run.snapshot_key, expected_digest=run.snapshot_digest
         )
+        if stored_request_limit(settings=snapshot.configuration) > request_limit(
+            profile=self.database.capacity_profile
+        ):
+            raise OperationError(
+                code="RESOURCE_LIMIT_EXCEEDED", message="Run exceeds worker installation capacity"
+            )
         recovery = on_loop(loop=loop, operation=self.durable.recovery(lease=lease))
         self._retired_spools(lease=lease, loop=loop, control=control)
         with ExitStack() as stack:

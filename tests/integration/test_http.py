@@ -167,7 +167,7 @@ def test_rest_crud_upload_durable_execution_downloads_and_sse(
                 assert "event: progress" in stream.text and "event: status" in stream.text
                 assert (
                     await client.get(
-                        url=f"simulations/{run_id}/stream", headers={"Last-Event-ID": "30001"}
+                        url=f"simulations/{run_id}/stream", headers={"Last-Event-ID": "150001"}
                     )
                 ).status_code == HTTPStatus.UNPROCESSABLE_CONTENT.value
                 schema = await client.get(url="openapi.json")

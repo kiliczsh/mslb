@@ -7,11 +7,13 @@ import signal
 import sys
 from pathlib import Path
 from threading import Event
+from uuid import UUID
 
 from mslb_application.managed_files import ManagedFiles
 from mslb_application.notifications import OutboxNotifications
 from mslb_application.storage_values import StorageLimits
 from mslb_application.worker import Worker
+from mslb_contracts.capacity_profiles import parse_capacity_profile, validate_isolated_profile
 from mslb_persistence.database import Database
 from mslb_persistence.jobs import Jobs
 
@@ -23,14 +25,25 @@ from mslb_worker.redis_notifications import RedisHints
 
 async def main(*, once: bool) -> None:
     """Run supervised durable polling with bounded Redis hints and coordinated shutdown."""
+    profile = parse_capacity_profile(
+        value=os.environ.get(key="CAPACITY_PROFILE", default="standard")
+    )
+    isolation_id = (
+        UUID(hex=os.environ["SCENARIO_INSTALLATION_ID"])
+        if os.environ.get(key="SCENARIO_INSTALLATION_ID") is not None
+        else None
+    )
+    validate_isolated_profile(profile=profile, installation_id=isolation_id)
     database = Database(
         url=os.environ["DATABASE_URL"],
         schema=os.environ.get(key="DATABASE_SCHEMA", default="public"),
+        capacity_profile=profile,
     )
     limits = StorageLimits(
+        capacity_profile=profile,
         min_free_bytes=int(
             os.environ.get(key="STORAGE_MIN_FREE_BYTES", default=str(object=2 * 1024**3))
-        )
+        ),
     )
     inputs = await asyncio.to_thread(
         ManagedFiles,

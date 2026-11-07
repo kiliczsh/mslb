@@ -42,7 +42,7 @@ def configure_routes(*, router: APIRouter, auth_enabled: bool) -> None:
                     "in": "header",
                     "required": False,
                     "description": "Resume after this committed sequence; defaults to zero.",
-                    "schema": {"type": "string", "pattern": "^[0-9]{1,5}$", "default": "0"},
+                    "schema": {"type": "string", "pattern": "^[0-9]{1,6}$", "default": "0"},
                     "example": "42",
                 }
             ]

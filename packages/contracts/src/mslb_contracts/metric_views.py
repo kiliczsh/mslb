@@ -6,7 +6,7 @@ from uuid import UUID
 from pydantic import Field
 
 from mslb_contracts.read_base import JsonValue, ReadModel
-from mslb_contracts.runs import Digest, RunSettings
+from mslb_contracts.runs import Digest, ReadRunSettings
 
 
 class MetricsView(ReadModel):
@@ -42,7 +42,7 @@ class ComparisonRun(ReadModel):
 
     run_id: UUID
     bundle_digest: Digest
-    configuration: RunSettings
+    configuration: ReadRunSettings
     differing_settings: Annotated[tuple[str, ...], Field(max_length=2)]
     metrics: dict[str, JsonValue]
 

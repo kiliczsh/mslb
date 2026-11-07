@@ -7,7 +7,7 @@ from contextlib import ExitStack
 from pathlib import Path
 
 from mslb_contracts.inputs import read_requests, read_servers
-from mslb_contracts.runs import BundleManifest, RunSnapshot
+from mslb_contracts.runs import BundleManifest, RunSnapshot, stored_request_limit
 from mslb_engine.metrics import MetricAccumulator
 from mslb_engine.replay import validate_trace
 from mslb_engine.simulator import Simulation
@@ -74,7 +74,10 @@ def execute_bundle(
         event_count = decision_count = 0
         simulation = Simulation(servers=servers, requests=requests, config=config)
         metrics = MetricAccumulator(
-            requests=requests, servers=servers, max_series=config.max_metric_series
+            requests=requests,
+            servers=servers,
+            max_series=config.max_metric_series,
+            max_requests=config.max_requests,
         )
         with ExitStack() as stack:
             outputs = {
@@ -196,7 +199,12 @@ def verify_bundle(directory: Path) -> BundleManifest:
                 code="VALIDATION_FAILED", message="Server artifact differs from snapshot"
             )
     with (directory / "requests.csv").open(mode="rb") as stream:
-        if read_requests(stream=stream) != snapshot.requests:
+        if (
+            read_requests(
+                stream=stream, max_requests=stored_request_limit(settings=snapshot.configuration)
+            )
+            != snapshot.requests
+        ):
             raise OperationError(
                 code="VALIDATION_FAILED", message="Request artifact differs from snapshot"
             )

@@ -135,6 +135,7 @@ class Journal:
                 requests=requests,
                 servers=servers,
                 max_series=snapshot.configuration.max_metric_series,
+                max_requests=self.simulation.config.max_requests,
             )
         else:
             self.restore(recovery=recovery)

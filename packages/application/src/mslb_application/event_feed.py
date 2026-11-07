@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import AsyncGenerator
 from uuid import UUID
 
+from mslb_contracts.capacity_profiles import MAX_LOGICAL_EVENTS
 from mslb_contracts.queries import RunView
 from mslb_persistence.database import Database, StoreError
 from mslb_persistence.durability import Durability
@@ -17,7 +18,7 @@ class EventFeed:
     """Replay committed events and bounded progress frames without blocking the worker."""
 
     def __init__(self, database: Database, run_id: UUID, after_sequence: int = 0) -> None:
-        if type(after_sequence) is not int or not 0 <= after_sequence <= 30_000:
+        if type(after_sequence) is not int or not 0 <= after_sequence <= MAX_LOGICAL_EVENTS:
             raise OperationError(code="VALIDATION_ERROR", message="Invalid Last-Event-ID")
         self.reads, self.events = Reads(database=database), Durability(database=database)
         self.run_id, self.sequence = run_id, after_sequence

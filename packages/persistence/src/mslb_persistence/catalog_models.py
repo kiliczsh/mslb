@@ -69,7 +69,9 @@ class Dataset(Base):
     __tablename__ = "datasets"
     __table_args__ = (
         CheckConstraint(
-            sqltext="request_count BETWEEN 1 AND 10000 AND size_bytes BETWEEN 1 AND 10485760",
+            sqltext="capacity_profile IN ('standard','stress') "
+            "AND request_count BETWEEN 1 AND CASE WHEN capacity_profile = 'stress' "
+            "THEN 50000 ELSE 10000 END AND size_bytes BETWEEN 1 AND 10485760",
             name="bounded_population",
         ),
         CheckConstraint(
@@ -89,6 +91,9 @@ class Dataset(Base):
     storage_key: Mapped[str] = MappedColumn[str](String(length=256))
     source_filename: Mapped[str] = MappedColumn[str](String(length=255))
     request_count: Mapped[int] = MappedColumn[int](Integer)
+    capacity_profile: Mapped[str] = MappedColumn[str](
+        String(length=16), server_default=text(text="'standard'"), default="standard"
+    )
     earliest_arrival: Mapped[int] = MappedColumn[int](Integer)
     latest_arrival: Mapped[int] = MappedColumn[int](Integer)
     size_bytes: Mapped[int] = MappedColumn[int](Integer)

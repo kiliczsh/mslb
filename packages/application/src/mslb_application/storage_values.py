@@ -4,6 +4,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from mslb_contracts.capacity_profiles import CapacityProfile, request_limit
+
 from mslb_application.errors import OperationError
 
 
@@ -14,8 +16,10 @@ class StorageLimits:
     quota_bytes: int = 5 * 1024**3
     min_free_bytes: int = 2 * 1024**3
     max_entries: int = 100_000
+    capacity_profile: CapacityProfile = "standard"
 
     def __post_init__(self) -> None:
+        request_limit(profile=self.capacity_profile)
         if any(
             type(value) is not int or value < 0
             for value in (self.quota_bytes, self.min_free_bytes, self.max_entries)

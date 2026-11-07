@@ -5,6 +5,7 @@ from typing import Annotated, Literal, Self
 
 from pydantic import Field, model_validator
 
+from mslb_contracts.capacity_profiles import MAX_LOGICAL_EVENTS
 from mslb_contracts.checkpoints import ArtifactPrefix, CheckpointModel, PrefixName, Tick
 from mslb_contracts.runs import Digest
 
@@ -32,7 +33,7 @@ class OutputChunk(CheckpointModel):
 class PersistedEvent(CheckpointModel):
     """Expose a committed logical event with its immutable replay sequence."""
 
-    sequence: Annotated[int, Field(ge=1, le=30_000)]
+    sequence: Annotated[int, Field(ge=1, le=MAX_LOGICAL_EVENTS)]
     t: Tick
     event: Literal["REQUEST_ARRIVED", "REQUEST_STARTED", "REQUEST_FINISHED", "REQUEST_DROPPED"]
     request_id: Annotated[str, Field(min_length=1, max_length=128)]
@@ -73,7 +74,7 @@ class ProgressCommit(CheckpointModel):
     prefixes: Annotated[tuple[ArtifactPrefix, ...], Field(min_length=4, max_length=4)]
     metrics: StoredFile | None = None
     chunks: Annotated[tuple[OutputChunk, ...], Field(max_length=64)] = ()
-    events: Annotated[tuple[PersistedEvent, ...], Field(max_length=30_000)] = ()
+    events: Annotated[tuple[PersistedEvent, ...], Field(max_length=MAX_LOGICAL_EVENTS)] = ()
 
 
 class RecoveryState(CheckpointModel):

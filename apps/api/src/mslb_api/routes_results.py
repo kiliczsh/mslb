@@ -8,6 +8,7 @@ from fastapi import APIRouter, Query, Request
 from mslb_application.errors import OperationError
 from mslb_application.event_feed import EventFeed
 from mslb_application.queries import ArtifactName, ChartMetric, Queries
+from mslb_contracts.capacity_profiles import STRESS_REQUESTS
 from mslb_contracts.durability import PersistedEvent
 from mslb_contracts.metric_views import ChartView, MetricsView, ServerMetricView
 from mslb_contracts.pagination import Page
@@ -79,7 +80,7 @@ def register_results(*, router: APIRouter, queries: Queries, database: Database)
         server_offset: Annotated[int, Query(ge=0, le=64)] = 0,
         request_kind: Literal["pending", "active"] = "pending",
         server_id: Annotated[str | None, Query(max_length=128)] = None,
-        request_offset: Annotated[int, Query(ge=0, le=10_000)] = 0,
+        request_offset: Annotated[int, Query(ge=0, le=STRESS_REQUESTS)] = 0,
     ) -> Response:
         """Read bounded saved membership and request slices at a logical tick."""
         return json_response(
@@ -139,7 +140,7 @@ def register_results(*, router: APIRouter, queries: Queries, database: Database)
     async def stream(run_id: UUID, request: Request) -> Response:
         """Replay committed IDs and bounded ephemeral progress through SSE."""
         last = request.headers.get("last-event-id", "0")
-        if not last.isascii() or not last.isdecimal() or len(last) > 5:
+        if not last.isascii() or not last.isdecimal() or len(last) > 6:
             raise OperationError(code="VALIDATION_ERROR", message="Invalid Last-Event-ID")
         feed = EventFeed(database=database, run_id=run_id, after_sequence=int(last))
         initial = await queries.run(run_id=run_id)

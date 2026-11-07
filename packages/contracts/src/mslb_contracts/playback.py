@@ -5,6 +5,7 @@ from uuid import UUID
 
 from pydantic import Field
 
+from mslb_contracts.capacity_profiles import STRESS_REQUESTS
 from mslb_contracts.fractions import FractionValue
 from mslb_contracts.inputs import ServerInput
 from mslb_contracts.read_base import ReadModel
@@ -18,11 +19,11 @@ type ExactValue = Annotated[int, Field(ge=0, le=2**53 - 1)] | FractionValue
 class PlaybackServer(ServerInput):
     """Expose one server's saved membership, reservations and interval activity."""
 
-    active_count: Annotated[int, Field(ge=0, le=10_000)]
+    active_count: Annotated[int, Field(ge=0, le=STRESS_REQUESTS)]
     reserved_mem_mb: Annotated[int, Field(ge=0, le=10**9)] | None
     allocated_cpu: ExactValue | None
     consumed_cpu: ExactValue | None
-    starts: Annotated[int, Field(ge=0, le=10_000)] | None
+    starts: Annotated[int, Field(ge=0, le=STRESS_REQUESTS)] | None
 
 
 class PlaybackDecision(ReadModel):
@@ -51,12 +52,12 @@ class PlaybackView(ReadModel):
     servers: Annotated[tuple[PlaybackServer, ...], Field(max_length=32)]
     membership_added: Annotated[tuple[Identifier, ...], Field(max_length=64)]
     membership_removed: Annotated[tuple[Identifier, ...], Field(max_length=64)]
-    queue_depth: Annotated[int, Field(ge=0, le=10_000)]
-    active_count: Annotated[int, Field(ge=0, le=10_000)]
+    queue_depth: Annotated[int, Field(ge=0, le=STRESS_REQUESTS)]
+    active_count: Annotated[int, Field(ge=0, le=STRESS_REQUESTS)]
     request_kind: Literal["pending", "active"]
     server_id: Identifier | None
     server_present: bool
-    request_offset: Annotated[int, Field(ge=0, le=10_000)]
-    request_count: Annotated[int, Field(ge=0, le=10_000)]
+    request_offset: Annotated[int, Field(ge=0, le=STRESS_REQUESTS)]
+    request_count: Annotated[int, Field(ge=0, le=STRESS_REQUESTS)]
     request_ids: Annotated[tuple[Identifier, ...], Field(max_length=100)]
     decisions: Annotated[tuple[PlaybackDecision, ...], Field(max_length=2)]

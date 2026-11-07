@@ -4,12 +4,14 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from mslb_contracts.capacity_profiles import MAX_LOGICAL_EVENTS, STRESS_REQUESTS
 from mslb_contracts.fractions import FractionValue
 from mslb_contracts.inputs import PositiveValue, ServerInput
 from mslb_contracts.runs import Digest
 
 type Tick = Annotated[int, Field(ge=0, le=1_000_000)]
 type Count = Annotated[int, Field(ge=0, le=10_000)]
+type RequestCount = Annotated[int, Field(ge=0, le=STRESS_REQUESTS)]
 type Identifier = Annotated[str, Field(min_length=1, max_length=128)]
 type Integral = Annotated[int, Field(ge=0, le=10**15)]
 type PrefixName = Literal[
@@ -35,8 +37,8 @@ class ServerExecution(CheckpointModel):
 
     server: ServerInput
     reserved_mem_mb: Annotated[int, Field(ge=0, le=1_000_000_000)]
-    start_counter: Count
-    active: Annotated[tuple[ActiveWork, ...], Field(max_length=10_000)]
+    start_counter: RequestCount
+    active: Annotated[tuple[ActiveWork, ...], Field(max_length=STRESS_REQUESTS)]
 
 
 class ScalingObservation(CheckpointModel):
@@ -44,7 +46,7 @@ class ScalingObservation(CheckpointModel):
 
     ending_tick: Tick
     cpu_utilization: FractionValue
-    drops: Count
+    drops: RequestCount
     drop_ratio: FractionValue
 
 
@@ -100,13 +102,13 @@ class ServerIntegrals(CheckpointModel):
 class MetricExecution(CheckpointModel):
     """Preserve bounded exact metric accumulation at a completed interval."""
 
-    arrivals: Annotated[tuple[Identifier, ...], Field(max_length=10_000)]
-    starts: Annotated[tuple[StartedRequest, ...], Field(max_length=10_000)]
-    finishes: Annotated[tuple[EndedRequest, ...], Field(max_length=10_000)]
-    drops: Annotated[tuple[EndedRequest, ...], Field(max_length=10_000)]
+    arrivals: Annotated[tuple[Identifier, ...], Field(max_length=STRESS_REQUESTS)]
+    starts: Annotated[tuple[StartedRequest, ...], Field(max_length=STRESS_REQUESTS)]
+    finishes: Annotated[tuple[EndedRequest, ...], Field(max_length=STRESS_REQUESTS)]
+    drops: Annotated[tuple[EndedRequest, ...], Field(max_length=STRESS_REQUESTS)]
     servers: Annotated[tuple[ServerIntegrals, ...], Field(min_length=1, max_length=10_000)]
-    queue_peak: Count
-    queue_integral: Annotated[int, Field(ge=0, le=10**10)]
+    queue_peak: RequestCount
+    queue_integral: Annotated[int, Field(ge=0, le=STRESS_REQUESTS * 1_000_000)]
 
 
 class ArtifactPrefix(CheckpointModel):
@@ -125,14 +127,14 @@ class IntervalCheckpoint(CheckpointModel):
     engine_version: Annotated[str, Field(min_length=1, max_length=64)]
     snapshot_digest: Digest
     next_tick: Annotated[int, Field(ge=1, le=1_000_000)]
-    input_cursor: Count
+    input_cursor: RequestCount
     executed_intervals: Annotated[int, Field(ge=1, le=1_000_000)]
-    event_count: Annotated[int, Field(ge=0, le=30_000)]
+    event_count: Annotated[int, Field(ge=0, le=MAX_LOGICAL_EVENTS)]
     decision_count: Annotated[int, Field(ge=0, le=1_000_000)]
     recorded_samples: Annotated[int, Field(ge=1, le=1_000_000)]
     round_robin_anchor: Identifier | None
     servers: Annotated[tuple[ServerExecution, ...], Field(min_length=1, max_length=64)]
-    pending_ids: Annotated[tuple[Identifier, ...], Field(max_length=10_000)]
+    pending_ids: Annotated[tuple[Identifier, ...], Field(max_length=STRESS_REQUESTS)]
     autoscaler: ScalingExecution
     metrics: MetricExecution
     prefixes: Annotated[tuple[ArtifactPrefix, ...], Field(min_length=4, max_length=4)]

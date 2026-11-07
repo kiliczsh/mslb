@@ -170,7 +170,7 @@ def test_verified_playback_matches_saved_intervals_events_and_http_bounds(
                     and response.json()["bundle_digest"] == view.bundle_digest
                 )
                 assert (
-                    await client.get(url=f"simulations/{runs[0]}/playback?request_offset=10001")
+                    await client.get(url=f"simulations/{runs[0]}/playback?request_offset=50001")
                 ).status_code == HTTPStatus.UNPROCESSABLE_CONTENT.value
                 assert (
                     await client.get(url=f"simulations/{runs[0]}/playback?tick=7")

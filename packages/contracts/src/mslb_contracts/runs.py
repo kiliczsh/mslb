@@ -1,11 +1,18 @@
 """Strict logical execution settings and immutable reproducibility snapshots."""
 
 import hashlib
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from mslb_contracts.canonical import canonical_bytes
+from mslb_contracts.capacity_profiles import (
+    STANDARD_REQUESTS,
+    STRESS_REQUESTS,
+    CapacityProfile,
+    request_limit,
+    validate_request_limit,
+)
 from mslb_contracts.fractions import FractionValue
 from mslb_contracts.inputs import InputError, PositiveValue, RequestInput, ServerInput, input_digest
 
@@ -73,10 +80,39 @@ class LegacyRunSettings(ExecutionSettings):
     mode: Literal["sequential_compat"]
 
 
-type StoredRunSettings = RunSettings | LegacyRunSettings
+class StressRunSettings(RunSettings):
+    """Freeze an explicitly selected installation stress ceiling outside public create DTOs."""
+
+    capacity_profile: Literal["stress"]
+    max_requests: Literal[50_000]
+
+
+type StoredRunSettings = RunSettings | LegacyRunSettings | StressRunSettings
+type ReadRunSettings = RunSettings | StressRunSettings
+
+
+def stored_request_limit(*, settings: StoredRunSettings) -> int:
+    """Read the immutable execution bound while preserving historical standard settings."""
+    value = settings.max_requests if isinstance(settings, StressRunSettings) else STANDARD_REQUESTS
+    validate_request_limit(value=value)
+    return value
+
+
+def settings_for_profile(*, settings: RunSettings, profile: CapacityProfile) -> StoredRunSettings:
+    """Attach a server-selected stress bound; this is not a client request option."""
+    if request_limit(profile=profile) == STANDARD_REQUESTS:
+        return settings
+    return StressRunSettings.model_validate(
+        obj=settings.model_dump(mode="python")
+        | {"capacity_profile": "stress", "max_requests": STRESS_REQUESTS}
+    )
 
 
 def public_settings(*, settings: StoredRunSettings) -> RunSettings:
+    if isinstance(settings, StressRunSettings):
+        return RunSettings.model_validate(
+            obj=settings.model_dump(mode="python", exclude={"capacity_profile", "max_requests"})
+        )
     if isinstance(settings, RunSettings):
         return settings
     return RunSettings.model_validate(
@@ -91,11 +127,18 @@ class RunSnapshot(BaseModel):
     schema_version: Annotated[int, Field(ge=1, le=1)] = 1
     engine_version: Annotated[str, Field(min_length=1, max_length=64)]
     servers: Annotated[tuple[ServerInput, ...], Field(min_length=1, max_length=64)]
-    requests: Annotated[tuple[RequestInput, ...], Field(min_length=1, max_length=10_000)]
+    requests: Annotated[tuple[RequestInput, ...], Field(min_length=1, max_length=STRESS_REQUESTS)]
     configuration: StoredRunSettings
     dataset_digest: Digest
     server_snapshot_digest: Digest
     snapshot_digest: Digest
+
+    @model_validator(mode="after")
+    def population(self) -> Self:
+        """Reject larger populations unless their effective stress ceiling is frozen."""
+        if len(self.requests) > stored_request_limit(settings=self.configuration):
+            raise ValueError("Request population exceeds its frozen capacity profile")
+        return self
 
 
 class ArtifactMetadata(BaseModel):
@@ -113,6 +156,7 @@ def verify_snapshot_identity(snapshot: RunSnapshot) -> None:
     ).hexdigest()
     if (
         snapshot.snapshot_digest != expected
+        or len(snapshot.requests) > stored_request_limit(settings=snapshot.configuration)
         or snapshot.dataset_digest != input_digest(records=snapshot.requests)
         or snapshot.server_snapshot_digest != input_digest(records=snapshot.servers)
         or snapshot.servers != tuple(sorted(snapshot.servers, key=lambda server: server.id))
@@ -133,7 +177,7 @@ class BundleManifest(BaseModel):
     snapshot_digest: Digest
     bundle_digest: Digest
     terminal_tick: Annotated[int, Field(ge=0, le=1_000_000)]
-    event_count: Annotated[int, Field(ge=1, le=30_000)]
+    event_count: Annotated[int, Field(ge=1, le=3 * STRESS_REQUESTS)]
     decision_count: Annotated[int, Field(ge=0, le=1_000_000)]
     independent_replay: Literal["passed"]
     original_validator: Literal["passed", "not_applicable"]

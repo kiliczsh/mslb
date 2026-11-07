@@ -38,7 +38,7 @@ export function createPlaybackStore(terminalTick: number) {
     servers: (serverOffset) =>
       set({ serverOffset: Math.max(0, Math.min(32, serverOffset)), playing: false }),
     requests: (requestOffset) =>
-      set({ requestOffset: Math.max(0, Math.min(10_000, requestOffset)), playing: false }),
+      set({ requestOffset: Math.max(0, Math.min(50_000, requestOffset)), playing: false }),
     inspect: (serverId) => set({ serverId, requestOffset: 0, playing: false }),
   }));
 }

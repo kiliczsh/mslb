@@ -7,7 +7,7 @@ from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import uvicorn
 from mslb_api.app import create_app, get_mcp
@@ -15,6 +15,7 @@ from mslb_api.mcp_adapter import McpAdapter
 from mslb_api.settings import Settings
 from mslb_application.files import ManagedFiles, StorageLimits
 from mslb_application.worker import Worker
+from mslb_contracts.capacity_profiles import CapacityProfile
 from mslb_contracts.http import SimulationCreate
 from mslb_persistence.database import Database
 
@@ -50,16 +51,22 @@ class HttpWorkspace:
 
 
 @asynccontextmanager
-async def http_workspace(*, root: Path) -> AsyncGenerator[HttpWorkspace]:
-    async with scratch() as database:
-        limits = StorageLimits(min_free_bytes=0)
+async def http_workspace(
+    *, root: Path, capacity_profile: CapacityProfile = "standard"
+) -> AsyncGenerator[HttpWorkspace]:
+    async with scratch(capacity_profile=capacity_profile) as database:
+        limits = StorageLimits(min_free_bytes=0, capacity_profile=capacity_profile)
         inputs = await asyncio.to_thread(ManagedFiles, root=root / "inputs", limits=limits)
         outputs = await asyncio.to_thread(ManagedFiles, root=root / "outputs", limits=limits)
         listener = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM)
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
         app = create_app(
-            settings=Settings(allowed_hosts=(f"127.0.0.1:{port}",)),
+            settings=Settings(
+                allowed_hosts=(f"127.0.0.1:{port}",),
+                capacity_profile=capacity_profile,
+                isolation_id=uuid4() if capacity_profile == "stress" else None,
+            ),
             database=database,
             inputs=inputs,
             outputs=outputs,

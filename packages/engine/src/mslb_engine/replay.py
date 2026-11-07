@@ -102,7 +102,7 @@ def validate_trace(
     separately by golden fixtures. Dynamic membership requires an independently
     reconstructed scaling-decision sidecar.
     """
-    if not 1 <= len(servers) <= 64 or not 1 <= len(requests) <= 10_000:
+    if not 1 <= len(servers) <= 64 or not 1 <= len(requests) <= config.max_requests:
         raise ReplayError("Invalid input collection size")
     if len(servers) > config.max_metric_series:
         raise ReplayError("Initial cluster exceeds metric history budget")

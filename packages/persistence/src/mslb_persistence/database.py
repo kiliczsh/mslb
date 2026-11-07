@@ -4,6 +4,7 @@ import asyncio
 import re
 from collections.abc import Awaitable, Callable
 
+from mslb_contracts.capacity_profiles import CapacityProfile, request_limit
 from sqlalchemy import literal, select
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError
@@ -20,7 +21,11 @@ from mslb_persistence.errors import StoreError as StoreError
 class Database:
     """Own bounded PostgreSQL connections and repeatable-read transaction retries."""
 
-    def __init__(self, url: str, schema: str = "public") -> None:
+    def __init__(
+        self, url: str, schema: str = "public", *, capacity_profile: CapacityProfile = "standard"
+    ) -> None:
+        request_limit(profile=capacity_profile)
+        self.capacity_profile: CapacityProfile = capacity_profile
         if not re.fullmatch(pattern=r"[a-z][a-z0-9_]{0,62}", string=schema):
             raise StoreError(code="VALIDATION_ERROR", message="Invalid database schema")
         parsed = make_url(name_or_url=url)

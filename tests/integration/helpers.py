@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
 
+from mslb_contracts.capacity_profiles import CapacityProfile
 from mslb_contracts.inputs import RequestInput, ServerInput, read_requests, read_servers
 from mslb_persistence.database import Database
 from mslb_persistence.migrations import migrate
@@ -13,10 +14,15 @@ from sqlalchemy.schema import CreateSchema, DropSchema
 
 
 @asynccontextmanager
-async def scratch(*, retain_on_failure: bool = False) -> AsyncGenerator[Database]:
+async def scratch(
+    *, retain_on_failure: bool = False, capacity_profile: CapacityProfile = "standard"
+) -> AsyncGenerator[Database]:
     url = os.environ["TEST_DATABASE_URL"]
     schema = "mslb_test_" + uuid4().hex
-    admin, database = Database(url=url), Database(url=url, schema=schema)
+    admin, database = (
+        Database(url=url),
+        Database(url=url, schema=schema, capacity_profile=capacity_profile),
+    )
     async with admin.engine.begin() as connection:
         await connection.execute(statement=CreateSchema(name=schema))
     try:

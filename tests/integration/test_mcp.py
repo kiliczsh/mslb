@@ -510,7 +510,7 @@ def test_official_http_client_auth_origin_and_request_correlation(
                 ):
                     assert client.server_info is not None
                     assert client.server_info.name == "mslb"
-                    assert client.server_info.version == "2.0.0"
+                    assert client.server_info.version == "2.1.0"
                     assert len((await client.list_tools()).tools) == 13
                     result = await client.call_tool(name="list_strategies", arguments={})
                     assert not result.is_error and result.meta is not None

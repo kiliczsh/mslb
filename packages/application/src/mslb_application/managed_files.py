@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import BinaryIO
 
 from mslb_contracts.canonical import canonical_bytes
+from mslb_contracts.capacity_profiles import request_limit
 from mslb_contracts.catalog import DatasetRegistration
 from mslb_contracts.inputs import MAX_UPLOAD_BYTES, RequestInput, input_digest, read_requests
 from mslb_contracts.runs import RunSnapshot
@@ -303,7 +304,9 @@ class ManagedFiles:
             self._stage(chunks=_read_chunks(stream=source), maximum=MAX_UPLOAD_BYTES) as original,
         ):
             with original.path.open(mode="rb") as stream:
-                requests = read_requests(stream=stream)
+                requests = read_requests(
+                    stream=stream, max_requests=request_limit(profile=self.limits.capacity_profile)
+                )
             digest = input_digest(records=requests)
             with self._stage(
                 chunks=request_bytes(requests=requests), maximum=MAX_UPLOAD_BYTES
@@ -317,6 +320,7 @@ class ManagedFiles:
                     size_bytes=normalized.size_bytes,
                     original_digest=original.sha256,
                     source_size_bytes=original.size_bytes,
+                    capacity_profile=self.limits.capacity_profile,
                 )
                 self._publish(staged=original, key=f"uploads/{original.sha256}.csv")
                 self._publish(staged=normalized, key=f"datasets/{digest}.csv")
@@ -327,7 +331,9 @@ class ManagedFiles:
         if not path.is_file() or path.stat().st_size != size_bytes:
             raise OperationError(code="VALIDATION_FAILED", message="Stored dataset length mismatch")
         with path.open(mode="rb") as stream:
-            requests = read_requests(stream=stream)
+            requests = read_requests(
+                stream=stream, max_requests=request_limit(profile=self.limits.capacity_profile)
+            )
         expected = hashlib.sha256()
         for chunk in request_bytes(requests=requests):
             expected.update(chunk)

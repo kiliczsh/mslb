@@ -4,6 +4,7 @@ import hashlib
 from uuid import UUID
 
 from mslb_contracts.canonical import canonical_bytes
+from mslb_contracts.capacity_profiles import MAX_LOGICAL_EVENTS
 from mslb_contracts.checkpoints import ArtifactPrefix, PrefixName
 from mslb_contracts.durability import (
     OutputChunk,
@@ -12,8 +13,8 @@ from mslb_contracts.durability import (
     RecoveryState,
     StoredFile,
 )
-from mslb_contracts.runs import BundleManifest
-from pydantic import ValidationError
+from mslb_contracts.runs import BundleManifest, StoredRunSettings, stored_request_limit
+from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -164,6 +165,14 @@ def _validate(
     old_tick = previous.next_tick if previous is not None else 0
     old_intervals = previous.executed_intervals if previous is not None else 0
     horizon = run.configuration.get("max_simulation_ticks")
+    try:
+        request_capacity = stored_request_limit(
+            settings=TypeAdapter(StoredRunSettings).validate_python(run.configuration)
+        )
+    except ValueError:
+        raise StoreError(
+            code="VALIDATION_FAILED", message="Stored capacity profile is invalid"
+        ) from None
     _require(
         condition=type(horizon) is int and data.next_tick <= horizon,
         message="Progress exceeds the frozen horizon",
@@ -216,8 +225,8 @@ def _validate(
             message="Prefix does not match committed chunks",
         )
     _require(
-        condition=prefixes["run.jsonl"].records <= 30_000
-        and prefixes["drop_reasons.jsonl"].records <= 10_000
+        condition=prefixes["run.jsonl"].records <= 3 * request_capacity
+        and prefixes["drop_reasons.jsonl"].records <= request_capacity
         and prefixes["timeline.jsonl"].records
         == data.executed_intervals + (data.kind == "terminal"),
         message="Output counts exceed the frozen execution envelope",
@@ -455,7 +464,7 @@ class Durability:
         if any(
             type(value) is not int for value in (after_sequence, limit, start_tick, end_tick)
         ) or not (
-            0 <= after_sequence <= 30_000
+            0 <= after_sequence <= MAX_LOGICAL_EVENTS
             and 1 <= limit <= 500
             and 0 <= start_tick <= end_tick <= 1_000_000
         ):

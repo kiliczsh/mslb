@@ -65,7 +65,8 @@ def write_checkpoint(
         and simulation.requests == requests
         and simulation.config == domain_config(settings=snapshot.configuration)
         and metrics.requests == simulation.by_id
-        and metrics.max_series == simulation.config.max_metric_series,
+        and metrics.max_series == simulation.config.max_metric_series
+        and metrics.max_requests == simulation.config.max_requests,
         message="Execution differs from its immutable snapshot",
     )
     state = _capture(snapshot=snapshot, simulation=simulation, metrics=metrics, streams=prefixes)

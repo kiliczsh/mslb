@@ -95,3 +95,6 @@ check-docker-proxy:
 
 check-browser:
     pwsh -NoProfile -File scripts/check-browser.ps1
+
+check-scenarios:
+    pwsh -NoProfile -File scripts/check-scenarios.ps1

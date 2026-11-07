@@ -21,7 +21,7 @@ class Simulation:
         requests: tuple[Request, ...],
         config: RunConfig,
     ) -> None:
-        if not 1 <= len(servers) <= 64 or not 1 <= len(requests) <= 10_000:
+        if not 1 <= len(servers) <= 64 or not 1 <= len(requests) <= config.max_requests:
             raise SimulationError(
                 code="VALIDATION_ERROR", message="Input count outside supported envelope"
             )

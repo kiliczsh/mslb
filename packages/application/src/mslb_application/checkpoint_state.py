@@ -5,6 +5,7 @@ import re
 from collections import Counter
 from collections.abc import Mapping
 from fractions import Fraction
+from itertools import chain
 from typing import BinaryIO
 
 from mslb_contracts.checkpoints import (
@@ -54,6 +55,11 @@ def _server_input(server: Server) -> ServerInput:
     )
 
 
+def _quoted_size(*, value: str) -> int:
+    """Count actual escaped UTF-8 identifier bytes without constructing checkpoint DTOs."""
+    return len(json.dumps(obj=value, ensure_ascii=False).encode(encoding="utf-8"))
+
+
 def _preflight(simulation: Simulation, metrics: MetricAccumulator, maximum: int) -> None:
     """Bound duplicate DTO/JSON allocation before constructing it.
 
@@ -73,23 +79,36 @@ def _preflight(simulation: Simulation, metrics: MetricAccumulator, maximum: int)
         and simulation.tick > 0,
         message="Checkpoint requires a completed, observed, nonterminal interval",
     )
+    pending = simulation.autoscaler.pending
     estimated = (
         8192
+        + sum(16 + _quoted_size(value=identifier) for identifier in metrics.arrivals)
         + sum(
-            512
-            + 8
-            * len(json.dumps(obj=request.request_id, ensure_ascii=False).encode(encoding="utf-8"))
-            + 6
-            * len(
-                json.dumps(
-                    obj=metrics.starts.get(request.request_id, (0, ""))[1], ensure_ascii=False
-                ).encode(encoding="utf-8")
-            )
-            for request in simulation.requests
+            128 + _quoted_size(value=identifier) + _quoted_size(value=server_id)
+            for identifier, (_, server_id) in metrics.starts.items()
         )
+        + sum(
+            64 + _quoted_size(value=identifier)
+            for identifier in chain(metrics.finishes, metrics.drops)
+        )
+        + sum(
+            128 + _quoted_size(value=identifier)
+            for active in simulation.active.values()
+            for identifier in active
+        )
+        + sum(16 + _quoted_size(value=request.request_id) for request in simulation.pending)
         + len(metrics.servers) * 2048
         + len(simulation.servers) * 4096
         + len(simulation.autoscaler.history) * 512
+        + (
+            512
+            + sum(
+                16 + _quoted_size(value=identifier)
+                for identifier in chain(pending.server_ids_added, pending.server_ids_removed)
+            )
+            if pending is not None
+            else 0
+        )
     )
     fractions = (
         [value for active in simulation.active.values() for value in active.values()]
@@ -290,7 +309,10 @@ def _restore(snapshot: RunSnapshot, state: IntervalCheckpoint) -> RestoredCheckp
             message="Membership capacities differ from frozen inputs",
         )
     metrics = MetricAccumulator(
-        requests=requests, servers=servers, max_series=simulation.config.max_metric_series
+        requests=requests,
+        servers=servers,
+        max_series=simulation.config.max_metric_series,
+        max_requests=simulation.config.max_requests,
     )
     metrics.current_servers = members
     metrics.arrivals = set(state.metrics.arrivals)
@@ -538,7 +560,8 @@ def _restore_scaler(
             value=item.drop_ratio.to_fraction(), bits=simulation.config.max_fraction_bits
         )
         _require(
-            condition=0 <= cpu <= 1 and 0 <= ratio <= 10_000, message="Invalid scaling observation"
+            condition=0 <= cpu <= 1 and 0 <= ratio <= simulation.config.max_requests,
+            message="Invalid scaling observation",
         )
         drops = drops_by_tick[item.ending_tick - 1]
         arrivals = arrivals_by_tick[item.ending_tick - 1]

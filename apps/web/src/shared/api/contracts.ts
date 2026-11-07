@@ -44,7 +44,7 @@ export const datasetSchema = z.strictObject({
   id,
   digest,
   source_filename: z.string().min(1).max(255),
-  request_count: integer(10_000, 1),
+  request_count: integer(50_000, 1),
   earliest_arrival: integer(999_999),
   latest_arrival: integer(999_999),
   size_bytes: integer(10 * 1024 ** 2, 1),
@@ -86,6 +86,10 @@ export const settingsSchema = z.strictObject({
   autoscaling: scalingSchema,
 });
 export type Settings = z.infer<typeof settingsSchema>;
+export const readSettingsSchema = z.union([
+  settingsSchema,
+  settingsSchema.extend({ capacity_profile: z.literal("stress"), max_requests: z.literal(50_000) }),
+]);
 export const defaultSettings: Settings = {
   mode: "sequential",
   strategy: "first_fit",
@@ -125,7 +129,7 @@ export const runSchema = z.strictObject({
   dataset_digest: digest,
   server_snapshot_digest: digest,
   engine_version: z.string().min(1).max(64),
-  configuration: settingsSchema,
+  configuration: readSettingsSchema,
   status: statusSchema,
   attempts: integer(3),
   created_at: time,
@@ -137,7 +141,7 @@ export const runSchema = z.strictObject({
       kind: z.enum(["checkpoint", "terminal"]),
       next_tick: integer(1_000_000),
       executed_intervals: integer(1_000_000),
-      committed_events: integer(30_000),
+      committed_events: integer(150_000),
     })
     .nullable(),
 });
@@ -147,7 +151,7 @@ const manifestSchema = z.strictObject({
   snapshot_digest: digest,
   bundle_digest: digest,
   terminal_tick: integer(1_000_000),
-  event_count: integer(30_000, 1),
+  event_count: integer(150_000, 1),
   decision_count: integer(1_000_000),
   independent_replay: z.literal("passed"),
   original_validator: z.enum(["passed", "not_applicable"]),

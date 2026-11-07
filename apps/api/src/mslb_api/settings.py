@@ -7,8 +7,14 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
+from uuid import UUID
 
 from mslb_application.errors import OperationError
+from mslb_contracts.capacity_profiles import (
+    CapacityProfile,
+    parse_capacity_profile,
+    validate_isolated_profile,
+)
 
 
 def valid_origin(origin: str) -> bool:
@@ -40,9 +46,12 @@ class Settings:
     request_limit: int = 32
     stream_limit: int = 20
     mcp_session_idle_seconds: float = 60
+    capacity_profile: CapacityProfile = "standard"
+    isolation_id: UUID | None = None
 
     def __post_init__(self) -> None:
         """Reject inconsistent service access or execution bounds at construction."""
+        validate_isolated_profile(profile=self.capacity_profile, installation_id=self.isolation_id)
         if (
             type(self.auth_enabled) is not bool
             or (
@@ -80,6 +89,12 @@ class Settings:
         return cls(
             auth_enabled=enabled == "true",
             token=os.environ.get(key="AUTH_TOKEN", default=""),
+            capacity_profile=parse_capacity_profile(
+                value=os.environ.get(key="CAPACITY_PROFILE", default="standard")
+            ),
+            isolation_id=UUID(hex=os.environ["SCENARIO_INSTALLATION_ID"])
+            if os.environ.get(key="SCENARIO_INSTALLATION_ID") is not None
+            else None,
             allowed_hosts=tuple(
                 os.environ.get(
                     key="ALLOWED_HOSTS", default="localhost:8000,127.0.0.1:8000,api:8000"

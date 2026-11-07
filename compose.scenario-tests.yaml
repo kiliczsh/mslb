@@ -1,0 +1,60 @@
+# Real fixture execution in a unique installation, without host ports or shared data.
+services:
+  postgres:
+    extends: {file: docker-compose.yml, service: postgres}
+    pull_policy: never
+    networks: !override [internal]
+    volumes: !override [scenario-postgres:/var/lib/postgresql/data]
+  redis:
+    extends: {file: docker-compose.yml, service: redis}
+  migrate:
+    extends: {file: docker-compose.yml, service: migrate}
+    profiles: !reset []
+  worker:
+    extends: {file: docker-compose.yml, service: worker}
+    profiles: !reset []
+    environment:
+      CAPACITY_PROFILE: ${SCENARIO_CAPACITY_PROFILE:?Explicit capacity required}
+      SCENARIO_INSTALLATION_ID: ${SCENARIO_INSTALLATION_ID:?Isolation UUID required}
+    depends_on:
+      redis: {condition: service_healthy}
+  api:
+    extends: {file: docker-compose.yml, service: api}
+    profiles: !reset []
+    ports: !reset []
+    networks: !override [internal]
+    environment:
+      AUTH_ENABLED: "true"
+      AUTH_TOKEN: isolated_scenario_credential_12345678901234567890
+      ALLOWED_HOSTS: api:8000,127.0.0.1:8000
+      ALLOWED_ORIGINS: ""
+      CAPACITY_PROFILE: ${SCENARIO_CAPACITY_PROFILE:?Explicit capacity required}
+      SCENARIO_INSTALLATION_ID: ${SCENARIO_INSTALLATION_ID:?Isolation UUID required}
+  scenario-checks:
+    image: mslb-python-tools:local
+    command: [python, scripts/check_scenarios.py]
+    user: 1000:1000
+    read_only: true
+    tmpfs: [/tmp:size=128m]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    cpus: 1
+    mem_limit: 768m
+    memswap_limit: 768m
+    environment:
+      AUTH_TOKEN: isolated_scenario_credential_12345678901234567890
+      CAPACITY_PROFILE: ${SCENARIO_CAPACITY_PROFILE:?Explicit capacity required}
+      SCENARIO_INSTALLATION_ID: ${SCENARIO_INSTALLATION_ID:?Isolation UUID required}
+    volumes: [scenario-evidence:/data/exports]
+    networks: [internal]
+
+networks:
+  internal: {internal: true}
+
+volumes:
+  inputs:
+  outputs:
+  api-state:
+  scenario-postgres:
+  scenario-evidence:

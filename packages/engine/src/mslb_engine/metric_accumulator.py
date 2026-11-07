@@ -6,15 +6,23 @@ from mslb_engine.errors import SimulationError
 from mslb_engine.event_models import TickFrame
 from mslb_engine.input_models import Request, Server
 from mslb_engine.metric_values import JsonValue, ServerTotals, _bounded, distribution, exact_value
+from mslb_engine.validation import _request_limit
 
 
 class MetricAccumulator:
     """Retain only bounded request times and totals, never interval history."""
 
     def __init__(
-        self, requests: tuple[Request, ...], servers: tuple[Server, ...], max_series: int = 10_000
+        self,
+        requests: tuple[Request, ...],
+        servers: tuple[Server, ...],
+        max_series: int = 10_000,
+        *,
+        max_requests: int = 10_000,
     ) -> None:
-        if not 1 <= len(requests) <= 10_000:
+        _request_limit(value=max_requests)
+        self.max_requests = max_requests
+        if not 1 <= len(requests) <= max_requests:
             raise SimulationError(
                 code="VALIDATION_ERROR", message="Invalid metric request population"
             )
@@ -183,12 +191,15 @@ class MetricAccumulator:
             ),
             "queue_depth_peak": self.queue_peak,
             "queue_depth_integral": self.queue_integral,
-            "waiting": distribution(values=waiting).to_data(),
-            "response": distribution(values=response).to_data(),
-            "execution": distribution(values=execution).to_data(),
-            "cluster": cluster.to_data(),
+            "waiting": distribution(values=waiting, max_values=self.max_requests).to_data(),
+            "response": distribution(values=response, max_values=self.max_requests).to_data(),
+            "execution": distribution(values=execution, max_values=self.max_requests).to_data(),
+            "cluster": cluster.to_data(max_requests=self.max_requests),
             "servers": {
-                sid: {**total.to_data(), "active": sid in self.current_servers}
+                sid: {
+                    **total.to_data(max_requests=self.max_requests),
+                    "active": sid in self.current_servers,
+                }
                 for sid, total in sorted(self.servers.items())
             },
         }

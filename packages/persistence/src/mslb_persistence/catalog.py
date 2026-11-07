@@ -6,9 +6,10 @@ from datetime import datetime, timedelta
 from typing import Literal
 from uuid import UUID, uuid4
 
+from mslb_contracts.capacity_profiles import request_limit
 from mslb_contracts.catalog import DatasetRegistration, ServerView
 from mslb_contracts.inputs import ServerInput
-from mslb_contracts.runs import RunSnapshot, verify_snapshot_identity
+from mslb_contracts.runs import RunSnapshot, stored_request_limit, verify_snapshot_identity
 from sqlalchemy import delete, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -140,6 +141,12 @@ class Catalog:
 
     async def register_dataset(self, data: DatasetRegistration) -> DatasetRecord:
         """Reuse normalized identity while preserving actual upload provenance."""
+        if request_limit(profile=data.capacity_profile) > request_limit(
+            profile=self.database.capacity_profile
+        ):
+            raise StoreError(
+                code="RESOURCE_LIMIT_EXCEEDED", message="Dataset exceeds installation capacity"
+            )
         if data.latest_arrival < data.earliest_arrival or (
             (data.original_digest is None) != (data.source_size_bytes is None)
         ):
@@ -260,6 +267,12 @@ class Catalog:
     ) -> RunRecord:
         """Freeze a coherent catalog/dataset view and create run, job, key and outbox atomically."""
         verify_snapshot_identity(snapshot=snapshot)
+        if stored_request_limit(settings=snapshot.configuration) > request_limit(
+            profile=self.database.capacity_profile
+        ):
+            raise StoreError(
+                code="RESOURCE_LIMIT_EXCEEDED", message="Run exceeds installation capacity"
+            )
         if (
             not re.fullmatch(pattern=r"[0-9a-f]{64}", string=body_digest)
             or not 1 <= len(scope.encode()) <= 128

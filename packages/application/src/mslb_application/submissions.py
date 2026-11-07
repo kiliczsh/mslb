@@ -7,7 +7,7 @@ from uuid import UUID
 
 from mslb_contracts.canonical import canonical_bytes
 from mslb_contracts.inputs import ServerInput
-from mslb_contracts.runs import RunSettings
+from mslb_contracts.runs import RunSettings, settings_for_profile
 from mslb_persistence.catalog import Catalog
 from mslb_persistence.records import DatasetRecord, RunRecord
 
@@ -49,7 +49,9 @@ class Submissions:
             data=canonical_bytes(
                 value={
                     "dataset_id": str(object=dataset_id),
-                    "settings": settings.model_dump(mode="json"),
+                    "settings": settings_for_profile(
+                        settings=settings, profile=self.files.limits.capacity_profile
+                    ).model_dump(mode="json"),
                 }
             )
         ).hexdigest()
@@ -119,7 +121,12 @@ class Submissions:
             for s in current
         )
         snapshot = await asyncio.to_thread(
-            make_snapshot, servers=servers, requests=requests, settings=settings
+            make_snapshot,
+            servers=servers,
+            requests=requests,
+            settings=settings_for_profile(
+                settings=settings, profile=self.files.limits.capacity_profile
+            ),
         )
         await asyncio.to_thread(self.files.save_snapshot, snapshot=snapshot)
         return await self.catalog.enqueue(

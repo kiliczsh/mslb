@@ -4,6 +4,7 @@ import hashlib
 from typing import BinaryIO
 
 from mslb_contracts.canonical import canonical_bytes
+from mslb_contracts.capacity_profiles import STANDARD_REQUESTS, STRESS_REQUESTS
 from mslb_contracts.fractions import FractionValue
 from mslb_contracts.inputs import InputError, RequestInput, ServerInput, input_digest
 from mslb_contracts.runs import (
@@ -12,8 +13,10 @@ from mslb_contracts.runs import (
     RunSnapshot,
     ScalingSettings,
     StoredRunSettings,
+    StressRunSettings,
     TemplateSettings,
     public_settings,
+    stored_request_limit,
 )
 from mslb_engine import __version__
 from mslb_engine.models import AutoscalingPolicy, Request, RunConfig, Server, ServerTemplate
@@ -73,14 +76,15 @@ def domain_config(settings: StoredRunSettings) -> RunConfig:
         max_fraction_bits=settings.max_fraction_bits,
         max_metric_series=settings.max_metric_series,
         autoscaling=policy,
+        max_requests=stored_request_limit(settings=settings),
     )
 
 
-def settings_from_domain(config: RunConfig) -> RunSettings:
+def settings_from_domain(config: RunConfig) -> StoredRunSettings:
     """Translate exact engine policy to strict transport settings without float conversion."""
     policy = config.autoscaling
     template = policy.server_template
-    return RunSettings(
+    settings = RunSettings(
         mode=config.mode,
         strategy=config.strategy,
         queue_timeout_ticks=config.queue_timeout_ticks,
@@ -113,6 +117,12 @@ def settings_from_domain(config: RunConfig) -> RunSettings:
             if template is not None
             else None,
         ),
+    )
+    if config.max_requests == STANDARD_REQUESTS:
+        return settings
+    return StressRunSettings.model_validate(
+        obj=settings.model_dump(mode="python")
+        | {"capacity_profile": "stress", "max_requests": STRESS_REQUESTS}
     )
 
 

@@ -7,6 +7,7 @@ from typing import Annotated, BinaryIO, cast
 
 import ijson
 from mslb_contracts.canonical import canonical_bytes
+from mslb_contracts.capacity_profiles import STRESS_REQUESTS
 from mslb_contracts.fractions import FractionValue
 from mslb_contracts.inputs import ServerInput
 from mslb_contracts.queries import JsonValue, ReadModel, RunView, ServerMetricView
@@ -96,11 +97,11 @@ class TimelineSample(ReadModel):
     """Decode one bounded saved server sample for result queries."""
 
     server_id: str
-    active_ids: Annotated[tuple[str, ...], Field(max_length=10_000)]
+    active_ids: Annotated[tuple[str, ...], Field(max_length=STRESS_REQUESTS)]
     reserved_mem_mb: Annotated[int, Field(ge=0, le=64 * 10**9)]
     capacity: Annotated[int, Field(ge=1, le=10**9)]
     memory_capacity: Annotated[int, Field(ge=1, le=10**9)]
-    starts: Annotated[int, Field(ge=0, le=10_000)]
+    starts: Annotated[int, Field(ge=0, le=STRESS_REQUESTS)]
     allocated_cpu: WireNumber
     consumed_cpu: WireNumber
 
@@ -111,7 +112,7 @@ class TimelineFrame(ReadModel):
     t: Annotated[int, Field(ge=0, le=1_000_000)]
     duration_ticks: Annotated[int, Field(ge=0, le=1_000_000)]
     terminal: bool
-    pending_ids: Annotated[tuple[str, ...], Field(max_length=10_000)]
+    pending_ids: Annotated[tuple[str, ...], Field(max_length=STRESS_REQUESTS)]
     membership: Annotated[tuple[ServerInput, ...], Field(max_length=64)]
     servers: Annotated[tuple[TimelineSample, ...], Field(max_length=64)]
 

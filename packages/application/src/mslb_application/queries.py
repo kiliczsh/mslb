@@ -9,6 +9,7 @@ from uuid import UUID
 
 from ijson.common import JSONError
 from mslb_contracts.canonical import canonical_bytes
+from mslb_contracts.capacity_profiles import STRESS_REQUESTS
 from mslb_contracts.durability import PersistedEvent
 from mslb_contracts.playback import PlaybackView
 from mslb_contracts.queries import (
@@ -415,7 +416,7 @@ class Queries:
             any(type(value) is not int for value in (tick, server_offset, request_offset))
             or not 0 <= tick <= 1_000_000
             or not 0 <= server_offset <= 64
-            or not 0 <= request_offset <= 10_000
+            or not 0 <= request_offset <= STRESS_REQUESTS
             or request_kind not in {"pending", "active"}
             or (request_kind == "active") != (server_id is not None)
             or (

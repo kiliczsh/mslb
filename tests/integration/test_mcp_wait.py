@@ -161,7 +161,7 @@ def test_official_http_progress_precedes_result_and_only_reports_persisted_state
             async with Client(server=streamable_http_client(url=workspace.url)) as client:
                 assert client.server_info is not None
                 assert client.server_info.name == "mslb"
-                assert client.server_info.version == "2.0.0"
+                assert client.server_info.version == "2.1.0"
                 task = asyncio.create_task(
                     coro=client.call_tool(
                         name="wait_for_simulations",

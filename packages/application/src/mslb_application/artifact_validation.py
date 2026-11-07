@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal
 
 from mslb_contracts.inputs import read_requests, read_servers
-from mslb_contracts.runs import ArtifactMetadata, BundleManifest, RunSnapshot
+from mslb_contracts.runs import ArtifactMetadata, BundleManifest, RunSnapshot, stored_request_limit
 from mslb_engine.replay import validate_trace
 
 from mslb_application.errors import OperationError
@@ -121,7 +121,12 @@ def validate_artifact_files(
         if read_servers(stream=stream) != snapshot.servers:
             raise OperationError(code="VALIDATION_FAILED", message="Assembled server inputs differ")
     with (directory / "requests.csv").open(mode="rb") as stream:
-        if read_requests(stream=stream) != snapshot.requests:
+        if (
+            read_requests(
+                stream=stream, max_requests=stored_request_limit(settings=snapshot.configuration)
+            )
+            != snapshot.requests
+        ):
             raise OperationError(
                 code="VALIDATION_FAILED", message="Assembled request inputs differ"
             )

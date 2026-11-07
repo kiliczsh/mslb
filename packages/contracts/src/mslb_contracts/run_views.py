@@ -6,8 +6,9 @@ from uuid import UUID
 
 from pydantic import Field
 
+from mslb_contracts.capacity_profiles import MAX_LOGICAL_EVENTS
 from mslb_contracts.read_base import JobStatus, ReadModel
-from mslb_contracts.runs import Digest, RunSettings
+from mslb_contracts.runs import Digest, ReadRunSettings
 
 
 class RunProgress(ReadModel):
@@ -17,7 +18,7 @@ class RunProgress(ReadModel):
     kind: Literal["checkpoint", "terminal"]
     next_tick: Annotated[int, Field(ge=0, le=1_000_000)]
     executed_intervals: Annotated[int, Field(ge=0, le=1_000_000)]
-    committed_events: Annotated[int, Field(ge=0, le=30_000)]
+    committed_events: Annotated[int, Field(ge=0, le=MAX_LOGICAL_EVENTS)]
 
 
 class RunView(ReadModel):
@@ -29,7 +30,7 @@ class RunView(ReadModel):
     dataset_digest: Digest
     server_snapshot_digest: Digest
     engine_version: Annotated[str, Field(min_length=1, max_length=64)]
-    configuration: RunSettings
+    configuration: ReadRunSettings
     status: JobStatus
     attempts: Annotated[int, Field(ge=0, le=3)]
     created_at: datetime

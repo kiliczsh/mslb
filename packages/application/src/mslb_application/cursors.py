@@ -10,6 +10,7 @@ from typing import Annotated
 from uuid import UUID
 
 from mslb_contracts.canonical import canonical_bytes
+from mslb_contracts.capacity_profiles import MAX_LOGICAL_EVENTS
 from mslb_contracts.queries import ReadModel
 from pydantic import Field, ValidationError
 
@@ -21,7 +22,7 @@ class Position(ReadModel):
 
     created_at: datetime | None = None
     id: UUID | None = None
-    sequence: Annotated[int, Field(ge=0, le=30_000)] = 0
+    sequence: Annotated[int, Field(ge=0, le=MAX_LOGICAL_EVENTS)] = 0
     key: Annotated[str, Field(min_length=1, max_length=128)] | None = None
 
 

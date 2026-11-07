@@ -6,6 +6,7 @@ from pathlib import Path
 import uvicorn
 from fastapi import FastAPI
 from mslb_application.managed_files import ManagedFiles
+from mslb_application.storage_values import StorageLimits
 from mslb_persistence.database import Database
 
 from mslb_api.app import create_app
@@ -13,12 +14,20 @@ from mslb_api.settings import Settings, cursor_secret
 
 
 def build() -> FastAPI:
+    settings = Settings.environment()
+    limits = StorageLimits(capacity_profile=settings.capacity_profile)
     return create_app(
-        settings=Settings.environment(),
-        database=Database(url=os.environ["DATABASE_URL"]),
-        inputs=ManagedFiles(root=Path(os.environ.get(key="INPUT_ROOT", default="/data/inputs"))),
+        settings=settings,
+        database=Database(
+            url=os.environ["DATABASE_URL"], capacity_profile=settings.capacity_profile
+        ),
+        inputs=ManagedFiles(
+            root=Path(os.environ.get(key="INPUT_ROOT", default="/data/inputs")), limits=limits
+        ),
         outputs=ManagedFiles(
-            root=Path(os.environ.get(key="OUTPUT_ROOT", default="/data/outputs")), read_only=True
+            root=Path(os.environ.get(key="OUTPUT_ROOT", default="/data/outputs")),
+            limits=limits,
+            read_only=True,
         ),
         signing_key=cursor_secret(
             root=Path(os.environ.get(key="API_STATE_ROOT", default="/data/api-state"))

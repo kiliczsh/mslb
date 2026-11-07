@@ -65,6 +65,10 @@ def create_app(
     close_database: bool = False,
 ) -> FastAPI:
     """Compose shared services, access/error boundaries, REST routes and MCP lifespan."""
+    if not database.capacity_profile == settings.capacity_profile == inputs.limits.capacity_profile:
+        raise OperationError(
+            code="VALIDATION_ERROR", message="Installation capacity profiles differ"
+        )
     catalog, jobs = Catalog(database=database), Jobs(database=database)
     submissions, queries = (
         Submissions(catalog=catalog, files=inputs),
@@ -189,7 +193,12 @@ def create_app(
     ):
         app.add_exception_handler(exc_class_or_status_code=exception, handler=failure)
 
-    register_health(app=app, database=database)
+    register_health(
+        app=app,
+        database=database,
+        capacity_profile=settings.capacity_profile,
+        isolation_id=settings.isolation_id,
+    )
     register_servers(router=router, services=services)
     register_datasets(router=router, submissions=submissions, queries=queries)
     register_simulations(router=router, services=services, queries=queries)

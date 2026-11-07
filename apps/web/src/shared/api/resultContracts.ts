@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { fractionSchema } from "../fractions.js";
-import { serverInputSchema, settingsSchema } from "./contracts.js";
+import { readSettingsSchema, serverInputSchema } from "./contracts.js";
 
 const tick = z.number().int().min(0).max(1_000_000);
-const count = z.number().int().min(0).max(10_000);
+const count = z.number().int().min(0).max(50_000);
 const safe = z.number().int().min(-Number.MAX_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER);
 const digest = z.string().regex(/^[0-9a-f]{64}$/);
 export const valueSchema = z.union([safe, fractionSchema]);
@@ -94,7 +94,7 @@ export const comparisonSchema = z.strictObject({
       z.strictObject({
         run_id: z.uuid(),
         bundle_digest: digest,
-        configuration: settingsSchema,
+        configuration: readSettingsSchema,
         differing_settings: z.array(z.enum(["strategy", "autoscaling"])).max(2),
         metrics: z
           .record(
@@ -166,7 +166,7 @@ export type PlaybackSelection = {
   server_id: string | null;
 };
 export const eventSchema = z.strictObject({
-  sequence: z.number().int().min(1).max(30_000),
+  sequence: z.number().int().min(1).max(150_000),
   t: tick,
   event: z.enum(["REQUEST_ARRIVED", "REQUEST_STARTED", "REQUEST_FINISHED", "REQUEST_DROPPED"]),
   request_id: identifier,

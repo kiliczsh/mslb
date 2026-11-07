@@ -5,7 +5,7 @@ from fractions import Fraction
 from typing import Literal, Self
 
 from mslb_engine.errors import SimulationError
-from mslb_engine.validation import _integer
+from mslb_engine.validation import _integer, _request_limit
 
 type Mode = Literal["concurrent", "sequential"]
 
@@ -107,8 +107,10 @@ class RunConfig:
     max_fraction_bits: int = 4096
     max_metric_series: int = 10_000
     autoscaling: AutoscalingPolicy = AutoscalingPolicy()
+    max_requests: int = 10_000
 
     def __post_init__(self) -> None:
+        _request_limit(value=self.max_requests)
         if self.mode not in ("concurrent", "sequential") or self.strategy not in STRATEGIES:
             raise SimulationError(
                 code="VALIDATION_ERROR", message="Unknown logical mode or strategy"

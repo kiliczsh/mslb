@@ -49,9 +49,11 @@ class Distribution:
         }
 
 
-def distribution(values: Sequence[int]) -> Distribution:
+def distribution(values: Sequence[int], *, max_values: int = 10_000) -> Distribution:
     """Nearest-rank percentiles over at most the admitted request population."""
-    if len(values) > 10_000:
+    if type(max_values) is not int or max_values not in {10_000, 50_000}:
+        raise SimulationError(code="VALIDATION_ERROR", message="Unsupported latency sample bound")
+    if len(values) > max_values:
         raise SimulationError(code="RESOURCE_LIMIT_EXCEEDED", message="Too many latency samples")
     if any(type(value) is not int or value < 0 for value in values):
         raise SimulationError(
@@ -88,16 +90,16 @@ class ServerTotals:
     memory_reserved_mb_ticks: int = 0
     memory_capacity_mb_ticks: int = 0
 
-    def to_data(self) -> dict[str, JsonValue]:
+    def to_data(self, *, max_requests: int = 10_000) -> dict[str, JsonValue]:
         """Encode exact integrals and latency summaries into canonical metric values."""
         return {
             "cpu_units_per_tick": self.cpu_units_per_tick,
             "mem_mb": self.mem_mb,
             "started": self.started,
             "finished": self.finished,
-            "waiting": distribution(values=self.waits).to_data(),
-            "response": distribution(values=self.responses).to_data(),
-            "execution": distribution(values=self.executions).to_data(),
+            "waiting": distribution(values=self.waits, max_values=max_requests).to_data(),
+            "response": distribution(values=self.responses, max_values=max_requests).to_data(),
+            "execution": distribution(values=self.executions, max_values=max_requests).to_data(),
             "cpu_allocated": exact_value(value=self.cpu_allocated),
             "cpu_consumed": exact_value(value=self.cpu_consumed),
             "cpu_capacity_ticks": exact_value(value=Fraction(numerator=self.cpu_capacity_ticks)),
