@@ -7,10 +7,8 @@ from mslb_application.resource_policy import ResourcePolicy
 from mslb_contracts.resources import (
     MIB,
     SERVICE_LIMITS_MB,
-    HostMemoryEvidence,
     ResourceProbe,
     ServiceMemory,
-    host_memory_headroom,
     memory_bounds,
     parse_resource_guard,
     safe_to_admit,
@@ -20,12 +18,12 @@ from pydantic import ValidationError
 EPOCH = datetime(year=2026, month=11, day=6, tzinfo=UTC)
 
 
-def probe(*, second: int = 0, percent: int = 10) -> ResourceProbe:
+def probe(*, second: int = 0, percent: int = 10, desktop: bool = False) -> ResourceProbe:
     return ResourceProbe(
         measured_at=EPOCH + timedelta(seconds=second),
         engine_memory_bytes=8 * 1024**3,
         available_memory_bytes=7 * 1024**3,
-        desktop_engine=False,
+        desktop_engine=desktop,
         services=tuple(
             ServiceMemory(
                 service=name,
@@ -49,76 +47,15 @@ def warm(*, policy: ResourcePolicy) -> None:
         assert result.admit is (second == 2)
 
 
-def desktop_probe(*, second: int = 0, host_second: int | None = None) -> ResourceProbe:
-    return probe(second=second).model_copy(
-        update={
-            "desktop_engine": True,
-            "host_memory": HostMemoryEvidence(
-                measured_at=EPOCH
-                + timedelta(seconds=second if host_second is None else host_second),
-                total_memory_bytes=32 * 1024**3,
-                available_memory_bytes=10 * 1024**3,
-            ),
-        }
-    )
-
-
-def test_desktop_requires_distinct_host_samples_and_independent_host_headroom() -> None:
+@pytest.mark.parametrize(argnames="desktop", argvalues=(False, True))
+def test_docker_engines_admit_using_only_fresh_engine_evidence(desktop: bool) -> None:
     policy = ResourcePolicy()
     for second in range(3):
-        value = desktop_probe(second=second, host_second=0)
-        assert not policy.evaluate(probe=value, now=value.measured_at).admit
-    for second in (3, 4):
-        value = desktop_probe(second=second)
+        value = probe(second=second, desktop=desktop)
         decision = policy.evaluate(probe=value, now=value.measured_at)
-    assert decision.admit and decision.cap_sum_bytes == 3744 * MIB
-    assert safe_to_admit(probe=value)
-    assert value.host_memory is not None
-    required = host_memory_headroom(probe=value)
-    for offset, expected in ((-1, "HOST_MEMORY_HEADROOM"), (0, "WARMING_UP")):
-        current = value.model_copy(
-            update={
-                "host_memory": value.host_memory.model_copy(
-                    update={"available_memory_bytes": required + offset}
-                )
-            }
-        )
-        decision = ResourcePolicy().evaluate(probe=current, now=current.measured_at)
-        assert decision.reason == expected
-        assert safe_to_admit(probe=current) is (offset == 0)
-
-
-@pytest.mark.parametrize(argnames="host_second", argvalues=[-4, 1])
-def test_host_age_is_independent_from_fresh_vm_evidence(host_second: int) -> None:
-    value = desktop_probe(host_second=host_second)
-    decision = ResourcePolicy().evaluate(probe=value, now=value.measured_at)
-    assert decision.reason == "HOST_MEMORY_STALE" and decision.stop_running
-    assert not safe_to_admit(probe=value)
-
-
-def test_future_host_clock_cannot_poison_valid_host_recovery() -> None:
-    policy = ResourcePolicy()
-    forged = desktop_probe(host_second=1000)
-    assert policy.evaluate(probe=forged, now=EPOCH).reason == "HOST_MEMORY_STALE"
-    assert policy.last_measurement is None and policy.last_host_measurement is None
-    for second in range(3):
-        value = desktop_probe(second=second)
-        assert policy.evaluate(probe=value, now=value.measured_at).admit is (second == 2)
-
-
-def test_host_sampler_may_finish_after_vm_sampler_but_not_after_reader_clock() -> None:
-    value = desktop_probe(host_second=1)
-    assert not safe_to_admit(probe=value)
-    assert safe_to_admit(probe=value, now=EPOCH + timedelta(seconds=1))
-
-
-def test_desktop_vm_evidence_cannot_replace_host_headroom() -> None:
-    policy = ResourcePolicy()
-    for second in range(4):
-        value = probe(second=second).model_copy(update={"desktop_engine": True})
-        result = policy.evaluate(probe=value, now=value.measured_at)
-        assert not result.admit and result.stop_running
-        assert result.reason == "HOST_MEMORY_UNAVAILABLE"
+        assert decision.admit is (second == 2)
+        assert decision.cap_sum_bytes == 3680 * MIB
+        assert safe_to_admit(probe=value)
 
 
 def test_admission_needs_three_distinct_cool_samples_and_counts_future_growth() -> None:
@@ -135,9 +72,10 @@ def test_admission_needs_three_distinct_cool_samples_and_counts_future_growth() 
     assert decision.admit and decision.required_headroom_bytes > 2 * 1024**3
 
 
-def test_pressure_hysteresis_refuses_at_seventy_stops_at_eighty_five_and_resumes_below_sixty() -> (
-    None
-):
+@pytest.mark.parametrize(argnames="desktop", argvalues=(False, True))
+def test_pressure_hysteresis_refuses_at_seventy_stops_at_eighty_five_and_resumes_below_sixty(
+    desktop: bool,
+) -> None:
     policy = ResourcePolicy()
     warm(policy=policy)
     for second, percent, reason, stop in (
@@ -145,11 +83,11 @@ def test_pressure_hysteresis_refuses_at_seventy_stops_at_eighty_five_and_resumes
         (4, 85, "RESOURCE_PRESSURE", True),
         (5, 60, "WARMING_UP", False),
     ):
-        value = probe(second=second, percent=percent)
+        value = probe(second=second, percent=percent, desktop=desktop)
         decision = policy.evaluate(probe=value, now=value.measured_at)
         assert not decision.admit and decision.reason == reason and decision.stop_running is stop
     for second in (6, 7, 8):
-        value = probe(second=second, percent=59)
+        value = probe(second=second, percent=59, desktop=desktop)
         decision = policy.evaluate(probe=value, now=value.measured_at)
         assert decision.admit is (second == 8)
 
@@ -158,10 +96,13 @@ def test_pressure_hysteresis_refuses_at_seventy_stops_at_eighty_five_and_resumes
     argnames="fault",
     argvalues=["missing", "stale", "future", "capacity", "headroom", "service", "oom"],
 )
-def test_missing_stale_unsafe_or_incomplete_measurements_fail_closed(fault: str) -> None:
+@pytest.mark.parametrize(argnames="desktop", argvalues=(False, True))
+def test_missing_stale_unsafe_or_incomplete_measurements_fail_closed(
+    fault: str, desktop: bool
+) -> None:
     policy = ResourcePolicy()
     warm(policy=policy)
-    value: ResourceProbe | None = probe(second=3)
+    value: ResourceProbe | None = probe(second=3, desktop=desktop)
     now = EPOCH + timedelta(seconds=3)
     if fault == "missing":
         value = None

@@ -81,12 +81,6 @@ def check(*, payload: bytes, full_installation: bool = False) -> None:
                 or (name != "control-init" and not mount.read_only)
             ):
                 raise ValueError("Guard credential mounts are isolated and read-only")
-            if "host-memory" in mount.source and (
-                mount.target != "/run/host-memory"
-                or name not in {"resource-guard", "host-memory-writer"}
-                or mount.read_only != (name == "resource-guard")
-            ):
-                raise ValueError("Host memory evidence has one isolated writer and read-only guard")
         for port in service.ports:
             if name in {
                 "postgres",
@@ -99,7 +93,6 @@ def check(*, payload: bytes, full_installation: bool = False) -> None:
                 "docker-proxy-check",
                 "control-init",
                 "resource-guard",
-                "host-memory-writer",
             }:
                 raise ValueError("Private data/control/work services must not publish host ports")
             if port.host_ip is None or not ipaddress.ip_address(address=port.host_ip).is_loopback:

@@ -9,7 +9,7 @@ All code, comments, documentation and commit messages use English.
 Runtime, builds, migrations and checks run in Linux containers. Install Docker with
 Compose 2.24.4 or newer. Just is the developer command interface; Make delegates to it.
 Full verification, isolated browser and fault runners additionally need PowerShell 7
-(`pwsh`). Windows Desktop uses native Windows PowerShell for host-memory measurement.
+(`pwsh`). Runtime startup needs no native host-memory script.
 Host Python and Node are unnecessary for Docker development.
 
 ```sh
@@ -18,10 +18,11 @@ just up
 just status
 ```
 
-On Windows Docker Desktop, leave `just host-memory` running in another terminal.
-The full verifier reuses an existing project feeder or creates and cleans up its own.
-At least 8 GiB of reported engine memory and sufficient actual host/VM headroom are
-required; do not change Docker Desktop settings or prune unrelated resources.
+The same `just up`/`just down` workflow works on Windows Docker Desktop and Linux Engine.
+At least 8 GiB of reported engine memory and sufficient available Docker/Linux memory are
+required. The guard monitors Docker capacity, service limits, working sets and OOM events;
+it does not independently monitor Windows physical RAM. Do not change Docker Desktop
+settings or prune unrelated resources.
 
 For optional IDE navigation, install uv and run `just ide`. This creates ignored `.venv`
 from the locked Python 3.13 workspace, installs editable packages and checks dependencies.
@@ -207,6 +208,18 @@ docker compose --profile tools run --rm --no-deps --volume ./data/test-artifacts
 
 ## Verification record
 
+The November 8, 2026 host-memory removal passed 54 focused platform unit tests and 27
+PostgreSQL integration tests covering resource evidence, admission, publisher recovery and
+readiness. Python lint/format, ty/Pyright, frontend Biome/TypeScript, schema inventories,
+source boundaries and effective Compose preflight passed. On Windows Docker Desktop,
+`just up`, repeated `just up`, `just down` and restart worked without a host feeder;
+all existing volumes and a completed HTTP simulation's bundle digest survived restart.
+The HTTP upload/run/download/SSE workflow and live read-only probe checks passed. Runtime
+containers were healthy with no OOM kills or restarts and no warnings/errors in the sampled
+API/worker/guard/controller logs. One readiness request returned 503 after the extra live
+diagnostic probe; the following 12 one-second samples returned 200. Sampling/TTL tuning
+remains deferred. No full test suite, browser campaign or full gate was run for this change.
+
 The last completed maintenance gate on November 7, 2026 passed all 32 phases in 431.926
 seconds on Windows Docker Desktop/Linux containers with retained user volumes: 487 offline
 plus 157 integration Python tests, 4 Node, 59 Vitest and 8 Chromium workflows. The final
@@ -231,8 +244,8 @@ Observability is deferred; Grafana is excluded.
 ## Troubleshooting and recovery
 
 - **New work refused, saved data readable:** inspect `just logs resource-guard` and
-  `/api/v1/health/ready`. Check the Windows feeder, advancing measurements, service health
-  and actual headroom. Fresh cool samples are required before admission resumes.
+  `/api/v1/health/ready`. Check advancing Docker measurements, service health
+  and available Docker/Linux memory. Fresh cool samples are required before admission resumes.
 - **Upload rejected:** check CSV shape, normalized unique IDs, 10 MiB and 10,000-row limits.
   The isolated stress campaign selects its own 50,000-request profile; do not widen production
   limits to make an individual input pass.

@@ -173,10 +173,6 @@ bundle:
 verify-bundle:
     docker compose --profile tools run --rm --no-deps bundle-runner verify /data/exports/scaled-example
 
-# Keep this running in a second terminal on Windows Docker Desktop.
-host-memory:
-    powershell.exe -NoProfile -File scripts/publish-host-memory.ps1
-
 check-source-quality: build-python
     docker compose --profile tools run --rm --no-deps python-checks python scripts/check_source_quality.py
 

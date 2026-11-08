@@ -27,9 +27,6 @@ type ResourceReason = Literal[
     "MEMORY_HEADROOM",
     "RESOURCE_PRESSURE",
     "WARMING_UP",
-    "HOST_MEMORY_UNAVAILABLE",
-    "HOST_MEMORY_STALE",
-    "HOST_MEMORY_HEADROOM",
 ]
 
 SERVICE_LIMITS_MB: dict[ServiceName, int] = {
@@ -55,28 +52,7 @@ MEASUREMENT_MAX_AGE_SECONDS = 3
 MIN_ENGINE_MEMORY_BYTES = 8 * 1024**3
 MIN_MEMORY_RESERVE_BYTES = 2 * 1024**3
 ENGINE_RESERVE_DIVISOR = 4  # Reserve at least 25% of engine RAM.
-HOST_RESERVE_DIVISOR = 10  # Reserve at least 10% of physical host RAM.
 STARTUP_AND_DYNAMIC_BYTES = (128 + 64 + 256) * MIB
-HOST_WRITER_BYTES = 64 * MIB
-
-
-class HostMemoryEvidence(DockerModel):
-    """Physical Windows memory, sampled outside the Docker Desktop VM."""
-
-    schema_version: Annotated[int, Field(ge=1, le=1)] = 1
-    measured_at: AwareDatetime
-    total_memory_bytes: Annotated[int, Field(ge=1, le=2**63 - 1)]
-    available_memory_bytes: Annotated[int, Field(ge=0, le=2**63 - 1)]
-
-    @model_validator(mode="after")
-    def counters(self) -> Self:
-        """Require UTC host evidence and available memory within physical capacity."""
-        offset = self.measured_at.utcoffset()
-        if offset is None or offset.total_seconds() != 0:
-            raise ValueError("Host resource evidence must use UTC")
-        if self.available_memory_bytes > self.total_memory_bytes:
-            raise ValueError("Host available memory cannot exceed physical memory")
-        return self
 
 
 class ServiceMemory(DockerModel):
@@ -104,14 +80,13 @@ class ServiceMemory(DockerModel):
 
 
 class ResourceProbe(DockerModel):
-    """Bind bounded engine, service and optional host measurements to trusted UTC time."""
+    """Bind bounded Docker engine and service measurements to trusted UTC time."""
 
-    schema_version: Annotated[int, Field(ge=1, le=1)] = 1
+    schema_version: Annotated[int, Field(ge=2, le=2)] = 2
     measured_at: AwareDatetime
     engine_memory_bytes: Annotated[int, Field(ge=1, le=2**63 - 1)]
     available_memory_bytes: Annotated[int, Field(ge=0, le=2**63 - 1)]
     desktop_engine: bool
-    host_memory: HostMemoryEvidence | None = None
     services: Annotated[tuple[ServiceMemory, ...], Field(min_length=10, max_length=10)]
 
     @field_validator("measured_at")
@@ -160,9 +135,7 @@ def memory_bounds(*, probe: ResourceProbe | None) -> tuple[int, int, int]:
     caps = (
         0
         if probe is None
-        else sum(item.limit_bytes for item in probe.services)
-        + STARTUP_AND_DYNAMIC_BYTES
-        + (HOST_WRITER_BYTES if probe.desktop_engine else 0)
+        else sum(item.limit_bytes for item in probe.services) + STARTUP_AND_DYNAMIC_BYTES
     )
     working = 0 if probe is None else sum(item.working_set_bytes for item in probe.services)
     reserve = max(
@@ -172,44 +145,13 @@ def memory_bounds(*, probe: ResourceProbe | None) -> tuple[int, int, int]:
     return caps, reserve, max(0, caps - working) + reserve
 
 
-def host_memory_fresh(*, probe: ResourceProbe, now: datetime) -> bool:
-    """Check the independent host clock against the current trusted reader clock."""
-    return not probe.desktop_engine or (
-        probe.host_memory is not None
-        and 0
-        <= (now - probe.host_memory.measured_at).total_seconds()
-        <= MEASUREMENT_MAX_AGE_SECONDS
-    )
-
-
-def host_memory_headroom(*, probe: ResourceProbe) -> int:
-    """Reserve Windows memory plus remaining bounded project growth, without swap."""
-    caps, _reserve, _headroom = memory_bounds(probe=probe)
-    growth = max(0, caps - sum(item.working_set_bytes for item in probe.services))
-    host_reserve = max(
-        MIN_MEMORY_RESERVE_BYTES,
-        0
-        if probe.host_memory is None
-        else probe.host_memory.total_memory_bytes // HOST_RESERVE_DIVISOR,
-    )
-    return host_reserve + growth
-
-
-def safe_to_admit(*, probe: ResourceProbe, now: datetime | None = None) -> bool:
-    """Require measured service/engine/host headroom and healthy bounded consumers."""
+def safe_to_admit(*, probe: ResourceProbe) -> bool:
+    """Require measured Docker headroom and healthy bounded consumers; check age separately."""
     caps, reserve, headroom = memory_bounds(probe=probe)
     return (
         probe.engine_memory_bytes >= MIN_ENGINE_MEMORY_BYTES
         and caps + reserve <= probe.engine_memory_bytes
         and probe.available_memory_bytes >= headroom
-        and host_memory_fresh(probe=probe, now=probe.measured_at if now is None else now)
-        and (
-            not probe.desktop_engine
-            or (
-                probe.host_memory is not None
-                and probe.host_memory.available_memory_bytes >= host_memory_headroom(probe=probe)
-            )
-        )
         and all(
             (item.service == "redis" or (item.healthy and item.container_id is not None))
             and not item.oom_killed

@@ -1,11 +1,13 @@
 """Real PostgreSQL fencing, freshness, payload integrity and admission-budget guards."""
 
 import asyncio
+import hashlib
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from mslb_application.resource_policy import ResourcePolicy
-from mslb_contracts.resources import HostMemoryEvidence, ResourceDecision, ResourceProbe
+from mslb_contracts.canonical import canonical_bytes
+from mslb_contracts.resources import ResourceDecision, ResourceProbe
 from mslb_persistence import resource_evidence
 from mslb_persistence.database import StoreError
 from mslb_persistence.models import ResourceEvidence
@@ -217,49 +219,85 @@ def test_real_database_expiry_during_publication_rolls_back_report(
     asyncio.run(main=run())
 
 
-def test_desktop_host_evidence_is_rechecked_with_database_clock(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(argnames="seconds", argvalues=(-1, 4))
+def test_engine_evidence_is_rechecked_with_database_clock(
+    monkeypatch: pytest.MonkeyPatch, seconds: int
 ) -> None:
     async def run() -> None:
         async with scratch() as database:
             store = ResourceEvidenceStore(database=database)
             lease = await store.claim(owner="desktop-guard")
             assert lease is not None
-            policy = ResourcePolicy()
-            now = datetime.now(tz=UTC)
-            for offset in (2, 1, 0):
-                current = now - timedelta(seconds=offset)
-                probe = synthetic_probe().model_copy(
-                    update={
-                        "measured_at": current,
-                        "desktop_engine": True,
-                        "host_memory": HostMemoryEvidence(
-                            measured_at=current - timedelta(seconds=2),
-                            total_memory_bytes=32 * 1024**3,
-                            available_memory_bytes=10 * 1024**3,
-                        ),
-                    }
-                )
-                decision = policy.evaluate(probe=probe, now=current)
-            assert decision.admit
+            probe, decision = healthy_evidence()
+            probe = probe.model_copy(update={"desktop_engine": True})
             saved = await store.publish(
                 lease=lease, expected_revision=lease.revision, probe=probe, decision=decision
             )
-            assert saved.decision.admit
-            original = resource_evidence._clock
 
-            async def later_clock(*, session: AsyncSession) -> datetime:
-                return await original(session=session) + timedelta(seconds=2)
+            async def shifted_clock(*, session: AsyncSession) -> datetime:
+                return probe.measured_at + timedelta(seconds=seconds)
 
-            monkeypatch.setattr(target=resource_evidence, name="_clock", value=later_clock)
-            # VM evidence remains <3s old while independent host evidence is >3s old.
-            assert (await store.read()).decision.reason == "MEASUREMENTS_STALE"
-            with pytest.raises(expected_exception=StoreError, match="current host evidence"):
-                await store.publish(
-                    lease=lease,
-                    expected_revision=saved.revision,
-                    probe=probe,
-                    decision=decision,
+            with monkeypatch.context() as patch:
+                patch.setattr(target=resource_evidence, name="_clock", value=shifted_clock)
+                assert (await store.read()).decision.reason == "MEASUREMENTS_STALE"
+                with pytest.raises(
+                    expected_exception=resource_evidence.EvidenceRejected,
+                    match="timestamp is not current",
+                ):
+                    await store.publish(
+                        lease=lease,
+                        expected_revision=saved.revision,
+                        probe=probe,
+                        decision=decision,
+                    )
+            # A pre-write rejection preserves the acknowledged revision and lease.
+            current, decision = healthy_evidence()
+            recovered = await store.publish(
+                lease=lease, expected_revision=saved.revision, probe=current, decision=decision
+            )
+            assert recovered.decision.admit and recovered.revision == saved.revision + 1
+
+    asyncio.run(main=run())
+
+
+@pytest.mark.parametrize(argnames="desktop", argvalues=(False, True))
+def test_legacy_evidence_is_rejected_until_current_publisher_replaces_it(desktop: bool) -> None:
+    async def run() -> None:
+        async with scratch() as database:
+            store = ResourceEvidenceStore(database=database)
+            lease = await store.claim(owner="guard")
+            assert lease is not None
+            probe, decision = healthy_evidence()
+            saved = await store.publish(
+                lease=lease, expected_revision=lease.revision, probe=probe, decision=decision
+            )
+            legacy = probe.model_dump(mode="json") | {
+                "schema_version": 1,
+                "desktop_engine": desktop,
+            }
+            legacy["host_memory"] = None
+            if desktop:
+                legacy["host_memory"] = {
+                    "schema_version": 1,
+                    "measured_at": probe.measured_at.isoformat(),
+                    "total_memory_bytes": 32 * 1024**3,
+                    "available_memory_bytes": 10 * 1024**3,
+                }
+            body = {"probe": legacy, "decision": decision.model_dump(mode="json")}
+            async with database.engine.begin() as connection:
+                await connection.execute(
+                    statement=update(table=ResourceEvidence).values(
+                        probe=legacy,
+                        digest=hashlib.sha256(string=canonical_bytes(value=body)).hexdigest(),
+                    )
                 )
+            with pytest.raises(expected_exception=StoreError, match="evidence is invalid"):
+                await store.read()
+            # Latest evidence is ephemeral; replacement needs no data/volume reset.
+            current, decision = healthy_evidence()
+            await store.publish(
+                lease=lease, expected_revision=saved.revision, probe=current, decision=decision
+            )
+            assert (await store.read()).decision.admit
 
     asyncio.run(main=run())

@@ -22,16 +22,12 @@ Install Docker Desktop with Linux containers, or Linux Docker Engine, and Docker
 docker compose up --build -d --wait
 ```
 
-On Windows Docker Desktop, leave the host-memory feeder running in another terminal:
-
-```powershell
-powershell.exe -NoProfile -File scripts/publish-host-memory.ps1
-```
-
-The feeder supplies Windows memory measurements for safe workload admission. Linux
-Engine reads its own host measurements. Missing or stale measurements pause new work;
-saved results remain readable. Allow at least 8 GiB of reported Docker engine memory
-and sufficient host headroom; the guard checks actual available capacity.
+The same Docker-only startup works on Windows Docker Desktop and Linux Engine; no
+host-side memory script or second terminal is required. Allow at least 8 GiB of reported
+Docker engine memory. The guard checks available Docker/Linux memory, container limits,
+working sets and OOM observations. Missing or stale measurements pause new work; saved
+results remain readable. Windows physical RAM outside Docker is not independently monitored.
+If Just is installed, `just up` and `just down` wrap the Compose startup/shutdown commands.
 
 Open the [dashboard](http://127.0.0.1:8080) or
 [API reference](http://127.0.0.1:8080/api/docs). The API listens on

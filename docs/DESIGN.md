@@ -262,11 +262,14 @@ alone does not stop database-backed execution.
 
 The supported engine envelope starts at 8 GiB, with `max(2 GiB, 25% of engine RAM)` reserve
 and headroom for potential demand not already represented by measured working sets.
-Docker Desktop also requires independent fresh Windows physical-memory evidence, keeping
-`max(2 GiB, 10% of host RAM)` plus remaining project demand available. This prevents the
-VM's free-memory counter from being mistaken for Windows-host headroom. Runtime cap sums
-including startup/dynamic reserves are 3,680 MiB on Linux and 3,744 MiB on Desktop.
-Finite evidence and caps cannot guarantee that arbitrary host workloads never exhaust RAM.
+The same policy applies to Linux Engine and Docker Desktop: available memory is measured
+inside the Docker/Linux environment, not independently on the Windows host. Runtime cap
+sums including startup/dynamic reserves are 3,680 MiB on both environments. Container limits
+and fresh Docker evidence protect bounded project execution; they cannot guarantee that
+unrelated Windows workloads never exhaust host RAM. No host-side feeder is required.
+Resource probe schema version 2 describes this Docker-only policy. Version 1 evidence is
+rejected until the fenced publisher replaces the latest report; no saved job, dataset or
+result migration/reset is needed. Recreate all runtime roles together after upgrading.
 
 | Bound | Standard installation |
 | --- | --- |

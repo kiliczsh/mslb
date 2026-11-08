@@ -47,10 +47,7 @@ async def check_resource_probe() -> None:
                 report.received_at is None
                 or (
                     report.decision.admit
-                    and (
-                        report.probe is None
-                        or not safe_to_admit(probe=report.probe, now=datetime.now(tz=UTC))
-                    )
+                    and (report.probe is None or not safe_to_admit(probe=report.probe))
                 )
                 or (not report.decision.admit and report.decision.reason is None)
             ):
