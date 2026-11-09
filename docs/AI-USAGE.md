@@ -12,7 +12,11 @@ future change.
 It was derived from the actual local assistance record, Git history and recorded
 command outcomes. Private raw conversations, credentials, machine identifiers and
 large runtime logs are not included. The recorded tool is Codex; the historical log
-does not reliably identify an exact model version, so none is asserted.
+does not reliably identify an exact model version, so none is asserted. 
+
+Language models used for **planning** in Chat mode: _ChatGPT Sol 6.1_, _GLM via Mistral_, _Grok 4.7_ and _Claude Sonnet 5.5_.
+
+Language models used for **development**: _ChatGPT Sol 6.1_ and _Astra 6_ with varying reasoning levels.
 
 ## From initial plan to verified iterations
 
